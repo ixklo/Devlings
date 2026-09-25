@@ -1,0 +1,12 @@
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1790679600,"rateLimitType":"seven_day","utilization":0.82,"isUsingOverage":false},"session_id":"bf558c52"}
+{"type":"system","subtype":"init","cwd":"C:\\proj","session_id":"bf558c52","apiKeySource":"none","claude_code_version":"2.1.282","permissionMode":"dontAsk"}
+{"type":"system","subtype":"status","status":"requesting","session_id":"bf558c52"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}},"session_id":"bf558c52","parent_tool_use_id":null}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_01","name":"Read","input":{"file_path":"C:\\proj\\hello.txt"}}]},"parent_tool_use_id":null,"session_id":"bf558c52"}
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_01","type":"tool_result","content":"1\tbanana split"}]},"parent_tool_use_id":null,"session_id":"bf558c52"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_02","name":"Write","input":{"file_path":"C:\\proj\\out.txt","content":"ok"}}]},"parent_tool_use_id":null,"session_id":"bf558c52"}
+{"type":"system","subtype":"permission_denied","tool_name":"Write","tool_use_id":"toolu_02","decision_reason_type":"mode","session_id":"bf558c52"}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ban"}},"session_id":"bf558c52","parent_tool_use_id":null}
+{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ana"}},"session_id":"bf558c52","parent_tool_use_id":null}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"banana"}]},"parent_tool_use_id":null,"session_id":"bf558c52"}
+{"type":"result","subtype":"success","is_error":false,"result":"banana","session_id":"bf558c52","num_turns":3,"permission_denials":[{"tool_name":"Write","tool_use_id":"toolu_02","tool_input":{"file_path":"C:\\proj\\out.txt","content":"ok"}}]}
