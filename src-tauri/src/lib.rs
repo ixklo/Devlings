@@ -3,6 +3,7 @@ mod hooks_installer;
 mod locator;
 mod money_guard;
 mod normalize;
+mod sessions;
 
 pub fn run() {
     tauri::Builder::default()
