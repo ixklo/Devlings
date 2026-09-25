@@ -1,6 +1,7 @@
 mod events;
 mod hooks_installer;
 mod locator;
+mod money_guard;
 mod normalize;
 
 pub fn run() {
