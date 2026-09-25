@@ -1,4 +1,5 @@
 mod events;
+mod hooks_installer;
 mod normalize;
 
 pub fn run() {
