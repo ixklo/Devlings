@@ -106,7 +106,7 @@ impl Projects {
 
     pub fn sorted(&self) -> Vec<ProjectEntry> {
         let mut v = self.list.clone();
-        v.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+        v.sort_by_key(|a| std::cmp::Reverse(a.last_seen));
         v
     }
 }

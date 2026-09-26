@@ -24,7 +24,7 @@ pub fn is_perch_url(u: &str) -> bool {
 }
 
 fn is_perch_hook(h: &Value) -> bool {
-    h.get("url").and_then(Value::as_str).map_or(false, is_perch_url)
+    h.get("url").and_then(Value::as_str).is_some_and(is_perch_url)
 }
 
 pub fn uninstall(mut settings: Value) -> Value {
@@ -43,7 +43,7 @@ pub fn uninstall(mut settings: Value) -> Value {
                     hs.retain(|h| !is_perch_hook(h));
                     removed = hs.len() != before;
                 }
-                let empty = g.get("hooks").and_then(Value::as_array).map_or(false, |a| a.is_empty());
+                let empty = g.get("hooks").and_then(Value::as_array).is_some_and(|a| a.is_empty());
                 touched |= removed;
                 if !(removed && empty) {
                     kept.push(g);
@@ -55,7 +55,7 @@ pub fn uninstall(mut settings: Value) -> Value {
             }
         }
         touched_any = !touched_keys.is_empty();
-        hooks.retain(|k, v| !(touched_keys.contains(k) && v.as_array().map_or(false, |a| a.is_empty())));
+        hooks.retain(|k, v| !(touched_keys.contains(k) && v.as_array().is_some_and(|a| a.is_empty())));
         hooks_now_empty = hooks.is_empty();
     }
     if touched_any && hooks_now_empty {
@@ -94,9 +94,9 @@ pub fn is_installed(settings: &Value, port: u16, token: &str) -> bool {
         settings
             .pointer(&format!("/hooks/{ev}"))
             .and_then(Value::as_array)
-            .map_or(false, |groups| {
+            .is_some_and(|groups| {
                 groups.iter().any(|g| {
-                    g.get("hooks").and_then(Value::as_array).map_or(false, |hs| {
+                    g.get("hooks").and_then(Value::as_array).is_some_and(|hs| {
                         hs.iter().any(|h| h.get("url").and_then(Value::as_str) == Some(url.as_str()))
                     })
                 })

@@ -67,7 +67,7 @@ impl Sessions {
     }
 
     pub fn mood(&self, now: i64, panel_open: bool, setup: bool) -> Mood {
-        let within = |t: Option<i64>, window: i64| t.map_or(false, |t| now - t < window);
+        let within = |t: Option<i64>, window: i64| t.is_some_and(|t| now - t < window);
         if setup {
             Mood::Setup
         } else if self.map.values().any(|s| s.state == Kind::NeedsYou) {
@@ -89,7 +89,7 @@ impl Sessions {
 
     pub fn list(&self) -> Vec<SessionInfo> {
         let mut v: Vec<SessionInfo> = self.map.values().cloned().collect();
-        v.sort_by(|a, b| b.last_at.cmp(&a.last_at));
+        v.sort_by_key(|a| std::cmp::Reverse(a.last_at));
         v
     }
 

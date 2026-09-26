@@ -50,7 +50,7 @@ pub fn extension_binaries(home: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|a| std::cmp::Reverse(a.0));
     found.into_iter().map(|(_, p)| p).collect()
 }
 

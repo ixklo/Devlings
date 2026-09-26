@@ -129,7 +129,7 @@ pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> 
             out
         }
         (Some("stream_event"), _) => {
-            let top_level = v.get("parent_tool_use_id").map_or(true, Value::is_null);
+            let top_level = v.get("parent_tool_use_id").is_none_or(Value::is_null);
             let delta = v.pointer("/event/delta");
             let is_text = delta.and_then(|d| d.get("type")).and_then(Value::as_str) == Some("text_delta");
             if top_level && is_text {

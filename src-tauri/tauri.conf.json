@@ -13,18 +13,37 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "perch",
-        "width": 800,
-        "height": 600
+        "label": "pet",
+        "title": "Perch",
+        "width": 220,
+        "height": 210,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false,
+        "visible": true
+      },
+      {
+        "label": "panel",
+        "title": "Perch",
+        "width": 380,
+        "height": 540,
+        "minWidth": 320,
+        "minHeight": 400,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": { "csp": null }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "dmg", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
