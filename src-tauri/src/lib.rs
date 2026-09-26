@@ -4,6 +4,8 @@ mod locator;
 mod money_guard;
 mod normalize;
 mod sessions;
+mod store;
+mod transcript;
 
 pub fn run() {
     tauri::Builder::default()

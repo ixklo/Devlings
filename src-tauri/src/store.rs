@@ -1,0 +1,220 @@
+use std::{fs, io, path::Path};
+
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+pub const DEFAULT_PET_NAME: &str = "Perch";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Config {
+    pub pet_name: String,
+    pub onboarded: bool,
+    pub credits_notice_seen: bool,
+    pub hooks_declined: bool,
+    pub hook_port: Option<u16>,
+    pub hook_token: Option<String>,
+    pub claude_path: Option<String>,
+    pub pet_position: Option<(i32, i32)>,
+    pub notifications: bool,
+    pub launch_at_login: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            pet_name: DEFAULT_PET_NAME.to_string(),
+            onboarded: false,
+            credits_notice_seen: false,
+            hooks_declined: false,
+            hook_port: None,
+            hook_token: None,
+            claude_path: None,
+            pet_position: None,
+            notifications: true,
+            launch_at_login: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionMode {
+    ReadOnly,
+    #[default]
+    EditFiles,
+    Auto,
+}
+
+impl PermissionMode {
+    pub fn flag(self) -> &'static str {
+        match self {
+            PermissionMode::ReadOnly => "dontAsk",
+            PermissionMode::EditFiles => "acceptEdits",
+            PermissionMode::Auto => "auto",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEntry {
+    pub path: String,
+    pub name: String,
+    pub last_seen: i64,
+    #[serde(default)]
+    pub permission_mode: PermissionMode,
+    #[serde(default)]
+    pub ask_session_id: Option<String>,
+    #[serde(default)]
+    pub transcript_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Projects {
+    pub list: Vec<ProjectEntry>,
+}
+
+impl Projects {
+    pub fn touch(&mut self, path: &str, now: i64) -> bool {
+        if let Some(p) = self.get_mut(path) {
+            p.last_seen = p.last_seen.max(now);
+            return false;
+        }
+        self.list.push(ProjectEntry {
+            path: path.trim_end_matches(['/', '\\']).to_string(),
+            name: project_name(path),
+            last_seen: now,
+            permission_mode: PermissionMode::default(),
+            ask_session_id: None,
+            transcript_path: None,
+        });
+        true
+    }
+
+    pub fn get(&self, path: &str) -> Option<&ProjectEntry> {
+        self.list.iter().find(|p| same_path(&p.path, path))
+    }
+
+    pub fn get_mut(&mut self, path: &str) -> Option<&mut ProjectEntry> {
+        self.list.iter_mut().find(|p| same_path(&p.path, path))
+    }
+
+    pub fn remove(&mut self, path: &str) {
+        self.list.retain(|p| !same_path(&p.path, path));
+    }
+
+    pub fn sorted(&self) -> Vec<ProjectEntry> {
+        let mut v = self.list.clone();
+        v.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+        v
+    }
+}
+
+pub fn same_path(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.trim_end_matches(['/', '\\']).replace('\\', "/");
+    if cfg!(windows) {
+        norm(a).eq_ignore_ascii_case(&norm(b))
+    } else {
+        norm(a) == norm(b)
+    }
+}
+
+pub fn project_name(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed).to_string()
+}
+
+pub fn validate_pet_name(raw: &str) -> Result<String, String> {
+    let name = raw.trim();
+    match name.chars().count() {
+        0 => Err("Give your pet a name.".to_string()),
+        1..=24 => Ok(name.to_string()),
+        _ => Err("Pet names can be up to 24 characters.".to_string()),
+    }
+}
+
+pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn save<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(value).map_err(io::Error::other)?)?;
+    fs::rename(tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults_and_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        let mut c: Config = load(&p);
+        assert_eq!(c.pet_name, "Perch");
+        assert!(c.notifications);
+        assert!(!c.onboarded);
+        c.pet_name = "Mochi".into();
+        c.pet_position = Some((10, -20));
+        save(&p, &c).unwrap();
+        assert_eq!(load::<Config>(&p), c);
+    }
+
+    #[test]
+    fn bad_or_partial_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, "{nope").unwrap();
+        assert_eq!(load::<Config>(&p), Config::default());
+        std::fs::write(&p, r#"{"petName":"Bo"}"#).unwrap();
+        let c: Config = load(&p);
+        assert_eq!((c.pet_name.as_str(), c.notifications), ("Bo", true));
+    }
+
+    #[test]
+    fn pet_names() {
+        assert_eq!(validate_pet_name("  Mochi "), Ok("Mochi".to_string()));
+        assert!(validate_pet_name("").is_err());
+        assert!(validate_pet_name("   ").is_err());
+        assert!(validate_pet_name(&"x".repeat(25)).is_err());
+        assert_eq!(validate_pet_name(&"x".repeat(24)), Ok("x".repeat(24)));
+        assert_eq!(validate_pet_name("Ünï"), Ok("Ünï".to_string()));
+    }
+
+    #[test]
+    fn projects_touch_and_sort() {
+        let mut p = Projects::default();
+        assert!(p.touch("C:\\a\\proj", 1));
+        assert!(!p.touch("C:\\a\\proj\\", 5));
+        assert!(p.touch("C:\\b\\other", 3));
+        let sorted = p.sorted();
+        assert_eq!(sorted.len(), 2);
+        assert_eq!((sorted[0].name.as_str(), sorted[0].last_seen), ("proj", 5));
+        assert_eq!(sorted[1].name, "other");
+        p.remove("C:\\b\\other");
+        assert!(p.get("C:\\b\\other").is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_paths_ignore_case_and_slashes() {
+        assert!(same_path("C:\\A\\Proj", "c:/a/proj/"));
+    }
+
+    #[test]
+    fn permission_mode() {
+        assert_eq!(PermissionMode::default(), PermissionMode::EditFiles);
+        assert_eq!(PermissionMode::ReadOnly.flag(), "dontAsk");
+        assert_eq!(PermissionMode::EditFiles.flag(), "acceptEdits");
+        assert_eq!(PermissionMode::Auto.flag(), "auto");
+        assert_eq!(serde_json::to_string(&PermissionMode::ReadOnly).unwrap(), "\"read_only\"");
+    }
+}
