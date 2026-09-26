@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -22,6 +22,7 @@ use crate::{
     locator::{self, Located},
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
+    overlay::HitRect,
     pets::{self, Pet},
     runner::{self, KillReason},
     shell,
@@ -56,6 +57,9 @@ pub struct AppState {
     pub ask_sids: Mutex<HashMap<String, String>>,
     pub last_view: Mutex<Option<ViewKey>>,
     pub pets: Mutex<Vec<Pet>>,
+    /// Interactive rects of the pet window; None until the frontend first reports them.
+    pub hit_regions: Mutex<Option<Vec<HitRect>>>,
+    pub pet_visibility_gen: AtomicU64,
 }
 
 impl AppState {
@@ -79,6 +83,8 @@ impl AppState {
             ask_sids: Mutex::new(HashMap::new()),
             last_view: Mutex::new(None),
             pets: Mutex::new(Vec::new()),
+            hit_regions: Mutex::new(None),
+            pet_visibility_gen: AtomicU64::new(0),
         })
     }
 
@@ -155,8 +161,8 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     Snapshot { config, pet_state, threads, projects, running, setup }
 }
 
-/// Rescans every pet folder and caches the result.
-pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
+/// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
+fn scan_pets(app: &AppHandle) -> (Vec<Pet>, bool) {
     let s = app.state::<AppState>();
     let home = dirs::home_dir().unwrap_or_default();
     let roots = pets::roots(
@@ -165,7 +171,19 @@ pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
         &pets::codex_home(std::env::var_os("CODEX_HOME"), &home),
     );
     let found = pets::discover(&roots);
-    *s.pets.lock().unwrap() = found.clone();
+    let wanted = s.config.lock().unwrap().pet_id.clone();
+    let shown = |list: &[Pet]| pets::resolve(list, &wanted).map(|p| p.info.id.clone());
+    let old = std::mem::replace(&mut *s.pets.lock().unwrap(), found.clone());
+    let changed = shown(&old) != shown(&found);
+    (found, changed)
+}
+
+/// Rescans pets, and publishes a snapshot if that changed which pet is shown (e.g. its folder was deleted).
+pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
+    let (found, changed) = scan_pets(app);
+    if changed {
+        emit_snapshot(app);
+    }
     found
 }
 
@@ -300,16 +318,16 @@ pub fn recheck_setup(app: &AppHandle) {
 
 pub fn boot(app: AppHandle) {
     std::thread::spawn(move || {
-        refresh_pets(&app);
+        scan_pets(&app);
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);
         let onboarded = app.state::<AppState>().config.lock().unwrap().onboarded;
         if !onboarded {
-            // Window calls from this thread are queued; on the main thread they run in order, so open_panel can see and undo a minimized start.
+            // Window calls from this thread are queued; on the main thread they run in order, so open_settings can see and undo a minimized start.
             let handle = app.clone();
             let _ = app.run_on_main_thread(move || {
-                let _ = shell::open_panel(&handle, "onboarding");
+                let _ = shell::open_settings(&handle, shell::SettingsView::Onboarding);
             });
         }
         loop {

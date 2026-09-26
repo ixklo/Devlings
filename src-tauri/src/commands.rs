@@ -6,9 +6,10 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::{
     hooks_installer,
     money_guard::AuthVerdict,
+    overlay::{self, HitRect},
     pets::{self, PetInfo},
     runner::{self, AskRequest},
-    shell,
+    shell::{self, SettingsView},
     state::{self, now_ms, AppState, Snapshot},
     store::{self, PermissionMode},
     transcript::{self, ChatTurn},
@@ -36,11 +37,8 @@ pub async fn recheck_setup(app: AppHandle) -> Snapshot {
 pub fn set_pet_name(app: AppHandle, name: String) -> CmdResult<Snapshot> {
     let name = store::validate_pet_name(&name)?;
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_name = name.clone();
+    s.config.lock().unwrap().pet_name = name;
     s.save_config();
-    if let Some(panel) = app.get_webview_window("panel") {
-        let _ = panel.set_title(&name);
-    }
     Ok(publish(&app))
 }
 
@@ -301,13 +299,44 @@ pub fn set_focused_thread(app: AppHandle, session_id: Option<String>) {
 }
 
 #[tauri::command]
-pub fn toggle_panel(app: AppHandle) -> CmdResult<()> {
-    shell::toggle_panel(&app).map_err(|e| e.to_string())
+pub fn set_hit_regions(app: AppHandle, regions: Vec<HitRect>) {
+    *app.state::<AppState>().hit_regions.lock().unwrap() = Some(regions);
 }
 
 #[tauri::command]
-pub fn close_panel(app: AppHandle) -> CmdResult<()> {
-    shell::close_panel(&app).map_err(|e| e.to_string())
+pub fn open_settings(app: AppHandle, view: SettingsView) -> CmdResult<()> {
+    shell::open_settings(&app, view).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn close_settings(app: AppHandle) -> CmdResult<()> {
+    shell::close_settings(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_project(app: AppHandle, path: String) -> CmdResult<()> {
+    let dir = Path::new(&path);
+    if !dir.is_absolute() || !dir.is_dir() {
+        return Err("That folder doesn't exist.".into());
+    }
+    shell::open_project(&app, dir)
+}
+
+#[tauri::command]
+pub async fn open_pets_folder(app: AppHandle) -> CmdResult<()> {
+    let dir = pets::user_pets_dir(&app.state::<AppState>().data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    shell::open_folder(&app, &dir)
+}
+
+#[tauri::command]
+pub fn reset_pet_position(app: AppHandle) {
+    overlay::reset_pet_position(&app);
+}
+
+#[tauri::command]
+pub fn move_pet_by(app: AppHandle, dx: f64, dy: f64) {
+    overlay::move_pet_by(&app, dx, dy);
 }
 
 #[tauri::command]
