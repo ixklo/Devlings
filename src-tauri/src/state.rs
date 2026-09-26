@@ -28,6 +28,10 @@ use crate::{
     store::{self, Config, ProjectEntry, Projects},
 };
 
+fn temp_dir() -> String {
+    std::env::temp_dir().to_string_lossy().to_string()
+}
+
 pub fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
@@ -52,9 +56,11 @@ pub struct AppState {
 impl AppState {
     pub fn load(data_dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(&data_dir)?;
+        let mut projects: Projects = store::load(&data_dir.join("projects.json"));
+        projects.retain_outside(&temp_dir());
         Ok(Self {
             config: Mutex::new(store::load(&data_dir.join("config.json"))),
-            projects: Mutex::new(store::load(&data_dir.join("projects.json"))),
+            projects: Mutex::new(projects),
             data_dir,
             sessions: Mutex::new(Sessions::new(now_ms())),
             claude: Mutex::new(Err("Checking for Claude Code…".to_string())),
@@ -207,7 +213,9 @@ pub fn on_hook_body(app: &AppHandle, body: Value) {
         return;
     }
     let Some(ev) = normalize::from_hook(&body, now_ms()) else { return };
-    if !ev.project.is_empty() && s.projects.lock().unwrap().touch(&ev.project, ev.at) {
+    // Sessions in scratch folders (e.g. other agents' temp dirs) still show in Activity but don't become projects.
+    let is_project = !ev.project.is_empty() && !store::is_under(&ev.project, &temp_dir());
+    if is_project && s.projects.lock().unwrap().touch(&ev.project, ev.at) {
         s.save_projects();
     }
     handle_event(app, ev);

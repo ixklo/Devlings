@@ -100,6 +100,10 @@ impl Projects {
         self.list.iter_mut().find(|p| same_path(&p.path, path))
     }
 
+    pub fn retain_outside(&mut self, base: &str) {
+        self.list.retain(|p| !is_under(&p.path, base));
+    }
+
     pub fn remove(&mut self, path: &str) {
         self.list.retain(|p| !same_path(&p.path, path));
     }
@@ -118,6 +122,15 @@ pub fn same_path(a: &str, b: &str) -> bool {
     } else {
         norm(a) == norm(b)
     }
+}
+
+pub fn is_under(path: &str, base: &str) -> bool {
+    let norm = |s: &str| {
+        let n = s.trim_end_matches(['/', '\\']).replace('\\', "/");
+        if cfg!(windows) { n.to_ascii_lowercase() } else { n }
+    };
+    let (p, b) = (norm(path), norm(base));
+    !b.is_empty() && (p == b || p.starts_with(&format!("{b}/")))
 }
 
 pub fn project_name(path: &str) -> String {
@@ -195,6 +208,30 @@ mod tests {
         assert!(validate_pet_name(&"x".repeat(25)).is_err());
         assert_eq!(validate_pet_name(&"x".repeat(24)), Ok("x".repeat(24)));
         assert_eq!(validate_pet_name("Ünï"), Ok("Ünï".to_string()));
+    }
+
+    #[test]
+    fn detects_paths_inside_a_base_folder() {
+        assert!(is_under("/tmp/claude/x/tc", "/tmp"));
+        assert!(is_under("/tmp", "/tmp/"));
+        assert!(!is_under("/tmpfoo/x", "/tmp"));
+        assert!(!is_under("/home/u/proj", "/tmp"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detects_windows_temp_paths_ignoring_case() {
+        assert!(is_under("C:\\Users\\New\\AppData\\Local\\Temp\\claude\\tc", "c:\\users\\new\\appdata\\local\\temp\\"));
+    }
+
+    #[test]
+    fn drops_temp_projects() {
+        let mut p = Projects::default();
+        p.touch("/tmp/scratch/tc", 1);
+        p.touch("/home/u/proj", 2);
+        p.retain_outside("/tmp");
+        assert_eq!(p.sorted().len(), 1);
+        assert_eq!(p.sorted()[0].name, "proj");
     }
 
     #[test]
