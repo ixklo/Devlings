@@ -50,8 +50,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn load(app: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
-        let data_dir = app.path().app_data_dir()?;
+    pub fn load(data_dir: PathBuf) -> std::io::Result<Self> {
         std::fs::create_dir_all(&data_dir)?;
         Ok(Self {
             config: Mutex::new(store::load(&data_dir.join("config.json"))),

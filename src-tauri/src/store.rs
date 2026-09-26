@@ -137,7 +137,7 @@ pub fn validate_pet_name(raw: &str) -> Result<String, String> {
 pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
     fs::read_to_string(path)
         .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
+        .and_then(|t| serde_json::from_str(t.trim_start_matches('\u{feff}')).ok())
         .unwrap_or_default()
 }
 
@@ -166,6 +166,14 @@ mod tests {
         c.pet_position = Some((10, -20));
         save(&p, &c).unwrap();
         assert_eq!(load::<Config>(&p), c);
+    }
+
+    #[test]
+    fn loads_json_with_byte_order_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, "\u{feff}{\"petName\":\"Bo\"}").unwrap();
+        assert_eq!(load::<Config>(&p).pet_name, "Bo");
     }
 
     #[test]

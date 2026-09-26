@@ -112,7 +112,7 @@ pub fn settings_path() -> PathBuf {
 }
 
 pub fn read_settings(path: &Path) -> Result<Value, String> {
-    match fs::read_to_string(path) {
+    match fs::read_to_string(path).map(|t| t.trim_start_matches('\u{feff}').to_string()) {
         Ok(t) if t.trim().is_empty() => Ok(json!({})),
         Ok(t) => serde_json::from_str(&t).map_err(|e| {
             format!("{} isn't valid JSON ({e}). Fix it, then try again.", path.display())
@@ -265,6 +265,14 @@ mod tests {
         let missing = dir.path().join("new").join("settings.json");
         install_file(&missing, 4545, TOKEN, 2).unwrap();
         assert!(is_installed(&read_settings(&missing).unwrap(), 4545, TOKEN));
+    }
+
+    #[test]
+    fn reads_settings_with_byte_order_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "\u{feff}{\"model\":\"opus\"}").unwrap();
+        assert_eq!(read_settings(&path).unwrap(), json!({"model": "opus"}));
     }
 
     #[test]

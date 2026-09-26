@@ -82,9 +82,10 @@ pub fn place_pet(app: &AppHandle) {
         _ => {
             let Ok(Some(m)) = pet.primary_monitor() else { return };
             let size = pet.outer_size().unwrap_or(PhysicalSize::new(220, 210));
+            let area = m.work_area();
             PhysicalPosition::new(
-                m.position().x + m.size().width as i32 - size.width as i32 - 24,
-                m.position().y + m.size().height as i32 - size.height as i32 - 72,
+                area.position.x + area.size.width as i32 - size.width as i32 - 24,
+                area.position.y + area.size.height as i32 - size.height as i32,
             )
         }
     };
@@ -101,7 +102,10 @@ fn position_panel(app: &AppHandle, panel: &WebviewWindow) -> tauri::Result<()> {
         None => pet.primary_monitor()?,
     };
     let (mx, my, mw, mh) = monitor
-        .map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32))
+        .map(|m| {
+            let a = m.work_area();
+            (a.position.x, a.position.y, a.size.width as i32, a.size.height as i32)
+        })
         .unwrap_or((0, 0, 1920, 1080));
     let (w, h) = (size.width as i32, size.height as i32);
     let mut x = pos.x - w - 8;
@@ -119,14 +123,10 @@ pub fn open_panel(app: &AppHandle, view: &str) -> tauri::Result<()> {
         position_panel(app, &panel)?;
         panel.show()?;
     }
-    // A process's first ShowWindow takes the launcher's show state (e.g. minimized), so restore after showing and after focusing.
     if panel.is_minimized()? {
         panel.unminimize()?;
     }
     panel.set_focus()?;
-    if panel.is_minimized()? {
-        panel.unminimize()?;
-    }
     app.state::<AppState>().panel_open.store(true, Ordering::SeqCst);
     let _ = app.emit_to("panel", "panel-view", view);
     state::emit_snapshot(app);

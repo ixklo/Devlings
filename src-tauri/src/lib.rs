@@ -12,10 +12,17 @@ mod state;
 mod store;
 mod transcript;
 
-use tauri::Manager;
-
 pub fn run() {
+    let context = tauri::generate_context!();
+    // Managed before the builder creates the config windows: their webviews can invoke commands before setup() runs.
+    // dirs::data_dir()/<identifier> is the same folder Tauri's app_data_dir() resolves to on every desktop OS.
+    let data_dir = dirs::data_dir()
+        .expect("this OS provides a per-user data directory")
+        .join(&context.config().identifier);
+    let app_state = state::AppState::load(data_dir).expect("Perch's data directory must be writable");
+
     tauri::Builder::default()
+        .manage(app_state)
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| shell::show_pet(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -24,7 +31,6 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let handle = app.handle().clone();
-            app.manage(state::AppState::load(&handle)?);
             shell::setup_tray(&handle)?;
             shell::register_shortcut(&handle);
             shell::place_pet(&handle);
@@ -57,6 +63,6 @@ pub fn run() {
             commands::show_pet_menu,
             commands::save_pet_position,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running Perch");
 }
