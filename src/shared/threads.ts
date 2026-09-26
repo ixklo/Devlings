@@ -24,9 +24,23 @@ export const STATUS_TEXT: Record<ThreadStatus, string> = {
   idle: "Idle",
 };
 
+/** Flattens a Markdown snippet to one readable line for a card. */
+export function plainLine(md: string): string {
+  return md
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`+([^`]*)`+/g, "$1")
+    .replace(/(\*\*|__|\*|_|~~)(\S(?:.*?\S)?)\1/g, "$2")
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** The one line under the project name on a card. */
 export function threadLine(t: ThreadInfo): string {
-  if (t.status === "ready" || t.status === "blocked") return t.excerpt ?? t.label ?? STATUS_TEXT[t.status];
+  if (t.status === "ready" || t.status === "blocked") {
+    return t.excerpt ? plainLine(t.excerpt) : (t.label ?? STATUS_TEXT[t.status]);
+  }
   if (t.status === "needs_input") return t.label ?? "Waiting for your approval";
   return t.label ?? t.excerpt ?? (t.status === "running" ? "Working…" : "Idle");
 }

@@ -38,6 +38,13 @@ describe("threadLine", () => {
     expect(threadLine(makeThread({ status: "running", label: "Editing a.ts", excerpt: "old" }))).toBe("Editing a.ts");
     expect(threadLine(makeThread({ status: "needs_input", label: null }))).toBe("Waiting for your approval");
   });
+
+  it("shows Markdown excerpts as plain text", () => {
+    const excerpt = "1. **Say what it holds:** `unpaidInvoices` beats\n## Heading\n- see [the docs](https://x.y)";
+    expect(threadLine(makeThread({ status: "ready", excerpt }))).toBe(
+      "Say what it holds: unpaidInvoices beats Heading see the docs",
+    );
+  });
 });
 
 describe("relativeTime", () => {
