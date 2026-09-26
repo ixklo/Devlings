@@ -1,23 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Snapshot } from "../shared/types";
+import { makeConfig, makeSetup, makeSnapshot } from "../test/fixtures";
 import { SetupChecks } from "./SetupChecks";
 
 function snap(over: Partial<Snapshot["setup"]>, hooksDeclined = false): Snapshot {
-  return {
-    config: {
-      petName: "Mochi", onboarded: true, creditsNoticeSeen: true, hooksDeclined, hookPort: 1, hookToken: "t",
-      claudePath: null, petPosition: null, notifications: true, launchAtLogin: false,
-    },
-    mood: "idle",
-    sessions: [],
-    projects: [],
-    running: [],
-    setup: {
-      claudePath: "C:\\claude.exe", claudeVersion: "2.1.282", claudeError: null, hooksInstalled: true,
-      auth: { status: "allowed", subscription: "pro" }, hookServerError: null, needsSetup: false, ...over,
-    },
-  };
+  return makeSnapshot({ config: makeConfig({ hooksDeclined }), setup: makeSetup(over) });
 }
 
 describe("SetupChecks", () => {
@@ -39,10 +27,10 @@ describe("SetupChecks", () => {
         })}
       />,
     );
-    expect(screen.getByText("Claude Code wasn't found.")).toBeInTheDocument();
-    expect(screen.getByText("Ask only works with a Claude subscription login.")).toBeInTheDocument();
-    expect(screen.getByText("Hooks not installed")).toBeInTheDocument();
-    expect(screen.getByText("Couldn't listen on port 1")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code wasn't found.")).toHaveClass("bad");
+    expect(screen.getByText("Ask only works with a Claude subscription login.")).toHaveClass("bad");
+    expect(screen.getByText("Hooks not installed")).toHaveClass("bad");
+    expect(screen.getByText("Couldn't listen on port 1")).toHaveClass("bad");
   });
 
   it("treats skipped hooks as Ask-only, not an error", () => {

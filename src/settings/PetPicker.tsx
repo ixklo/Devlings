@@ -1,0 +1,83 @@
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../shared/api";
+import { IconCheck, IconRefresh } from "../shared/icons";
+import type { PetInfo } from "../shared/types";
+import { idleClip, SpriteView, usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { errorText } from "../shared/errors";
+
+const SOURCE_LABEL: Record<PetInfo["source"], string | null> = { bundled: null, perch: "Custom", codex: "Codex" };
+const THUMB_SCALE = 0.4;
+
+export function usePets() {
+  const [pets, setPets] = useState<PetInfo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    setError(null);
+    api
+      .listPets()
+      .then(setPets)
+      .catch((e) => setError(errorText(e)));
+  }, []);
+  useEffect(load, [load]);
+  return { pets, error, reload: load };
+}
+
+function PetThumb({ pet, selected, onSelect }: { pet: PetInfo; selected: boolean; onSelect: () => void }) {
+  const src = usePetSprite(pet.id);
+  const reduced = useReducedMotion();
+  const source = SOURCE_LABEL[pet.source];
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={pet.displayName}
+      title={pet.description}
+      className="pet-option"
+      onClick={onSelect}
+    >
+      <span className="pet-option-stage">
+        {src ? (
+          <SpriteView src={src} scale={THUMB_SCALE} clip={idleClip(reduced)} aria-hidden="true" />
+        ) : (
+          <span className="pet-option-placeholder" />
+        )}
+      </span>
+      <span className="pet-option-name">{pet.displayName}</span>
+      {source && <span className="pet-option-source">{source}</span>}
+      {selected && (
+        <span className="pet-option-check" aria-hidden="true">
+          <IconCheck size={11} strokeWidth={3} />
+        </span>
+      )}
+    </button>
+  );
+}
+
+interface Props {
+  selectedId: string;
+  onSelect: (id: string) => void;
+}
+
+/** Grid of installed pets, each playing its idle animation. */
+export function PetPicker({ selectedId, onSelect }: Props) {
+  const { pets, error, reload } = usePets();
+  if (error) {
+    return (
+      <div className="pet-grid-error" role="alert">
+        <span>Couldn't load pets. {error}</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
+          <IconRefresh size={13} />
+          Try again
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="pet-grid" role="radiogroup" aria-label="Pet" aria-busy={!pets}>
+      {pets
+        ? pets.map((p) => <PetThumb key={p.id} pet={p} selected={p.id === selectedId} onSelect={() => onSelect(p.id)} />)
+        : [0, 1, 2].map((i) => <span key={i} className="pet-option is-skeleton" aria-hidden="true" />)}
+    </div>
+  );
+}
