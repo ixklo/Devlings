@@ -61,11 +61,13 @@ describe("api contract", () => {
     await api.onSnapshot(() => {});
     await api.onPetEvent(() => {});
     await api.onPetOpen(() => {});
+    await api.onPetPointer(() => {});
     await api.onSettingsView(() => {});
     expect((transport.listen as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => c[0])).toEqual([
       "snapshot",
       "pet-event",
       "pet-open",
+      "pet-pointer",
       "settings-view",
     ]);
   });

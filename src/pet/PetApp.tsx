@@ -186,6 +186,25 @@ export function PetApp() {
     hoverTimer.current = window.setTimeout(() => setHover(false), HOVER_GRACE_MS);
   };
 
+  // Hover as the backend's cursor poll sees it. The webview's own enter/leave events go stale,
+  // because once the window turns click-through it never hears the pointer leave.
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
+  useEffect(() => {
+    let last: string | null = null;
+    const unlisten = api.onPetPointer((id) => {
+      if (id === "pet" && last !== "pet" && !reducedRef.current) dispatch({ type: "hover", now: performance.now() });
+      if (id === "pet" || id === "bar") enterDock();
+      else if (last === "pet" || last === "bar") leaveDock();
+      last = id;
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+    // enterDock/leaveDock only touch a ref and a state setter, so the first render's copies are fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     refreshHits();
   }, [view, expanded, hover, snap, src, refreshHits]);

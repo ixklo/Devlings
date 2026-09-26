@@ -9,7 +9,9 @@ export function collectHitRects(root: ParentNode = document): HitRect[] {
   root.querySelectorAll<HTMLElement>("[data-hit]").forEach((el) => {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return;
-    rects.push({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+    const rect: HitRect = { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+    if (el.dataset.hit) rect.id = el.dataset.hit;
+    rects.push(rect);
   });
   return rects;
 }

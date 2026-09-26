@@ -21,6 +21,17 @@ describe("collectHitRects", () => {
     expect(collectHitRects()).toEqual([{ x: 10, y: 21, w: 100, h: 40 }]);
     document.body.innerHTML = "";
   });
+
+  it("names rects whose data-hit has a value, so the backend can report hover", () => {
+    document.body.innerHTML = `<div data-hit="pet" id="p"></div><div data-hit="" id="c"></div>`;
+    box(document.getElementById("p"), rect(0, 500, 100, 100));
+    box(document.getElementById("c"), rect(0, 0, 50, 50));
+    expect(collectHitRects()).toEqual([
+      { x: 0, y: 500, w: 100, h: 100, id: "pet" },
+      { x: 0, y: 0, w: 50, h: 50 },
+    ]);
+    document.body.innerHTML = "";
+  });
 });
 
 function Overlay({ send }: { send: (r: HitRect[]) => void }) {

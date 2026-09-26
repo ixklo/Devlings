@@ -100,6 +100,7 @@ export const api = {
   onSnapshot: (cb: (s: Snapshot) => void) => transport.listen<Snapshot>("snapshot", cb),
   onPetEvent: (cb: (e: PetEvent) => void) => transport.listen<PetEvent>("pet-event", cb),
   onPetOpen: (cb: (o: PetOpen) => void) => transport.listen<PetOpen>("pet-open", cb),
+  onPetPointer: (cb: (id: string | null) => void) => transport.listen<string | null>("pet-pointer", cb),
   onSettingsView: (cb: (v: SettingsView) => void) => transport.listen<SettingsView>("settings-view", cb),
 
   // Window and OS helpers.

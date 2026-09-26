@@ -96,6 +96,8 @@ export interface HitRect {
   y: number;
   w: number;
   h: number;
+  /** Set for elements whose hover matters ("pet", "bar"); the backend reports it back via `pet-pointer`. */
+  id?: string;
 }
 
 export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string };

@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Manager, Monitor, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow};
 
 use crate::state::AppState;
 
@@ -14,12 +14,15 @@ pub const POLL_MS: u64 = 33;
 pub const EDGE_MARGIN: f64 = 16.0;
 
 /// An interactive rectangle reported by the frontend, in window-relative CSS px.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct HitRect {
     pub x: f64,
     pub y: f64,
     pub w: f64,
     pub h: f64,
+    /// Names elements whose hover the pet reacts to (the value of their `data-hit`).
+    #[serde(default)]
+    pub id: Option<String>,
 }
 
 /// A screen rectangle in physical px.
@@ -31,14 +34,24 @@ pub struct Area {
     pub h: i32,
 }
 
-/// Whether a physical cursor position falls inside any padded rect of a window at `origin` with `scale`.
-pub fn cursor_hits(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[HitRect]) -> bool {
+/// The first padded rect under a physical cursor position, for a window at `origin` with `scale`.
+fn hit_at(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[HitRect]) -> Option<&HitRect> {
     let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
     let x = (cursor.0 - f64::from(origin.0)) / scale;
     let y = (cursor.1 - f64::from(origin.1)) / scale;
-    rects.iter().any(|r| {
+    rects.iter().find(|r| {
         x >= r.x - HIT_PADDING && x <= r.x + r.w + HIT_PADDING && y >= r.y - HIT_PADDING && y <= r.y + r.h + HIT_PADDING
     })
+}
+
+/// Whether a physical cursor position falls inside any padded rect.
+pub fn cursor_hits(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[HitRect]) -> bool {
+    hit_at(cursor, origin, scale, rects).is_some()
+}
+
+/// The id of the rect under the cursor, if that rect has one.
+pub fn hovered_id(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[HitRect]) -> Option<String> {
+    hit_at(cursor, origin, scale, rects).and_then(|r| r.id.clone())
 }
 
 /// Moves a window of `size` fully inside `area`. A window taller than the area keeps its bottom edge
@@ -141,9 +154,13 @@ pub fn move_pet_by(app: &AppHandle, dx: f64, dy: f64) {
 }
 
 /// Polls the cursor and lets clicks fall through the pet window except over the reported rects.
+///
+/// Also emits `pet-pointer` with the hovered rect's id whenever it changes. The webview can't
+/// track hover itself: once the window turns click-through it never sees the pointer leave.
 pub fn start_click_through(app: AppHandle) {
     std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
+        let mut hovered: Option<String> = None;
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
             // Until the frontend reports its rects, the whole window stays interactive.
@@ -152,9 +169,16 @@ pub fn start_click_through(app: AppHandle) {
             let Ok(cursor) = app.cursor_position() else { continue };
             let Ok(origin) = pet.inner_position().or_else(|_| pet.outer_position()) else { continue };
             let Ok(scale) = pet.scale_factor() else { continue };
-            let ignore = !cursor_hits((cursor.x, cursor.y), (origin.x, origin.y), scale, &rects);
+            let cursor = (cursor.x, cursor.y);
+            let origin = (origin.x, origin.y);
+            let ignore = !cursor_hits(cursor, origin, scale, &rects);
             if ignoring != Some(ignore) && pet.set_ignore_cursor_events(ignore).is_ok() {
                 ignoring = Some(ignore);
+            }
+            let id = hovered_id(cursor, origin, scale, &rects);
+            if id != hovered {
+                let _ = app.emit_to(PET, "pet-pointer", &id);
+                hovered = id;
             }
         }
     });
@@ -164,7 +188,7 @@ pub fn start_click_through(app: AppHandle) {
 mod tests {
     use super::*;
 
-    const RECT: HitRect = HitRect { x: 100.0, y: 400.0, w: 50.0, h: 40.0 };
+    const RECT: HitRect = HitRect { x: 100.0, y: 400.0, w: 50.0, h: 40.0, id: None };
 
     #[test]
     fn hit_test_at_scale_one() {
@@ -195,8 +219,8 @@ mod tests {
 
     #[test]
     fn hit_test_any_of_several_rects() {
-        let other = HitRect { x: 0.0, y: 0.0, w: 10.0, h: 10.0 };
-        assert!(cursor_hits((5.0, 5.0), (0, 0), 1.0, &[RECT, other]));
+        let other = HitRect { x: 0.0, y: 0.0, w: 10.0, h: 10.0, id: None };
+        assert!(cursor_hits((5.0, 5.0), (0, 0), 1.0, &[RECT, other.clone()]));
         assert!(cursor_hits((120.0, 420.0), (0, 0), 1.0, &[other, RECT]));
     }
 
@@ -247,7 +271,21 @@ mod tests {
 
     #[test]
     fn hit_rects_parse_from_the_frontend() {
-        let r: Vec<HitRect> = serde_json::from_str(r#"[{"x":1,"y":2.5,"w":3,"h":4}]"#).unwrap();
-        assert_eq!(r, vec![HitRect { x: 1.0, y: 2.5, w: 3.0, h: 4.0 }]);
+        let r: Vec<HitRect> =
+            serde_json::from_str(r#"[{"x":1,"y":2.5,"w":3,"h":4},{"x":0,"y":0,"w":1,"h":1,"id":"pet"}]"#).unwrap();
+        assert_eq!(r[0], HitRect { x: 1.0, y: 2.5, w: 3.0, h: 4.0, id: None });
+        assert_eq!(r[1].id.as_deref(), Some("pet"));
+    }
+
+    #[test]
+    fn hovered_id_names_the_rect_under_the_cursor() {
+        let card = HitRect { x: 0.0, y: 0.0, w: 80.0, h: 80.0, id: None };
+        let pet = HitRect { x: 100.0, y: 400.0, w: 50.0, h: 40.0, id: Some("pet".into()) };
+        let bar = HitRect { x: 100.0, y: 450.0, w: 50.0, h: 20.0, id: Some("bar".into()) };
+        let rects = [card, pet, bar];
+        assert_eq!(hovered_id((120.0, 420.0), (0, 0), 1.0, &rects).as_deref(), Some("pet"));
+        assert_eq!(hovered_id((120.0, 460.0), (0, 0), 1.0, &rects).as_deref(), Some("bar"));
+        assert_eq!(hovered_id((40.0, 40.0), (0, 0), 1.0, &rects), None);
+        assert_eq!(hovered_id((300.0, 300.0), (0, 0), 1.0, &rects), None);
     }
 }

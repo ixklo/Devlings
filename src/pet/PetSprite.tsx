@@ -36,7 +36,7 @@ export function PetSprite({ src, scale, clip, onClipDone, label, badge, onActiva
       tabIndex={0}
       aria-label={label}
       title={label}
-      data-hit=""
+      data-hit="pet"
       onPointerEnter={onHover}
       onPointerDown={(e) => {
         if (e.button !== 0) return;

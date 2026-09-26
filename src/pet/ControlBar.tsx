@@ -25,7 +25,7 @@ export function ControlBar({
       className={`control-bar${visible ? " is-visible" : ""}`}
       role="toolbar"
       aria-label="Pet controls"
-      data-hit={visible ? "" : undefined}
+      data-hit={visible ? "bar" : undefined}
     >
       <button
         type="button"
