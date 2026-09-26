@@ -1,0 +1,280 @@
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { api } from "../shared/api";
+import { useNow } from "../shared/time";
+import type { PetState, ProjectEntry, Snapshot, ThreadInfo } from "../shared/types";
+import { useSnapshot } from "../shared/useSnapshot";
+import {
+  animReducer,
+  becameReady,
+  DRAG_SETTLE_MS,
+  dragDirection,
+  initialAnim,
+  resolveClip,
+} from "../sprite/petAnimation";
+import { usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { BubbleStack } from "./BubbleStack";
+import { ComposerCard } from "./ComposerCard";
+import { ControlBar } from "./ControlBar";
+import { PetSprite, type Badge } from "./PetSprite";
+import { ThreadView } from "./ThreadView";
+import { useConversation } from "./useConversation";
+import { useHitRegions } from "./useHitRegions";
+import "./pet.css";
+
+type View = { kind: "bubbles" } | { kind: "compose" } | { kind: "thread"; project: string; sessionId: string | null };
+
+const BUBBLES: View = { kind: "bubbles" };
+const HOVER_GRACE_MS = 350;
+const ARROWS: Record<string, [number, number]> = {
+  ArrowLeft: [-20, 0],
+  ArrowRight: [20, 0],
+  ArrowUp: [0, -20],
+  ArrowDown: [0, 20],
+};
+
+const STATE_LABEL: Record<PetState, string> = {
+  idle: "idle",
+  running: "working",
+  needs_input: "needs you",
+  ready: "done",
+  blocked: "something went wrong",
+  setup: "needs setup",
+};
+
+function mostRecent(projects: ProjectEntry[]): ProjectEntry | undefined {
+  return projects.reduce<ProjectEntry | undefined>((best, p) => (!best || p.lastSeen > best.lastSeen ? p : best), undefined);
+}
+
+function badgeFor(threads: ThreadInfo[]): Badge | null {
+  if (!threads.length) return null;
+  const tone = threads.some((t) => t.status === "needs_input")
+    ? "wait"
+    : threads.some((t) => t.status === "blocked")
+      ? "err"
+      : "neutral";
+  return { count: threads.length, tone };
+}
+
+function setupDetail(snap: Snapshot): string {
+  const s = snap.setup;
+  if (s.claudeError) return s.claudeError;
+  if (s.auth?.status === "refused") return s.auth.reason;
+  if (s.hookServerError) return s.hookServerError;
+  return "A couple of things need a look.";
+}
+
+/** The transparent overlay window: bubbles or a card above the pet, control bar below. */
+export function PetApp() {
+  const snap = useSnapshot();
+  const conversation = useConversation();
+  const reduced = useReducedMotion();
+  const now = useNow();
+  const [view, setView] = useState<View>(BUBBLES);
+  const [project, setProject] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [anim, dispatch] = useReducer(animReducer, initialAnim);
+  const src = usePetSprite(snap ? snap.config.petId : null);
+
+  const snapRef = useRef(snap);
+  snapRef.current = snap;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  const refreshHits = useHitRegions((regions) => {
+    api.setHitRegions(regions).catch(() => {});
+  });
+
+  // Composer defaults to the most recently used project.
+  useEffect(() => {
+    if (snap && !project) {
+      const p = mostRecent(snap.projects);
+      if (p) setProject(p.path);
+    }
+  }, [snap, project]);
+
+  // One jump when a thread becomes ready, then the review loop.
+  const prevThreads = useRef<ThreadInfo[] | null>(null);
+  useEffect(() => {
+    if (!snap) return;
+    if (!reduced && becameReady(prevThreads.current, snap.threads)) dispatch({ type: "ready" });
+    prevThreads.current = snap.threads;
+  }, [snap, reduced]);
+
+  // Window moves: run left/right while dragging, and remember where the pet sits.
+  useEffect(() => {
+    let prev: { x: number; y: number } | null = null;
+    let settle: number | undefined;
+    let save: number | undefined;
+    const unlisten = api.onMoved((pos) => {
+      if (prev) {
+        const dir = dragDirection(pos.x - prev.x);
+        if (dir) dispatch({ type: "drag", dir });
+      }
+      prev = pos;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => dispatch({ type: "dragEnd" }), DRAG_SETTLE_MS);
+      window.clearTimeout(save);
+      save = window.setTimeout(() => api.savePetPosition(pos.x, pos.y).catch(() => {}), 400);
+    });
+    return () => {
+      unlisten.then((f) => f());
+      window.clearTimeout(settle);
+      window.clearTimeout(save);
+    };
+  }, []);
+
+  const openThread = useCallback(
+    (path: string, sessionId: string | null = null) => {
+      conversation.open(path);
+      setProject(path);
+      setView({ kind: "thread", project: path, sessionId });
+    },
+    [conversation.open],
+  );
+
+  // Tray and shortcut ask the pet to open a view.
+  useEffect(() => {
+    const unlisten = api.onPetOpen((o) => {
+      if (o.view === "compose") {
+        setView({ kind: "compose" });
+        return;
+      }
+      const s = snapRef.current;
+      const path =
+        s?.threads.find((t) => t.sessionId === o.sessionId)?.project ??
+        s?.projects.find((p) => p.askSessionId === o.sessionId)?.path;
+      if (path) openThread(path, o.sessionId);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [openThread]);
+
+  // Keyboard: Esc closes the open card (or re-homes the pet), arrows nudge the window.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      // Inside a card, keys belong to the card (carets, scrolling, menus).
+      const typing = !!target?.closest?.("textarea, input, .card, [role='menu'], [aria-haspopup]");
+      if (e.key === "Escape") {
+        if (viewRef.current.kind !== "bubbles") setView(BUBBLES);
+        else if (!typing) api.resetPetPosition().catch(() => {});
+        return;
+      }
+      const delta = ARROWS[e.key];
+      if (delta && !typing) {
+        e.preventDefault();
+        api.movePetBy(delta[0], delta[1]).catch(() => {});
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const enterDock = () => {
+    window.clearTimeout(hoverTimer.current);
+    setHover(true);
+  };
+  const leaveDock = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHover(false), HOVER_GRACE_MS);
+  };
+
+  useEffect(() => {
+    refreshHits();
+  }, [view, expanded, hover, snap, src, refreshHits]);
+
+  const onClipDone = useCallback(() => dispatch({ type: "clipDone" }), []);
+
+  if (!snap) return null;
+
+  const { config } = snap;
+  const collapsed = config.threadsCollapsed;
+  const threads = snap.threads;
+  const barVisible = hover || view.kind !== "bubbles" || threads.length > 0;
+  const clip = resolveClip(snap.petState, anim, reduced);
+  const toggleComposer = () => setView((v) => (v.kind === "bubbles" ? { kind: "compose" } : BUBBLES));
+  const closeView = () => setView(BUBBLES);
+
+  const sendNew = async (path: string, text: string) => {
+    conversation.open(path);
+    await conversation.send(text);
+    setView({ kind: "thread", project: path, sessionId: null });
+  };
+
+  const openSetup = () => api.openSettings(config.onboarded ? "settings" : "onboarding").catch(() => {});
+
+  return (
+    <main className="overlay" data-pet-state={snap.petState}>
+      <div className="stage">
+        {view.kind === "compose" && (
+          <ComposerCard
+            snap={snap}
+            project={project}
+            draft={draft}
+            onDraftChange={setDraft}
+            onProjectChange={setProject}
+            onSend={sendNew}
+            onClose={closeView}
+            onOpenThread={(p) => openThread(p)}
+          />
+        )}
+        {view.kind === "thread" && (
+          <ThreadView
+            key={view.project}
+            snap={snap}
+            project={view.project}
+            initialSessionId={view.sessionId}
+            conversation={conversation}
+            onClose={closeView}
+          />
+        )}
+        {view.kind === "bubbles" && (
+          <BubbleStack
+            threads={collapsed ? [] : threads}
+            now={now}
+            expanded={expanded}
+            onToggleExpanded={() => setExpanded((x) => !x)}
+            onOpenThread={(t) => openThread(t.project, t.sessionId)}
+            setup={snap.setup.needsSetup ? { detail: setupDetail(snap), onOpen: openSetup } : null}
+          />
+        )}
+      </div>
+      <div className="dock" onPointerEnter={enterDock} onPointerLeave={leaveDock} onFocus={enterDock} onBlur={leaveDock}>
+        <PetSprite
+          src={src}
+          scale={config.petScale || 0.6}
+          clip={clip}
+          onClipDone={onClipDone}
+          label={`${config.petName}, ${STATE_LABEL[snap.petState]}. Click to ask, drag to move.`}
+          badge={collapsed ? badgeFor(threads) : null}
+          onActivate={toggleComposer}
+          onHover={() => {
+            if (!reduced) dispatch({ type: "hover", now: performance.now() });
+          }}
+        />
+        <ControlBar
+          visible={barVisible}
+          composerOpen={view.kind === "compose"}
+          notifications={config.notifications}
+          collapsed={collapsed}
+          onCompose={toggleComposer}
+          onToggleNotifications={() => api.setNotifications(!config.notifications).catch(() => {})}
+          onToggleCollapsed={() => {
+            setExpanded(false);
+            if (view.kind !== "bubbles") {
+              // From a card, the chevron goes back to the threads.
+              setView(BUBBLES);
+              if (collapsed) api.setThreadsCollapsed(false).catch(() => {});
+              return;
+            }
+            api.setThreadsCollapsed(!collapsed).catch(() => {});
+          }}
+        />
+      </div>
+    </main>
+  );
+}

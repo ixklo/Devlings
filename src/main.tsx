@@ -1,13 +1,27 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Panel } from "./panel/Panel";
-import { Pet } from "./pet/Pet";
+import { setTransport } from "./shared/api";
+import { isTauri, windowLabel } from "./shared/env";
 import "./styles.css";
 
-const label = getCurrentWindow().label;
-document.body.dataset.window = label;
+async function boot() {
+  if (!isTauri()) {
+    // Plain browser: render against the fake backend (see shared/mock.ts).
+    const { createMockTransport } = await import("./shared/mock");
+    setTransport(createMockTransport());
+  }
+  const label = windowLabel();
+  document.body.dataset.window = label;
+  document.title = label === "pet" ? "Perch" : "Perch Settings";
+  const App =
+    label === "pet"
+      ? (await import("./pet/PetApp")).PetApp
+      : (await import("./settings/SettingsApp")).SettingsApp;
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>{label === "pet" ? <Pet /> : <Panel />}</React.StrictMode>,
-);
+void boot();
