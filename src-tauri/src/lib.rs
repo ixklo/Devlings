@@ -75,6 +75,7 @@ pub fn run() {
             commands::open_pets_folder,
             commands::reset_pet_position,
             commands::move_pet_by,
+            commands::drag_pet_by,
             commands::show_pet_menu,
             commands::save_pet_position,
         ])

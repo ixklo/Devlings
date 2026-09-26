@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { fakeTransport } from "../test/fakeTransport";
-import { PetSprite } from "./PetSprite";
+import { DRAG_FLUSH_MS, PetSprite } from "./PetSprite";
 
 const clip = { name: "idle" as const, loop: true, still: true, key: "still-idle" };
 
@@ -9,6 +9,8 @@ function setup(badge: { count: number; tone: "neutral" | "wait" | "err" } | null
   const fake = fakeTransport();
   const onActivate = vi.fn();
   const onHover = vi.fn();
+  const onDragStart = vi.fn();
+  const onDragEnd = vi.fn();
   render(
     <PetSprite
       src="data:image/png;base64,AAAA"
@@ -19,9 +21,11 @@ function setup(badge: { count: number; tone: "neutral" | "wait" | "err" } | null
       badge={badge}
       onActivate={onActivate}
       onHover={onHover}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
     />,
   );
-  return { ...fake, onActivate, onHover, pet: screen.getByRole("button", { name: "Mochi, idle" }) };
+  return { ...fake, onActivate, onHover, onDragStart, onDragEnd, pet: screen.getByRole("button", { name: "Mochi, idle" }) };
 }
 
 describe("PetSprite", () => {
@@ -45,12 +49,41 @@ describe("PetSprite", () => {
     expect(transport.startDragging).not.toHaveBeenCalled();
   });
 
-  it("starts a window drag after 4 px of movement, and that is not a click", () => {
-    const { pet, onActivate, transport } = setup();
+  it("drags the window itself after 4 px, batching moves, and that is not a click", async () => {
+    const { pet, onActivate, transport, calls, onDragEnd } = setup();
     fireEvent.pointerDown(pet, { button: 0, screenX: 100, screenY: 100 });
     fireEvent.pointerMove(pet, { screenX: 106, screenY: 100 });
+    fireEvent.pointerMove(pet, { screenX: 110, screenY: 97 });
+    await new Promise((r) => setTimeout(r, DRAG_FLUSH_MS * 3));
+    expect(calls.filter(([c]) => c === "drag_pet_by")).toEqual([["drag_pet_by", { dx: 10, dy: -3 }]]);
+    fireEvent.pointerMove(pet, { screenX: 112, screenY: 97 });
     fireEvent.pointerUp(pet, { button: 0 });
-    expect(transport.startDragging).toHaveBeenCalledTimes(1);
+    // Release flushes what's left right away.
+    expect(calls.filter(([c]) => c === "drag_pet_by").at(-1)).toEqual(["drag_pet_by", { dx: 2, dy: 0 }]);
+    expect(onDragEnd).toHaveBeenCalledTimes(1);
+    expect(onActivate).not.toHaveBeenCalled();
+    expect(transport.startDragging).not.toHaveBeenCalled();
+  });
+
+  it("reports the drag direction when a drag starts", () => {
+    const right = setup();
+    fireEvent.pointerDown(right.pet, { button: 0, screenX: 100, screenY: 100 });
+    fireEvent.pointerMove(right.pet, { screenX: 106, screenY: 100 });
+    expect(right.onDragStart).toHaveBeenCalledWith("right");
+    cleanup();
+    const left = setup();
+    fireEvent.pointerDown(left.pet, { button: 0, screenX: 100, screenY: 100 });
+    fireEvent.pointerMove(left.pet, { screenX: 94, screenY: 102 });
+    expect(left.onDragStart).toHaveBeenCalledWith("left");
+  });
+
+  it("ends the drag if the pointer is cancelled", () => {
+    const { pet, onDragEnd, onActivate } = setup();
+    fireEvent.pointerDown(pet, { button: 0, screenX: 100, screenY: 100 });
+    fireEvent.pointerMove(pet, { screenX: 120, screenY: 100 });
+    fireEvent.pointerCancel(pet);
+    expect(onDragEnd).toHaveBeenCalledTimes(1);
+    fireEvent.pointerUp(pet, { button: 0 });
     expect(onActivate).not.toHaveBeenCalled();
   });
 

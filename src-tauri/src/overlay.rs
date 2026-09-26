@@ -143,13 +143,20 @@ pub fn reset_pet_position(app: &AppHandle) {
     remember(app, None);
 }
 
-/// Nudges the pet by logical px, keeping it inside a work area.
-pub fn move_pet_by(app: &AppHandle, dx: f64, dy: f64) {
-    let Some(pet) = pet_window(app) else { return };
-    let (Ok(pos), Ok(scale)) = (pet.outer_position(), pet.scale_factor()) else { return };
+/// Moves the pet by logical px, keeping it inside a work area. Returns the new position.
+/// Used on every pointer move while dragging, so it doesn't save; the frontend saves when the move settles.
+pub fn drag_pet_by(app: &AppHandle, dx: f64, dy: f64) -> Option<(i32, i32)> {
+    let pet = pet_window(app)?;
+    let (Ok(pos), Ok(scale)) = (pet.outer_position(), pet.scale_factor()) else { return None };
     let target = (pos.x + (dx * scale).round() as i32, pos.y + (dy * scale).round() as i32);
     let pos = clamp_position(target, outer_size(&pet), &work_areas(&pet)).unwrap_or(target);
     set_pos(&pet, pos);
+    Some(pos)
+}
+
+/// Nudges the pet by logical px (arrow keys) and saves the new spot.
+pub fn move_pet_by(app: &AppHandle, dx: f64, dy: f64) {
+    let Some(pos) = drag_pet_by(app, dx, dy) else { return };
     remember(app, Some(pos));
 }
 

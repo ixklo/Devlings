@@ -177,6 +177,7 @@ export function PetApp() {
   }, []);
 
   const hoverTimer = useRef<number | undefined>(undefined);
+  const dragSafety = useRef<number | undefined>(undefined);
   const enterDock = () => {
     window.clearTimeout(hoverTimer.current);
     setHover(true);
@@ -278,6 +279,16 @@ export function PetApp() {
           onActivate={toggleComposer}
           onHover={() => {
             if (!reduced) dispatch({ type: "hover", now: performance.now() });
+          }}
+          onDragStart={(dir) => {
+            dispatch({ type: "drag", dir });
+            // In case neither a buttonless move nor the post-drag move events ever arrive.
+            window.clearTimeout(dragSafety.current);
+            dragSafety.current = window.setTimeout(() => dispatch({ type: "dragEnd" }), 15_000);
+          }}
+          onDragEnd={() => {
+            window.clearTimeout(dragSafety.current);
+            dispatch({ type: "dragEnd" });
           }}
         />
         <ControlBar

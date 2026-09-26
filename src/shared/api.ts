@@ -92,6 +92,7 @@ export const api = {
   setThreadsCollapsed: (collapsed: boolean) => call<Snapshot>("set_threads_collapsed", { collapsed }),
   resetPetPosition: () => call<void>("reset_pet_position"),
   movePetBy: (dx: number, dy: number) => call<void>("move_pet_by", { dx, dy }),
+  dragPetBy: (dx: number, dy: number) => call<void>("drag_pet_by", { dx, dy }),
   openSettings: (view: SettingsView) => call<void>("open_settings", { view }),
   closeSettings: () => call<void>("close_settings"),
   openPetsFolder: () => call<void>("open_pets_folder"),

@@ -340,6 +340,11 @@ pub fn move_pet_by(app: AppHandle, dx: f64, dy: f64) {
 }
 
 #[tauri::command]
+pub fn drag_pet_by(app: AppHandle, dx: f64, dy: f64) {
+    overlay::drag_pet_by(&app, dx, dy);
+}
+
+#[tauri::command]
 pub fn show_pet_menu(window: Window) -> CmdResult<()> {
     shell::show_pet_menu(&window).map_err(|e| e.to_string())
 }
