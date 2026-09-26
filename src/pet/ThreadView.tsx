@@ -16,12 +16,14 @@ interface Props {
   project: string;
   /** The session the view was opened for, if any (from a card or the tray). */
   initialSessionId: string | null;
+  /** A prompt typed in the composer; sent once when the view opens. */
+  initialPrompt?: string;
   conversation: Conversation;
   onClose: () => void;
 }
 
 /** The mini chat for one Ask thread: header, streamed messages, follow-up box. */
-export function ThreadView({ snap, project, initialSessionId, conversation, onClose }: Props) {
+export function ThreadView({ snap, project, initialSessionId, initialPrompt, conversation, onClose }: Props) {
   const entry = snap.projects.find((p) => samePath(p.path, project)) ?? null;
   const thread =
     snap.threads.find((t) => t.source === "ask" && samePath(t.project, project)) ??
@@ -61,6 +63,15 @@ export function ThreadView({ snap, project, initialSessionId, conversation, onCl
     setDraft("");
     if (!(await gate.submit(text))) setDraft(text);
   };
+
+  // The ref survives StrictMode's double effect run, so the composer's prompt is sent once.
+  const initialSent = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialSent.current) return;
+    initialSent.current = true;
+    void submit(initialPrompt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrompt]);
 
   const statusText = status === "idle" ? "" : STATUS_TEXT[status];
   const activity = running ? (thread?.status === "running" && thread.label ? thread.label : "Thinking…") : null;

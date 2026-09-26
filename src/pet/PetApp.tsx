@@ -21,7 +21,10 @@ import { useConversation } from "./useConversation";
 import { useHitRegions } from "./useHitRegions";
 import "./pet.css";
 
-type View = { kind: "bubbles" } | { kind: "compose" } | { kind: "thread"; project: string; sessionId: string | null };
+type View =
+  | { kind: "bubbles" }
+  | { kind: "compose" }
+  | { kind: "thread"; project: string; sessionId: string | null; initialPrompt?: string };
 
 const BUBBLES: View = { kind: "bubbles" };
 const HOVER_GRACE_MS = 350;
@@ -199,10 +202,11 @@ export function PetApp() {
   const toggleComposer = () => setView((v) => (v.kind === "bubbles" ? { kind: "compose" } : BUBBLES));
   const closeView = () => setView(BUBBLES);
 
+  // Switch to the thread right away and let it send, so the chat appears instantly
+  // and closing it while Claude Code starts up isn't undone when the send resolves.
   const sendNew = async (path: string, text: string) => {
     conversation.open(path);
-    await conversation.send(text);
-    setView({ kind: "thread", project: path, sessionId: null });
+    setView({ kind: "thread", project: path, sessionId: null, initialPrompt: text });
   };
 
   const openSetup = () => api.openSettings(config.onboarded ? "settings" : "onboarding").catch(() => {});
@@ -228,6 +232,7 @@ export function PetApp() {
             snap={snap}
             project={view.project}
             initialSessionId={view.sessionId}
+            initialPrompt={view.initialPrompt}
             conversation={conversation}
             onClose={closeView}
           />
