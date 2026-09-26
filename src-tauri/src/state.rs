@@ -22,6 +22,7 @@ use crate::{
     locator::{self, Located},
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
+    pets::{self, Pet},
     runner::{self, KillReason},
     shell,
     store::{self, Config, ProjectEntry, Projects},
@@ -54,6 +55,7 @@ pub struct AppState {
     pub stop_requested: Mutex<HashSet<String>>,
     pub ask_sids: Mutex<HashMap<String, String>>,
     pub last_view: Mutex<Option<ViewKey>>,
+    pub pets: Mutex<Vec<Pet>>,
 }
 
 impl AppState {
@@ -76,6 +78,7 @@ impl AppState {
             stop_requested: Mutex::new(HashSet::new()),
             ask_sids: Mutex::new(HashMap::new()),
             last_view: Mutex::new(None),
+            pets: Mutex::new(Vec::new()),
         })
     }
 
@@ -144,8 +147,26 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     let pet_state = threads::pet_state(&threads, setup.needs_setup);
     let projects = s.projects.lock().unwrap().sorted();
     let running = s.running.lock().unwrap().keys().cloned().collect();
-    let config = s.config.lock().unwrap().clone();
+    let mut config = s.config.lock().unwrap().clone();
+    // Report the pet that is actually shown, so a removed pet falls back to the default everywhere.
+    if let Some(pet) = pets::resolve(&s.pets.lock().unwrap(), &config.pet_id) {
+        config.pet_id = pet.info.id.clone();
+    }
     Snapshot { config, pet_state, threads, projects, running, setup }
+}
+
+/// Rescans every pet folder and caches the result.
+pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
+    let s = app.state::<AppState>();
+    let home = dirs::home_dir().unwrap_or_default();
+    let roots = pets::roots(
+        app.path().resource_dir().ok(),
+        &s.data_dir,
+        &pets::codex_home(std::env::var_os("CODEX_HOME"), &home),
+    );
+    let found = pets::discover(&roots);
+    *s.pets.lock().unwrap() = found.clone();
+    found
 }
 
 pub fn emit_snapshot(app: &AppHandle) {
@@ -279,6 +300,7 @@ pub fn recheck_setup(app: &AppHandle) {
 
 pub fn boot(app: AppHandle) {
     std::thread::spawn(move || {
+        refresh_pets(&app);
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);

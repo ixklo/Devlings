@@ -6,6 +6,7 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::{
     hooks_installer,
     money_guard::AuthVerdict,
+    pets::{self, PetInfo},
     runner::{self, AskRequest},
     shell,
     state::{self, now_ms, AppState, Snapshot},
@@ -261,6 +262,37 @@ pub fn set_pet_scale(app: AppHandle, scale: f64) -> Snapshot {
     s.config.lock().unwrap().pet_scale = store::clamp_pet_scale(scale);
     s.save_config();
     publish(&app)
+}
+
+#[tauri::command]
+pub async fn list_pets(app: AppHandle) -> Vec<PetInfo> {
+    state::refresh_pets(&app).into_iter().map(|p| p.info).collect()
+}
+
+#[tauri::command]
+pub async fn get_pet_sprite(app: AppHandle, id: String) -> CmdResult<String> {
+    let cached = app.state::<AppState>().pets.lock().unwrap().iter().find(|p| p.info.id == id).cloned();
+    let pet = match cached {
+        Some(p) => p,
+        None => pets::resolve(&state::refresh_pets(&app), &id).cloned().ok_or("No pets found.")?,
+    };
+    pets::sprite_data_url(&pet.sprite)
+}
+
+#[tauri::command]
+pub async fn set_pet(app: AppHandle, id: String) -> CmdResult<Snapshot> {
+    choose_pet(&app, &id)?;
+    Ok(publish(&app))
+}
+
+pub fn choose_pet(app: &AppHandle, id: &str) -> CmdResult<()> {
+    if !state::refresh_pets(app).iter().any(|p| p.info.id == id) {
+        return Err("That pet wasn't found.".into());
+    }
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().pet_id = id.to_string();
+    s.save_config();
+    Ok(())
 }
 
 #[tauri::command]

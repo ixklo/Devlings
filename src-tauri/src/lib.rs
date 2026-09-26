@@ -5,6 +5,7 @@ mod hooks_installer;
 mod locator;
 mod money_guard;
 mod normalize;
+mod pets;
 mod runner;
 mod shell;
 mod state;
@@ -62,6 +63,9 @@ pub fn run() {
             commands::set_focused_thread,
             commands::set_threads_collapsed,
             commands::set_pet_scale,
+            commands::list_pets,
+            commands::get_pet_sprite,
+            commands::set_pet,
             commands::toggle_panel,
             commands::close_panel,
             commands::show_pet_menu,
