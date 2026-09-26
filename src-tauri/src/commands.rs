@@ -242,6 +242,33 @@ pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> CmdResult<Snapshot>
 }
 
 #[tauri::command]
+pub fn mark_viewed(app: AppHandle, session_id: String) -> Snapshot {
+    app.state::<AppState>().threads.lock().unwrap().mark_viewed(&session_id);
+    publish(&app)
+}
+
+#[tauri::command]
+pub fn set_threads_collapsed(app: AppHandle, collapsed: bool) -> Snapshot {
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().threads_collapsed = collapsed;
+    s.save_config();
+    publish(&app)
+}
+
+#[tauri::command]
+pub fn set_pet_scale(app: AppHandle, scale: f64) -> Snapshot {
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().pet_scale = store::clamp_pet_scale(scale);
+    s.save_config();
+    publish(&app)
+}
+
+#[tauri::command]
+pub fn set_focused_thread(app: AppHandle, session_id: Option<String>) {
+    *app.state::<AppState>().focused_thread.lock().unwrap() = session_id;
+}
+
+#[tauri::command]
 pub fn toggle_panel(app: AppHandle) -> CmdResult<()> {
     shell::toggle_panel(&app).map_err(|e| e.to_string())
 }

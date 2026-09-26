@@ -34,16 +34,3 @@ pub struct PetEvent {
     pub text: Option<String>,
     pub at: i64,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Mood {
-    Setup,
-    NeedsYou,
-    Failed,
-    Working,
-    Done,
-    Listening,
-    Sleeping,
-    Idle,
-}

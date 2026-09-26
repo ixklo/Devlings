@@ -1,4 +1,4 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::time::Duration;
 
 use tauri::{
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
@@ -8,8 +8,8 @@ use tauri::{
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::{
-    events::Mood,
     state::{self, AppState, Snapshot},
+    threads::PetState,
 };
 
 const TRAY_ID: &str = "perch-tray";
@@ -37,22 +37,20 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn mood_words(m: Mood) -> &'static str {
-    match m {
-        Mood::Setup => "needs setup",
-        Mood::NeedsYou => "needs you",
-        Mood::Failed => "hit a problem",
-        Mood::Working => "is working",
-        Mood::Done => "is done",
-        Mood::Listening => "is listening",
-        Mood::Sleeping => "is sleeping",
-        Mood::Idle => "is idle",
+fn state_words(s: PetState) -> &'static str {
+    match s {
+        PetState::Setup => "needs setup",
+        PetState::NeedsInput => "needs you",
+        PetState::Blocked => "hit a problem",
+        PetState::Ready => "has a reply",
+        PetState::Running => "is working",
+        PetState::Idle => "is idle",
     }
 }
 
 pub fn update_tray_tooltip(app: &AppHandle, snap: &Snapshot) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(format!("{} {}", snap.config.pet_name, mood_words(snap.mood))));
+        let _ = tray.set_tooltip(Some(format!("{} {}", snap.config.pet_name, state_words(snap.pet_state))));
     }
 }
 
@@ -127,17 +125,13 @@ pub fn open_panel(app: &AppHandle, view: &str) -> tauri::Result<()> {
         panel.unminimize()?;
     }
     panel.set_focus()?;
-    app.state::<AppState>().panel_open.store(true, Ordering::SeqCst);
     let _ = app.emit_to("panel", "panel-view", view);
     state::emit_snapshot(app);
     Ok(())
 }
 
 pub fn close_panel(app: &AppHandle) -> tauri::Result<()> {
-    window(app, "panel").hide()?;
-    app.state::<AppState>().panel_open.store(false, Ordering::SeqCst);
-    state::emit_snapshot(app);
-    Ok(())
+    window(app, "panel").hide()
 }
 
 pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {

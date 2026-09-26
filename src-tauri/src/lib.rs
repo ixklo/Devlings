@@ -6,10 +6,10 @@ mod locator;
 mod money_guard;
 mod normalize;
 mod runner;
-mod sessions;
 mod shell;
 mod state;
 mod store;
+mod threads;
 mod transcript;
 
 pub fn run() {
@@ -58,6 +58,10 @@ pub fn run() {
             commands::finish_onboarding,
             commands::set_notifications,
             commands::set_launch_at_login,
+            commands::mark_viewed,
+            commands::set_focused_thread,
+            commands::set_threads_collapsed,
+            commands::set_pet_scale,
             commands::toggle_panel,
             commands::close_panel,
             commands::show_pet_menu,
