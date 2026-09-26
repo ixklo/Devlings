@@ -1,0 +1,6 @@
+{
+  "id": "perch",
+  "displayName": "Perch",
+  "description": "A round little teal songbird who keeps an eye on your Claude Code sessions.",
+  "spritesheetPath": "spritesheet.png"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "perch-pet-art",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Generator and validator for Perch's bundled pixel-art pets (Codex pet atlas format).",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "validate": "node validate.mjs"
+  },
+  "dependencies": {
+    "pngjs": "^7.0.0"
+  }
+}
