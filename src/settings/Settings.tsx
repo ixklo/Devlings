@@ -1,122 +1,221 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useState } from "react";
 import { api } from "../shared/api";
+import { IconExternal, IconFolder, IconGithub, IconRefresh, IconTerminal } from "../shared/icons";
 import type { Snapshot } from "../shared/types";
+import { idleClip, SpriteView, usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { Section, Segmented, SwitchRow } from "./controls";
+import { NameField } from "./NameField";
+import { PetPicker } from "./PetPicker";
 import { SetupChecks } from "./SetupChecks";
+import { useAction } from "./useAction";
+import { NoticeBar } from "./NoticeBar";
 
-export function Settings({ snap, onBack }: { snap: Snapshot; onBack: () => void }) {
-  const [name, setName] = useState(snap.config.petName);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const pet = snap.config.petName;
+export const REPO_URL = "https://github.com/yeetstick/perch";
+const USAGE_URL = "https://claude.ai/settings/usage";
 
-  const act = async (action: () => Promise<unknown>, ok?: string) => {
-    setMessage(null);
-    try {
-      await action();
-      if (ok) setMessage({ ok: true, text: ok });
-    } catch (e) {
-      setMessage({ ok: false, text: String(e) });
-    }
-  };
+type Size = "s" | "m" | "l";
+export const SIZES: Record<Size, number> = { s: 0.45, m: 0.6, l: 0.8 };
+
+function sizeFor(scale: number): Size {
+  return (Object.keys(SIZES) as Size[]).reduce((best, k) =>
+    Math.abs(SIZES[k] - scale) < Math.abs(SIZES[best] - scale) ? k : best,
+  );
+}
+
+export function Settings({ snap }: { snap: Snapshot }) {
+  const { config, setup } = snap;
+  const pet = config.petName;
+  const action = useAction();
+  const reduced = useReducedMotion();
+  const avatar = usePetSprite(config.petId);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.appVersion().then(setVersion, () => setVersion(null));
+  }, []);
 
   const chooseBinary = async () => {
-    const file = await open({ multiple: false, directory: false });
-    if (typeof file === "string") await act(() => api.setClaudePath(file));
+    const file = await api.chooseFile();
+    if (file) await action.run(() => api.setClaudePath(file), "Using that Claude Code file.");
   };
 
   return (
-    <div className="panel settings">
-      <header className="panel-header">
-        <button className="secondary" onClick={onBack}>
-          Back
-        </button>
-        <h1>Settings</h1>
+    <div className="settings-page">
+      <header className="page-head">
+        <span className="avatar" aria-hidden="true">
+          {avatar && <SpriteView src={avatar} scale={0.22} clip={idleClip(reduced)} />}
+        </span>
+        <div className="page-title">
+          <h1>Settings</h1>
+          <p>{pet} is keeping an eye on Claude Code.</p>
+        </div>
       </header>
-      {message && (
-        <p className={message.ok ? "notice" : "error"} role="status">
-          {message.text}
-        </p>
-      )}
 
-      <section>
-        <h2>Pet</h2>
-        <div className="row">
-          <input aria-label="Pet name" value={name} maxLength={24} onChange={(e) => setName(e.target.value)} />
-          <button onClick={() => act(() => api.setPetName(name), "Saved.")}>Save name</button>
+      <Section title="Pet">
+        <div className="row is-block">
+          <PetPicker selectedId={config.petId} onSelect={(id) => void action.run(() => api.setPet(id))} />
         </div>
-      </section>
-
-      <section>
-        <h2>Claude Code</h2>
-        <SetupChecks snap={snap} />
         <div className="row">
-          <button className="secondary" onClick={() => act(api.recheckSetup)}>
-            Check again
-          </button>
-          <button className="secondary" onClick={chooseBinary}>
-            Choose Claude Code file…
-          </button>
-          {snap.config.claudePath && (
-            <button className="secondary" onClick={() => act(() => api.setClaudePath(null))}>
-              Auto-detect
-            </button>
+          <div className="row-text">
+            <span className="row-label" id="pet-name-label">
+              Name
+            </span>
+          </div>
+          <NameField value={pet} labelledBy="pet-name-label" onSave={(name) => action.run(() => api.setPetName(name), "Name saved.")} />
+        </div>
+        <div className="row">
+          <div className="row-text">
+            <span className="row-label">Size</span>
+            <p className="row-desc">How big {pet} is on your desktop.</p>
+          </div>
+          <Segmented
+            label="Pet size"
+            value={sizeFor(config.petScale)}
+            options={[
+              { value: "s", label: "S", title: "Small" },
+              { value: "m", label: "M", title: "Medium" },
+              { value: "l", label: "L", title: "Large" },
+            ]}
+            onChange={(s) => void action.run(() => api.setPetScale(SIZES[s]))}
+          />
+        </div>
+      </Section>
+
+      <Section title="Claude Code">
+        <div className="row is-block">
+          <SetupChecks snap={snap} />
+          {setup.claudePath && (
+            <p className="mono-line" title={setup.claudePath}>
+              <IconTerminal size={13} />
+              <span>{setup.claudePath}</span>
+            </p>
           )}
+          <div className="actions">
+            <button type="button" className="btn btn-secondary btn-sm" disabled={action.busy} onClick={() => void action.run(api.recheckSetup)}>
+              <IconRefresh size={13} />
+              Check again
+            </button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={action.busy} onClick={() => void chooseBinary()}>
+              Choose file…
+            </button>
+            {config.claudePath && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={action.busy}
+                onClick={() => void action.run(() => api.setClaudePath(null), "Auto-detecting Claude Code.")}
+              >
+                Auto-detect
+              </button>
+            )}
+          </div>
         </div>
-      </section>
+      </Section>
 
-      <section>
-        <h2>Watching your sessions</h2>
-        <p className="muted small">
-          {pet} adds hooks to your Claude Code settings so it can see what your sessions are doing. They only talk to
-          this computer.
-        </p>
+      <Section title="Watching">
         <div className="row">
-          {snap.setup.hooksInstalled ? (
-            <button className="secondary" onClick={() => act(api.uninstallHooks, "Hooks removed.")}>
-              Remove hooks
+          <div className="row-text">
+            <span className="row-label">{setup.hooksInstalled ? "Hooks installed" : "Hooks not installed"}</span>
+            <p className="row-desc">
+              {pet} adds hooks to your Claude Code settings so it can see when a session is working, needs you, or is
+              done. They only talk to this computer.
+            </p>
+          </div>
+          {setup.hooksInstalled ? (
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              disabled={action.busy}
+              onClick={() => void action.run(api.uninstallHooks, "Hooks removed.")}
+            >
+              Remove
             </button>
           ) : (
-            <button onClick={() => act(api.installHooks, "Hooks installed.")}>Install hooks</button>
-          )}
-          {snap.setup.hookServerError && (
-            <button onClick={() => act(api.moveHooksPort, "Moved to a new port.")}>Move to a new port</button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={action.busy}
+              onClick={() => void action.run(api.installHooks, "Hooks installed.")}
+            >
+              Install
+            </button>
           )}
         </div>
-      </section>
+        {setup.hookServerError && (
+          <div className="row">
+            <div className="row-text">
+              <span className="row-label">Port in use</span>
+              <p className="row-desc is-error">{setup.hookServerError}</p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={action.busy}
+              onClick={() => void action.run(api.moveHooksPort, "Moved to a new port.")}
+            >
+              Move port
+            </button>
+          </div>
+        )}
+      </Section>
 
-      <section>
-        <h2>Notifications and startup</h2>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={snap.config.notifications}
-            onChange={(e) => act(() => api.setNotifications(e.target.checked))}
-          />
-          Notify me when a session finishes or needs me
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={snap.config.launchAtLogin}
-            onChange={(e) => act(() => api.setLaunchAtLogin(e.target.checked))}
-          />
-          Start {pet} when I log in
-        </label>
-      </section>
+      <Section title="Notifications & startup">
+        <SwitchRow
+          label="Notifications"
+          description="When a session finishes, needs you, or gets stuck."
+          checked={config.notifications}
+          onChange={(v) => void action.run(() => api.setNotifications(v))}
+        />
+        <SwitchRow
+          label={`Start ${pet} when you log in`}
+          checked={config.launchAtLogin}
+          onChange={(v) => void action.run(() => api.setLaunchAtLogin(v))}
+        />
+      </Section>
 
-      <section>
-        <h2>Cost</h2>
-        <p className="muted small">
-          Asks use your Claude subscription, never an API key. {pet} stops any run the moment it would use paid usage
-          credits.
-        </p>
-        <button className="link" onClick={() => openUrl("https://claude.ai/settings/usage")}>
-          Open your Claude usage settings
-        </button>
-      </section>
+      <Section title="Cost">
+        <div className="row is-block">
+          <p className="row-desc is-body">
+            Asks run Claude Code on your subscription, never an API key. If usage credits are on in your Claude account,{" "}
+            {pet} stops a run the moment it would start using them.
+          </p>
+          <button type="button" className="link" onClick={() => void api.openUrl(USAGE_URL)}>
+            Claude usage settings
+            <IconExternal size={12} />
+          </button>
+        </div>
+      </Section>
 
-      <p className="muted small">Perch is free and open source, and is not affiliated with Anthropic.</p>
+      <Section title="About">
+        <div className="row">
+          <div className="row-text">
+            <span className="row-label">Perch {version ? `v${version}` : ""}</span>
+            <p className="row-desc">Free and open source. Not affiliated with Anthropic.</p>
+          </div>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void api.openUrl(REPO_URL)}>
+            <IconGithub size={13} />
+            GitHub
+          </button>
+        </div>
+        <div className="row">
+          <div className="row-text">
+            <span className="row-label">More pets</span>
+            <p className="row-desc">
+              Pet format compatible with Codex pets; drop pets into <code>~/.codex/pets</code> or Perch's pets folder.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void action.run(api.openPetsFolder)}
+          >
+            <IconFolder size={13} />
+            Open folder
+          </button>
+        </div>
+      </Section>
+
+      <NoticeBar notice={action.notice} onDismiss={action.dismiss} />
     </div>
   );
 }
