@@ -37,6 +37,8 @@ Perch sends nothing anywhere itself. Its only network traffic is on localhost. Y
 
 ## Develop
 
+Needs Node.js 24 and stable Rust.
+
 ```bash
 npm install
 npm run tauri dev      # run the app
