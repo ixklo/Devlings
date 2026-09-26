@@ -4,6 +4,7 @@ mod hooks_installer;
 mod locator;
 mod money_guard;
 mod normalize;
+mod runner;
 mod sessions;
 mod store;
 mod transcript;
