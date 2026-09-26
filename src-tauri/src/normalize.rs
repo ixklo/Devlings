@@ -12,15 +12,26 @@ pub fn step_label(tool: &str, input: &Value) -> String {
             .map(file_name)
             .unwrap_or_default()
     };
+    let description = input
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|d| !d.is_empty());
     let label = match tool {
         "Read" => format!("Reading {}", file()),
         "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => format!("Editing {}", file()),
-        "Bash" | "PowerShell" => {
-            let cmd = input.get("command").and_then(Value::as_str).unwrap_or("");
-            format!("Running {}", truncate(cmd, 40))
-        }
+        "Bash" | "PowerShell" => match description {
+            Some(d) => truncate(d, 60),
+            None => {
+                let cmd = input.get("command").and_then(Value::as_str).unwrap_or("");
+                format!("Running {}", truncate(cmd, 40))
+            }
+        },
         "Grep" | "Glob" => "Searching".to_string(),
-        "Agent" | "Task" => "Delegating to a subagent".to_string(),
+        "Agent" | "Task" => match description {
+            Some(d) => format!("Subagent: {}", truncate(d, 50)),
+            None => "Delegating to a subagent".to_string(),
+        },
         other => other.to_string(),
     };
     label.trim_end().to_string()
@@ -188,6 +199,15 @@ mod tests {
         assert_eq!(step_label("Edit", &json!({"file_path": "/home/u/proj/main.rs"})), "Editing main.rs");
         assert_eq!(step_label("Write", &json!({"file_path": "out.txt"})), "Editing out.txt");
         assert_eq!(step_label("Bash", &json!({"command": "npm test"})), "Running npm test");
+        assert_eq!(
+            step_label("PowerShell", &json!({"command": "$S = 1; Get-Thing", "description": "Screenshot the pet window"})),
+            "Screenshot the pet window"
+        );
+        assert_eq!(step_label("Bash", &json!({"command": "ls", "description": "  "})), "Running ls");
+        assert_eq!(
+            step_label("Agent", &json!({"description": "Find the hook server"})),
+            "Subagent: Find the hook server"
+        );
         assert_eq!(
             step_label("Bash", &json!({"command": "a".repeat(60)})),
             format!("Running {}…", "a".repeat(40))
