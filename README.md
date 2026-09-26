@@ -1,3 +1,5 @@
+<p align="center"><img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="Perch, a small teal bird on a branch"></p>
+
 # Perch
 
 A small pet that sits on your desktop and keeps you posted on Claude Code, so you don't have to keep VS Code open to know what's happening.
