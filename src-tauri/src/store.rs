@@ -221,7 +221,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn detects_windows_temp_paths_ignoring_case() {
-        assert!(is_under("C:\\Users\\New\\AppData\\Local\\Temp\\claude\\tc", "c:\\users\\new\\appdata\\local\\temp\\"));
+        assert!(is_under("C:\\Users\\Me\\AppData\\Local\\Temp\\claude\\tc", "c:\\users\\me\\appdata\\local\\temp\\"));
     }
 
     #[test]
