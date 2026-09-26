@@ -119,7 +119,14 @@ pub fn open_panel(app: &AppHandle, view: &str) -> tauri::Result<()> {
         position_panel(app, &panel)?;
         panel.show()?;
     }
+    // A process's first ShowWindow takes the launcher's show state (e.g. minimized), so restore after showing and after focusing.
+    if panel.is_minimized()? {
+        panel.unminimize()?;
+    }
     panel.set_focus()?;
+    if panel.is_minimized()? {
+        panel.unminimize()?;
+    }
     app.state::<AppState>().panel_open.store(true, Ordering::SeqCst);
     let _ = app.emit_to("panel", "panel-view", view);
     state::emit_snapshot(app);
@@ -134,7 +141,8 @@ pub fn close_panel(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn toggle_panel(app: &AppHandle) -> tauri::Result<()> {
-    if window(app, "panel").is_visible()? {
+    let panel = window(app, "panel");
+    if panel.is_visible()? && !panel.is_minimized()? {
         close_panel(app)
     } else {
         open_panel(app, "main")

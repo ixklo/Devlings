@@ -276,7 +276,11 @@ pub fn boot(app: AppHandle) {
         emit_snapshot(&app);
         let onboarded = app.state::<AppState>().config.lock().unwrap().onboarded;
         if !onboarded {
-            let _ = shell::open_panel(&app, "onboarding");
+            // Window calls from this thread are queued; on the main thread they run in order, so open_panel can see and undo a minimized start.
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let _ = shell::open_panel(&handle, "onboarding");
+            });
         }
         loop {
             std::thread::sleep(Duration::from_secs(1));
