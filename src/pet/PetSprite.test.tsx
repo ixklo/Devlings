@@ -59,7 +59,8 @@ describe("PetSprite", () => {
     fireEvent.pointerMove(pet, { screenX: 112, screenY: 97 });
     fireEvent.pointerUp(pet, { button: 0 });
     // Release flushes what's left right away.
-    expect(calls.filter(([c]) => c === "drag_pet_by").at(-1)).toEqual(["drag_pet_by", { dx: 2, dy: 0 }]);
+    const drags = calls.filter(([c]) => c === "drag_pet_by");
+    expect(drags[drags.length - 1]).toEqual(["drag_pet_by", { dx: 2, dy: 0 }]);
     expect(onDragEnd).toHaveBeenCalledTimes(1);
     expect(onActivate).not.toHaveBeenCalled();
     expect(transport.startDragging).not.toHaveBeenCalled();
