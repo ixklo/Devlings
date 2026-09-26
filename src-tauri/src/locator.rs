@@ -142,7 +142,7 @@ mod tests {
         let found = locate(&[missing.clone(), old.clone(), good.clone()], version_of).unwrap();
         assert_eq!(found, Located { path: good, version: "2.1.282".into() });
 
-        let err = locate(&[old.clone()], version_of).unwrap_err();
+        let err = locate(std::slice::from_ref(&old), version_of).unwrap_err();
         assert!(err.contains("too old"), "{err}");
         let err = locate(&[missing], version_of).unwrap_err();
         assert!(err.contains("wasn't found"), "{err}");

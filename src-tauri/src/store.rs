@@ -3,6 +3,10 @@ use std::{fs, io, path::Path};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 pub const DEFAULT_PET_NAME: &str = "Perch";
+pub const DEFAULT_PET_ID: &str = "perch";
+pub const DEFAULT_PET_SCALE: f64 = 0.6;
+pub const MIN_PET_SCALE: f64 = 0.4;
+pub const MAX_PET_SCALE: f64 = 1.0;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -17,6 +21,24 @@ pub struct Config {
     pub pet_position: Option<(i32, i32)>,
     pub notifications: bool,
     pub launch_at_login: bool,
+    pub pet_id: String,
+    pub pet_scale: f64,
+    pub threads_collapsed: bool,
+}
+
+impl Config {
+    /// Repairs values a hand-edited or older config file may carry.
+    pub fn normalized(mut self) -> Self {
+        self.pet_scale = clamp_pet_scale(self.pet_scale);
+        if self.pet_id.trim().is_empty() {
+            self.pet_id = DEFAULT_PET_ID.to_string();
+        }
+        self
+    }
+}
+
+pub fn clamp_pet_scale(scale: f64) -> f64 {
+    if scale.is_finite() { scale.clamp(MIN_PET_SCALE, MAX_PET_SCALE) } else { DEFAULT_PET_SCALE }
 }
 
 impl Default for Config {
@@ -32,6 +54,9 @@ impl Default for Config {
             pet_position: None,
             notifications: true,
             launch_at_login: false,
+            pet_id: DEFAULT_PET_ID.to_string(),
+            pet_scale: DEFAULT_PET_SCALE,
+            threads_collapsed: false,
         }
     }
 }
@@ -166,6 +191,7 @@ pub fn save<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn config_defaults_and_roundtrip() {
@@ -179,6 +205,27 @@ mod tests {
         c.pet_position = Some((10, -20));
         save(&p, &c).unwrap();
         assert_eq!(load::<Config>(&p), c);
+    }
+
+    #[test]
+    fn v02_config_fields() {
+        let c = Config::default();
+        assert_eq!((c.pet_id.as_str(), c.pet_scale, c.threads_collapsed), ("perch", 0.6, false));
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!((&v["petId"], &v["petScale"], &v["threadsCollapsed"]), (&json!("perch"), &json!(0.6), &json!(false)));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, r#"{"petName":"Bo","petScale":3.0,"petId":" "}"#).unwrap();
+        let c = load::<Config>(&p).normalized();
+        assert_eq!((c.pet_scale, c.pet_id.as_str(), c.pet_name.as_str()), (1.0, "perch", "Bo"));
+    }
+
+    #[test]
+    fn pet_scale_is_clamped() {
+        assert_eq!(clamp_pet_scale(0.1), 0.4);
+        assert_eq!(clamp_pet_scale(0.45), 0.45);
+        assert_eq!(clamp_pet_scale(2.0), 1.0);
+        assert_eq!(clamp_pet_scale(f64::NAN), 0.6);
     }
 
     #[test]

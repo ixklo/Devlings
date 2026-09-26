@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -16,17 +16,22 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{
-    events::{Kind, Mood, PetEvent, Source},
+    events::{Kind, PetEvent, Source},
     hook_server::HookServer,
     hooks_installer,
     locator::{self, Located},
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
+    overlay::HitRect,
+    pets::{self, Pet},
     runner::{self, KillReason},
-    sessions::{SessionInfo, Sessions},
     shell,
     store::{self, Config, ProjectEntry, Projects},
+    threads::{self, PetState, ThreadInfo, ThreadStatus, Threads},
 };
+
+/// What the bubbles show; the ticker compares it to catch changes caused only by time passing.
+type ViewKey = (PetState, Vec<String>);
 
 fn temp_dir() -> String {
     std::env::temp_dir().to_string_lossy().to_string()
@@ -40,7 +45,8 @@ pub struct AppState {
     pub data_dir: PathBuf,
     pub config: Mutex<Config>,
     pub projects: Mutex<Projects>,
-    pub sessions: Mutex<Sessions>,
+    pub threads: Mutex<Threads>,
+    pub focused_thread: Mutex<Option<String>>,
     pub claude: Mutex<Result<Located, String>>,
     pub auth: Mutex<Option<AuthVerdict>>,
     pub hooks_installed: AtomicBool,
@@ -49,8 +55,11 @@ pub struct AppState {
     pub running: Mutex<HashMap<String, u32>>,
     pub stop_requested: Mutex<HashSet<String>>,
     pub ask_sids: Mutex<HashMap<String, String>>,
-    pub panel_open: AtomicBool,
-    pub last_mood: Mutex<Option<Mood>>,
+    pub last_view: Mutex<Option<ViewKey>>,
+    pub pets: Mutex<Vec<Pet>>,
+    /// Interactive rects of the pet window; None until the frontend first reports them.
+    pub hit_regions: Mutex<Option<Vec<HitRect>>>,
+    pub pet_visibility_gen: AtomicU64,
 }
 
 impl AppState {
@@ -59,10 +68,11 @@ impl AppState {
         let mut projects: Projects = store::load(&data_dir.join("projects.json"));
         projects.retain_outside(&temp_dir());
         Ok(Self {
-            config: Mutex::new(store::load(&data_dir.join("config.json"))),
+            config: Mutex::new(store::load::<Config>(&data_dir.join("config.json")).normalized()),
             projects: Mutex::new(projects),
             data_dir,
-            sessions: Mutex::new(Sessions::new(now_ms())),
+            threads: Mutex::new(Threads::default()),
+            focused_thread: Mutex::new(None),
             claude: Mutex::new(Err("Checking for Claude Code…".to_string())),
             auth: Mutex::new(None),
             hooks_installed: AtomicBool::new(false),
@@ -71,8 +81,10 @@ impl AppState {
             running: Mutex::new(HashMap::new()),
             stop_requested: Mutex::new(HashSet::new()),
             ask_sids: Mutex::new(HashMap::new()),
-            panel_open: AtomicBool::new(false),
-            last_mood: Mutex::new(None),
+            last_view: Mutex::new(None),
+            pets: Mutex::new(Vec::new()),
+            hit_regions: Mutex::new(None),
+            pet_visibility_gen: AtomicU64::new(0),
         })
     }
 
@@ -101,8 +113,8 @@ pub struct SetupStatus {
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub config: Config,
-    pub mood: Mood,
-    pub sessions: Vec<SessionInfo>,
+    pub pet_state: PetState,
+    pub threads: Vec<ThreadInfo>,
     pub projects: Vec<ProjectEntry>,
     pub running: Vec<String>,
     pub setup: SetupStatus,
@@ -130,73 +142,101 @@ fn setup_status(s: &AppState) -> SetupStatus {
     }
 }
 
-fn mood_with(s: &AppState, setup: &SetupStatus) -> Mood {
-    s.sessions
-        .lock()
-        .unwrap()
-        .mood(now_ms(), s.panel_open.load(Ordering::SeqCst), setup.needs_setup)
+fn view_key(threads: &[ThreadInfo], pet_state: PetState) -> ViewKey {
+    (pet_state, threads.iter().map(|t| t.session_id.clone()).collect())
 }
 
 pub fn snapshot(app: &AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
     let setup = setup_status(&s);
-    let mood = mood_with(&s, &setup);
-    let sessions = s.sessions.lock().unwrap().list();
+    let threads = s.threads.lock().unwrap().visible(now_ms());
+    let pet_state = threads::pet_state(&threads, setup.needs_setup);
     let projects = s.projects.lock().unwrap().sorted();
     let running = s.running.lock().unwrap().keys().cloned().collect();
-    let config = s.config.lock().unwrap().clone();
-    Snapshot { config, mood, sessions, projects, running, setup }
+    let mut config = s.config.lock().unwrap().clone();
+    // Report the pet that is actually shown, so a removed pet falls back to the default everywhere.
+    if let Some(pet) = pets::resolve(&s.pets.lock().unwrap(), &config.pet_id) {
+        config.pet_id = pet.info.id.clone();
+    }
+    Snapshot { config, pet_state, threads, projects, running, setup }
+}
+
+/// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
+fn scan_pets(app: &AppHandle) -> (Vec<Pet>, bool) {
+    let s = app.state::<AppState>();
+    let home = dirs::home_dir().unwrap_or_default();
+    let roots = pets::roots(
+        app.path().resource_dir().ok(),
+        &s.data_dir,
+        &pets::codex_home(std::env::var_os("CODEX_HOME"), &home),
+    );
+    let found = pets::discover(&roots);
+    let wanted = s.config.lock().unwrap().pet_id.clone();
+    let shown = |list: &[Pet]| pets::resolve(list, &wanted).map(|p| p.info.id.clone());
+    let old = std::mem::replace(&mut *s.pets.lock().unwrap(), found.clone());
+    let changed = shown(&old) != shown(&found);
+    (found, changed)
+}
+
+/// Rescans pets, and publishes a snapshot if that changed which pet is shown (e.g. its folder was deleted).
+pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
+    let (found, changed) = scan_pets(app);
+    if changed {
+        emit_snapshot(app);
+    }
+    found
 }
 
 pub fn emit_snapshot(app: &AppHandle) {
     let snap = snapshot(app);
-    *app.state::<AppState>().last_mood.lock().unwrap() = Some(snap.mood);
+    *app.state::<AppState>().last_view.lock().unwrap() = Some(view_key(&snap.threads, snap.pet_state));
     let _ = app.emit("snapshot", &snap);
     shell::update_tray_tooltip(app, &snap);
 }
 
 pub fn handle_event(app: &AppHandle, ev: PetEvent) {
     let s = app.state::<AppState>();
-    s.sessions.lock().unwrap().apply(&ev);
+    let applied = s.threads.lock().unwrap().apply(&ev);
     let _ = app.emit("pet-event", &ev);
-    if ev.kind != Kind::ReplyDelta {
-        if let Some(label) = &ev.label {
-            let _ = app.emit("pet-bubble", label);
-        }
-        maybe_notify(app, &ev);
+    if let Some(status) = applied.alert {
+        maybe_notify(app, &ev, status);
+    }
+    // Reply deltas arrive many times a second; only the first of a reply changes what the bubbles show.
+    if ev.kind != Kind::ReplyDelta || applied.changed {
         emit_snapshot(app);
     }
 }
 
-fn maybe_notify(app: &AppHandle, ev: &PetEvent) {
-    if !matches!(ev.kind, Kind::Done | Kind::NeedsYou) {
-        return;
-    }
+fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
     let s = app.state::<AppState>();
-    if s.panel_open.load(Ordering::SeqCst) {
-        return;
-    }
     let (enabled, pet) = {
         let c = s.config.lock().unwrap();
         (c.notifications, c.pet_name.clone())
     };
-    if !enabled {
+    let focused = s.focused_thread.lock().unwrap().as_deref() == Some(ev.session_id.as_str());
+    if !enabled || focused {
         return;
     }
-    let body = match ev.kind {
-        Kind::NeedsYou => "Needs your approval".to_string(),
-        _ => ev
+    let short = |t: &str| threads::excerpt(t).map(|x| x.chars().take(120).collect::<String>());
+    let body = match status {
+        ThreadStatus::NeedsInput => "Needs your approval".to_string(),
+        ThreadStatus::Ready => ev.text.as_deref().and_then(short).unwrap_or_else(|| "Done".to_string()),
+        ThreadStatus::Blocked => ev
             .text
             .as_deref()
-            .map(|t| t.chars().take(120).collect())
-            .unwrap_or_else(|| "Done".to_string()),
+            .and_then(short)
+            .or_else(|| ev.label.clone())
+            .unwrap_or_else(|| "Something went wrong".to_string()),
+        ThreadStatus::Running | ThreadStatus::Idle => return,
     };
-    let _ = app
-        .notification()
-        .builder()
-        .title(format!("{pet} · {}", store::project_name(&ev.project)))
-        .body(body)
-        .show();
+    let project = s
+        .threads
+        .lock()
+        .unwrap()
+        .get(&ev.session_id)
+        .map(|t| t.project_name.clone())
+        .unwrap_or_else(|| store::project_name(&ev.project));
+    let _ = app.notification().builder().title(format!("{pet} · {project}")).body(body).show();
 }
 
 pub fn on_hook_body(app: &AppHandle, body: Value) {
@@ -278,15 +318,16 @@ pub fn recheck_setup(app: &AppHandle) {
 
 pub fn boot(app: AppHandle) {
     std::thread::spawn(move || {
+        scan_pets(&app);
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);
         let onboarded = app.state::<AppState>().config.lock().unwrap().onboarded;
         if !onboarded {
-            // Window calls from this thread are queued; on the main thread they run in order, so open_panel can see and undo a minimized start.
+            // Window calls from this thread are queued; on the main thread they run in order, so open_settings can see and undo a minimized start.
             let handle = app.clone();
             let _ = app.run_on_main_thread(move || {
-                let _ = shell::open_panel(&handle, "onboarding");
+                let _ = shell::open_settings(&handle, shell::SettingsView::Onboarding);
             });
         }
         loop {
@@ -298,10 +339,14 @@ pub fn boot(app: AppHandle) {
 
 fn tick(app: &AppHandle) {
     let s = app.state::<AppState>();
-    s.sessions.lock().unwrap().prune(now_ms());
-    let setup = setup_status(&s);
-    let mood = mood_with(&s, &setup);
-    let changed = *s.last_mood.lock().unwrap() != Some(mood);
+    let now = now_ms();
+    let threads = {
+        let mut t = s.threads.lock().unwrap();
+        t.prune(now);
+        t.visible(now)
+    };
+    let view = view_key(&threads, threads::pet_state(&threads, setup_status(&s).needs_setup));
+    let changed = s.last_view.lock().unwrap().as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
     }
@@ -355,7 +400,13 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
             if matches!(ev.kind, Kind::Done | Kind::Failed) {
                 finished = true;
             }
+            let started = ev.kind == Kind::Started;
+            let sid = ev.session_id.clone();
             handle_event(&app, ev);
+            if started {
+                // A headless run reports nothing until its first reply token or tool call; show the thread as working now.
+                handle_event(&app, ask_event(&sid, &project, Kind::Prompt, "Thinking…", None));
+            }
         }
         StreamItem::LimitRejected { resets_at } => {
             finished = true;

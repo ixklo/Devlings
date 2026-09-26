@@ -5,11 +5,13 @@ mod hooks_installer;
 mod locator;
 mod money_guard;
 mod normalize;
+mod overlay;
+mod pets;
 mod runner;
-mod sessions;
 mod shell;
 mod state;
 mod store;
+mod threads;
 mod transcript;
 
 pub fn run() {
@@ -33,7 +35,8 @@ pub fn run() {
             let handle = app.handle().clone();
             shell::setup_tray(&handle)?;
             shell::register_shortcut(&handle);
-            shell::place_pet(&handle);
+            overlay::place_pet(&handle);
+            overlay::start_click_through(handle.clone());
             state::boot(handle);
             Ok(())
         })
@@ -58,8 +61,20 @@ pub fn run() {
             commands::finish_onboarding,
             commands::set_notifications,
             commands::set_launch_at_login,
-            commands::toggle_panel,
-            commands::close_panel,
+            commands::mark_viewed,
+            commands::set_focused_thread,
+            commands::set_threads_collapsed,
+            commands::set_pet_scale,
+            commands::list_pets,
+            commands::get_pet_sprite,
+            commands::set_pet,
+            commands::set_hit_regions,
+            commands::open_settings,
+            commands::close_settings,
+            commands::open_project,
+            commands::open_pets_folder,
+            commands::reset_pet_position,
+            commands::move_pet_by,
             commands::show_pet_menu,
             commands::save_pet_position,
         ])

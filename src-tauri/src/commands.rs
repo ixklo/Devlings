@@ -6,8 +6,10 @@ use tauri_plugin_autostart::ManagerExt;
 use crate::{
     hooks_installer,
     money_guard::AuthVerdict,
+    overlay::{self, HitRect},
+    pets::{self, PetInfo},
     runner::{self, AskRequest},
-    shell,
+    shell::{self, SettingsView},
     state::{self, now_ms, AppState, Snapshot},
     store::{self, PermissionMode},
     transcript::{self, ChatTurn},
@@ -35,11 +37,8 @@ pub async fn recheck_setup(app: AppHandle) -> Snapshot {
 pub fn set_pet_name(app: AppHandle, name: String) -> CmdResult<Snapshot> {
     let name = store::validate_pet_name(&name)?;
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_name = name.clone();
+    s.config.lock().unwrap().pet_name = name;
     s.save_config();
-    if let Some(panel) = app.get_webview_window("panel") {
-        let _ = panel.set_title(&name);
-    }
     Ok(publish(&app))
 }
 
@@ -242,13 +241,102 @@ pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> CmdResult<Snapshot>
 }
 
 #[tauri::command]
-pub fn toggle_panel(app: AppHandle) -> CmdResult<()> {
-    shell::toggle_panel(&app).map_err(|e| e.to_string())
+pub fn mark_viewed(app: AppHandle, session_id: String) -> Snapshot {
+    app.state::<AppState>().threads.lock().unwrap().mark_viewed(&session_id);
+    publish(&app)
 }
 
 #[tauri::command]
-pub fn close_panel(app: AppHandle) -> CmdResult<()> {
-    shell::close_panel(&app).map_err(|e| e.to_string())
+pub fn set_threads_collapsed(app: AppHandle, collapsed: bool) -> Snapshot {
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().threads_collapsed = collapsed;
+    s.save_config();
+    publish(&app)
+}
+
+#[tauri::command]
+pub fn set_pet_scale(app: AppHandle, scale: f64) -> Snapshot {
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().pet_scale = store::clamp_pet_scale(scale);
+    s.save_config();
+    publish(&app)
+}
+
+#[tauri::command]
+pub async fn list_pets(app: AppHandle) -> Vec<PetInfo> {
+    state::refresh_pets(&app).into_iter().map(|p| p.info).collect()
+}
+
+#[tauri::command]
+pub async fn get_pet_sprite(app: AppHandle, id: String) -> CmdResult<String> {
+    let cached = app.state::<AppState>().pets.lock().unwrap().iter().find(|p| p.info.id == id).cloned();
+    let pet = match cached {
+        Some(p) => p,
+        None => pets::resolve(&state::refresh_pets(&app), &id).cloned().ok_or("No pets found.")?,
+    };
+    pets::sprite_data_url(&pet.sprite)
+}
+
+#[tauri::command]
+pub async fn set_pet(app: AppHandle, id: String) -> CmdResult<Snapshot> {
+    choose_pet(&app, &id)?;
+    Ok(publish(&app))
+}
+
+pub fn choose_pet(app: &AppHandle, id: &str) -> CmdResult<()> {
+    if !state::refresh_pets(app).iter().any(|p| p.info.id == id) {
+        return Err("That pet wasn't found.".into());
+    }
+    let s = app.state::<AppState>();
+    s.config.lock().unwrap().pet_id = id.to_string();
+    s.save_config();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_focused_thread(app: AppHandle, session_id: Option<String>) {
+    *app.state::<AppState>().focused_thread.lock().unwrap() = session_id;
+}
+
+#[tauri::command]
+pub fn set_hit_regions(app: AppHandle, regions: Vec<HitRect>) {
+    *app.state::<AppState>().hit_regions.lock().unwrap() = Some(regions);
+}
+
+#[tauri::command]
+pub fn open_settings(app: AppHandle, view: SettingsView) -> CmdResult<()> {
+    shell::open_settings(&app, view).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn close_settings(app: AppHandle) -> CmdResult<()> {
+    shell::close_settings(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_project(app: AppHandle, path: String) -> CmdResult<()> {
+    let dir = Path::new(&path);
+    if !dir.is_absolute() || !dir.is_dir() {
+        return Err("That folder doesn't exist.".into());
+    }
+    shell::open_project(&app, dir)
+}
+
+#[tauri::command]
+pub async fn open_pets_folder(app: AppHandle) -> CmdResult<()> {
+    let dir = pets::user_pets_dir(&app.state::<AppState>().data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    shell::open_folder(&app, &dir)
+}
+
+#[tauri::command]
+pub fn reset_pet_position(app: AppHandle) {
+    overlay::reset_pet_position(&app);
+}
+
+#[tauri::command]
+pub fn move_pet_by(app: AppHandle, dx: f64, dy: f64) {
+    overlay::move_pet_by(&app, dx, dy);
 }
 
 #[tauri::command]

@@ -41,13 +41,20 @@ pub fn build_args(req: &AskRequest) -> Vec<String> {
     args
 }
 
-pub fn hidden_command(bin: &Path) -> Command {
-    let mut cmd = Command::new(bin);
+/// A child process that never opens a console window.
+pub fn background_command(program: &Path) -> Command {
+    let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    cmd
+}
+
+/// A Claude Code child: no console window, and no API-key variables in its environment.
+pub fn hidden_command(bin: &Path) -> Command {
+    let mut cmd = background_command(bin);
     cmd.env_clear().envs(money_guard::clean_env(std::env::vars()));
     cmd
 }
