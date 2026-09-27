@@ -1,3 +1,4 @@
+mod cli;
 mod commands;
 mod events;
 mod hook_server;
@@ -16,6 +17,11 @@ mod threads;
 mod transcript;
 
 pub fn run() {
+    // Headless modes (the hook relay and the uninstaller's cleanup) come before anything else, so they stay fast
+    // and never reach a running Perch through the single-instance plugin.
+    if let Some(code) = cli::run_headless() {
+        std::process::exit(code);
+    }
     let context = tauri::generate_context!();
     // Managed before the builder creates the config windows: their webviews can invoke commands before setup() runs.
     // dirs::data_dir()/<identifier> is the same folder Tauri's app_data_dir() resolves to on every desktop OS.
@@ -33,6 +39,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
+            let info = app.package_info();
+            log::info!("{} {} starting on {} {}", info.name, info.version, std::env::consts::OS, std::env::consts::ARCH);
             let handle = app.handle().clone();
             shell::setup_tray(&handle)?;
             shell::register_shortcut(&handle);

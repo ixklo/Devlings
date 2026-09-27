@@ -17,8 +17,8 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::{
     events::{Kind, PetEvent, Source},
-    hook_server::HookServer,
-    hooks_installer,
+    hook_server::{HookServer, EMPTY_ANSWER},
+    hooks_installer::{self, HookStatus, HookTarget, Migration},
     locator::{self, Located},
     locks::lock,
     money_guard::AuthVerdict,
@@ -270,9 +270,15 @@ pub fn start_hook_server(app: &AppHandle) {
     };
     let (Some(port), Some(token)) = (port, token) else { return };
     let handle = app.clone();
-    match HookServer::start(port, token, move |body| on_hook_body(&handle, body)) {
+    // Runs on a hook server worker thread. PermissionRequest bodies get no decision yet ("{}").
+    let on_body = move |body: Value| {
+        on_hook_body(&handle, body);
+        EMPTY_ANSWER.to_string()
+    };
+    match HookServer::start(port, token, on_body) {
         Ok(server) => {
             let bound_port = server.port;
+            log::info!("Hook server listening on 127.0.0.1:{bound_port}");
             *lock(&s.hook_server) = Some(server);
             *lock(&s.hook_server_error) = None;
             if lock(&s.config).hook_port != Some(bound_port) {
@@ -281,24 +287,53 @@ pub fn start_hook_server(app: &AppHandle) {
             }
         }
         Err(e) => {
+            log::error!("Hook server didn't start: {e}");
             *lock(&s.hook_server_error) = Some(format!("{e}. Use \"Move to a new port\" in Settings."));
         }
     }
 }
 
-pub fn refresh_hooks_installed(app: &AppHandle) {
+/// The installed hooks compared with this build's, or None when Perch has no port and token yet.
+pub fn hook_status(app: &AppHandle) -> Option<Result<HookStatus, String>> {
     let s = app.state::<AppState>();
     let (port, token) = {
         let c = lock(&s.config);
         (c.hook_port, c.hook_token.clone())
     };
-    let installed = match (port, token) {
-        (Some(p), Some(t)) => hooks_installer::read_settings(&hooks_installer::settings_path())
-            .map(|v| hooks_installer::is_installed(&v, p, &t))
-            .unwrap_or(false),
-        _ => false,
+    let (port, token) = (port?, token?);
+    Some(hooks_installer::relay_exe().and_then(|exe| {
+        let settings = hooks_installer::read_settings(&hooks_installer::settings_path())?;
+        Ok(hooks_installer::status(&settings, HookTarget { port, token: &token, exe: &exe }))
+    }))
+}
+
+/// Brings installed hooks up to date with this build, once, when they differ (design v1.0 §3).
+fn migrate_hooks(app: &AppHandle) {
+    let s = app.state::<AppState>();
+    let (port, token) = {
+        let c = lock(&s.config);
+        (c.hook_port, c.hook_token.clone())
     };
-    s.hooks_installed.store(installed, Ordering::SeqCst);
+    let (Some(port), Some(token)) = (port, token) else { return };
+    let exe = match hooks_installer::relay_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            log::error!("Hook migration skipped: {e}");
+            return;
+        }
+    };
+    let path = hooks_installer::settings_path();
+    match hooks_installer::migrate_file(&path, HookTarget { port, token: &token, exe: &exe }, now_ms() / 1000) {
+        Ok(Migration::Migrated) => log::info!("Hooks updated to this version's entries in {}", path.display()),
+        Ok(Migration::UpToDate) => log::info!("Hooks are up to date"),
+        Ok(Migration::NotInstalled) => log::info!("Hooks aren't installed"),
+        Err(e) => log::error!("Hook migration failed: {e}"),
+    }
+}
+
+pub fn refresh_hooks_installed(app: &AppHandle) {
+    let installed = matches!(hook_status(app), Some(Ok(HookStatus::Current)));
+    app.state::<AppState>().hooks_installed.store(installed, Ordering::SeqCst);
 }
 
 pub fn recheck_setup(app: &AppHandle) {
@@ -308,7 +343,19 @@ pub fn recheck_setup(app: &AppHandle) {
     let path_env = std::env::var_os("PATH");
     let cands = locator::candidates(override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
     let located = locator::locate(&cands, runner::version_of);
+    match &located {
+        Ok(l) => {
+            let via = locator::describe_source(&l.path, override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
+            log::info!("Claude Code {} at {} (found via {via})", l.version, l.path.display());
+        }
+        Err(e) => log::warn!("Claude Code not usable: {e}"),
+    }
     let auth = located.as_ref().ok().map(|l| runner::auth_status(&l.path));
+    match &auth {
+        Some(AuthVerdict::Allowed { subscription }) => log::info!("Claude Code login: {subscription} subscription"),
+        Some(AuthVerdict::Refused { reason }) => log::warn!("Claude Code login refused: {reason}"),
+        None => {}
+    }
     *lock(&s.claude) = located;
     *lock(&s.auth) = auth;
     refresh_hooks_installed(app);
@@ -317,6 +364,7 @@ pub fn recheck_setup(app: &AppHandle) {
 pub fn boot(app: AppHandle) {
     std::thread::spawn(move || {
         scan_pets(&app);
+        migrate_hooks(&app);
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);
@@ -381,7 +429,14 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
             text
         })
     });
-    let stdout = child.stdout.take().expect("stdout is piped");
+    let Some(stdout) = child.stdout.take() else {
+        log::error!("Ask in {project}: Claude Code's output wasn't captured");
+        runner::kill_tree(pid);
+        let _ = child.wait();
+        lock(&s.running).retain(|p, _| !store::same_path(p, &project));
+        emit_snapshot(&app);
+        return;
+    };
     let mut session_id = format!("ask:{project}");
     let mut finished = false;
 
@@ -415,6 +470,7 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
     });
 
     if let Some(reason) = &kill {
+        log::warn!("Ask in {project} stopped by the money guard: {reason:?}");
         runner::kill_tree(pid);
         finished = true;
         let (label, text) = match reason {
@@ -432,7 +488,12 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
 
     let status = child.wait();
     let stderr_text = stderr_thread.and_then(|h| h.join().ok()).unwrap_or_default();
+    match &status {
+        Ok(st) => log::info!("Ask in {project} exited ({st})"),
+        Err(e) => log::warn!("Ask in {project}: couldn't wait for Claude Code: {e}"),
+    }
     if take_stop_request(&s, &project) {
+        log::info!("Ask in {project} stopped by the user");
         handle_event(&app, ask_event(&session_id, &project, Kind::Ended, "Stopped", None));
     } else if !finished {
         let code = status.ok().and_then(|st| st.code()).map(|c| c.to_string()).unwrap_or_else(|| "?".into());
@@ -442,6 +503,7 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
         } else {
             err.chars().take(400).collect()
         };
+        log::warn!("Ask in {project} ended without a result: {text}");
         handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Something went wrong", Some(text)));
     }
     lock(&s.running).retain(|p, _| !store::same_path(p, &project));

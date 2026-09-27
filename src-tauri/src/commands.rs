@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
-    hooks_installer,
+    hooks_installer::{self, HookTarget},
     locks::lock,
     money_guard::AuthVerdict,
     overlay::{self, HitRect},
@@ -45,19 +45,26 @@ pub fn set_pet_name(app: AppHandle, name: String) -> CmdResult<Snapshot> {
 
 fn install_on_port(app: &AppHandle, new_port: bool) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
+    let exe = hooks_installer::relay_exe()?;
     let (port, token) = {
         let mut c = lock(&s.config);
-        if new_port || c.hook_port.is_none() {
-            c.hook_port = Some(hooks_installer::free_port().map_err(|e| e.to_string())?);
-        }
-        if c.hook_token.is_none() {
-            c.hook_token = Some(hooks_installer::new_token());
-        }
+        let port = match c.hook_port {
+            Some(p) if !new_port => p,
+            _ => hooks_installer::free_port().map_err(|e| e.to_string())?,
+        };
+        let token = c.hook_token.clone().unwrap_or_else(hooks_installer::new_token);
+        c.hook_port = Some(port);
+        c.hook_token = Some(token.clone());
         c.hooks_declined = false;
-        (c.hook_port.unwrap(), c.hook_token.clone().unwrap())
+        (port, token)
     };
     s.save_config();
-    hooks_installer::install_file(&hooks_installer::settings_path(), port, &token, now_ms() / 1000)?;
+    let path = hooks_installer::settings_path();
+    if let Err(e) = hooks_installer::install_file(&path, HookTarget { port, token: &token, exe: &exe }, now_ms() / 1000) {
+        log::error!("Installing hooks failed: {e}");
+        return Err(e);
+    }
+    log::info!("Hooks installed in {} for port {port}", path.display());
     state::start_hook_server(app);
     state::refresh_hooks_installed(app);
     Ok(publish(app))
@@ -75,7 +82,13 @@ pub async fn move_hooks_port(app: AppHandle) -> CmdResult<Snapshot> {
 
 #[tauri::command]
 pub fn uninstall_hooks(app: AppHandle) -> CmdResult<Snapshot> {
-    hooks_installer::uninstall_file(&hooks_installer::settings_path(), now_ms() / 1000)?;
+    match hooks_installer::uninstall_file(&hooks_installer::settings_path(), now_ms() / 1000) {
+        Ok(changed) => log::info!("Hooks removed (settings.json changed: {changed})"),
+        Err(e) => {
+            log::error!("Removing hooks failed: {e}");
+            return Err(e);
+        }
+    }
     let s = app.state::<AppState>();
     if let Some(server) = lock(&s.hook_server).take() {
         server.stop();
@@ -175,12 +188,16 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     let (mode, resume) = {
         let mut projects = lock(&s.projects);
         projects.touch(&project, now_ms());
-        let p = projects.get(&project).expect("project was just touched");
-        (p.permission_mode, p.ask_session_id.clone())
+        let p = projects.get(&project);
+        (p.map(|p| p.permission_mode).unwrap_or_default(), p.and_then(|p| p.ask_session_id.clone()))
     };
     s.save_projects();
+    log::info!("Ask in {project} (mode {}, {})", mode.flag(), if resume.is_some() { "follow-up" } else { "new chat" });
     let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
-    let child = runner::spawn(&req).map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
+    let child = runner::spawn(&req).map_err(|e| {
+        log::error!("Ask in {project} couldn't start Claude Code: {e}");
+        format!("Couldn't start Claude Code: {e}")
+    })?;
     lock(&s.running).insert(project.clone(), child.id());
     state::emit_snapshot(&app);
     let handle = app.clone();
@@ -196,6 +213,7 @@ pub fn stop_ask(app: AppHandle, project: String) {
         .find(|(p, _)| store::same_path(p, &project))
         .map(|(_, pid)| *pid);
     if let Some(pid) = pid {
+        log::info!("Stop requested for the Ask in {project}");
         lock(&s.stop_requested).insert(project);
         runner::kill_tree(pid);
     }

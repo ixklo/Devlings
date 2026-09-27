@@ -82,7 +82,7 @@ pub fn register_shortcut(app: &AppHandle) {
         }
     });
     if let Err(e) = result {
-        eprintln!("Perch: couldn't register Ctrl+Alt+P: {e}");
+        log::warn!("Couldn't register Ctrl+Alt+P: {e}");
     }
 }
 
