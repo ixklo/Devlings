@@ -93,6 +93,7 @@ pub enum StreamItem {
 }
 
 pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> {
+    let line = line.trim_start_matches('\u{feff}');
     let Ok(v) = serde_json::from_str::<Value>(line) else {
         return vec![];
     };
@@ -334,6 +335,129 @@ mod tests {
         assert!(from_stream_line(sub_text, "p", 1).is_empty());
         assert!(from_stream_line("not json", "p", 1).is_empty());
         assert!(from_stream_line(r#"{"type":"system","subtype":"status","status":"requesting"}"#, "p", 1).is_empty());
+    }
+
+    fn kinds_and_labels(items: &[StreamItem]) -> Vec<(String, Option<String>)> {
+        items
+            .iter()
+            .map(|i| match i {
+                StreamItem::Init { api_key_source, .. } => (format!("init:{api_key_source}"), None),
+                StreamItem::Pet(e) => (format!("{:?}", e.kind), e.label.clone()),
+                other => (format!("{other:?}"), None),
+            })
+            .collect()
+    }
+
+    fn stream(fixture: &str) -> Vec<StreamItem> {
+        fixture.lines().flat_map(|l| from_stream_line(l, "C:\\proj", 1)).collect()
+    }
+
+    fn label(kind: &str, label: Option<&str>) -> (String, Option<String>) {
+        (kind.to_string(), label.map(str::to_string))
+    }
+
+    /// Claude Code 2.1.282: a PermissionRequest hook denied two tools. Captured through PowerShell, so the
+    /// file starts with a byte order mark.
+    #[test]
+    fn fixture_2_1_282_hook_deny() {
+        let items = stream(include_str!("../tests/fixtures/cc2.1.282_stream_hook_deny.ndjson"));
+        assert_eq!(
+            kinds_and_labels(&items),
+            vec![
+                label("init:none", None),
+                label("Started", None),
+                label("Step", Some("Write \"hi\" to out2.txt file")),
+                label("Blocked", Some("Blocked: Bash")),
+                label("Step", Some("Write \"hi\" to out2.txt file")),
+                label("Blocked", Some("Blocked: PowerShell")),
+                label("Done", Some("Done")),
+            ]
+        );
+        match items.last() {
+            Some(StreamItem::Pet(e)) => {
+                assert_eq!((e.text.as_deref(), e.session_id.as_str()), (Some("Unable."), "ff7af3e7-aacb-4627-aa74-6c16eb5bb108"))
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// Claude Code 2.1.282: an HTTP Stop hook with Perch not running adds a `system/notification`, which is ignored.
+    #[test]
+    fn fixture_2_1_282_stop_hook_error() {
+        let items = stream(include_str!("../tests/fixtures/cc2.1.282_stream_stop_hook_error.ndjson"));
+        assert_eq!(
+            kinds_and_labels(&items),
+            vec![label("init:none", None), label("Started", None), label("Step", Some("Reading hello.txt")), label("Done", Some("Done"))]
+        );
+    }
+
+    /// Claude Code 2.1.282: no hook answer in a `-p` run, so the tool is denied ("no approval surface").
+    #[test]
+    fn fixture_2_1_282_no_approval_surface() {
+        let items = stream(include_str!("../tests/fixtures/cc2.1.282_stream_no_approval.ndjson"));
+        assert_eq!(
+            kinds_and_labels(&items),
+            vec![
+                label("init:none", None),
+                label("Started", None),
+                label("Step", Some("Editing out4.txt")),
+                label("Blocked", Some("Blocked: Write")),
+                label("Done", Some("Done")),
+            ]
+        );
+    }
+
+    /// Hook bodies from Claude Code 2.1.282. The UserPromptSubmit body was captured; the PermissionRequest body
+    /// is rebuilt from the same session and the key list recorded in the v1.0 design, section 2.
+    #[test]
+    fn fixture_2_1_282_hook_bodies() {
+        let bodies: Vec<Value> = include_str!("../tests/fixtures/cc2.1.282_hook_bodies.jsonl")
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        let prompt = from_hook(&bodies[0], 3).unwrap();
+        assert_eq!((prompt.kind, prompt.project.as_str(), prompt.source), (Kind::Prompt, "C:\\Users\\me\\proj", Source::Watch));
+        assert_eq!(bodies[1]["hook_event_name"], "PermissionRequest");
+        // Answered by the hook server; it may or may not show as "needs input", but never as anything else.
+        assert!(from_hook(&bodies[1], 3).is_none_or(|e| e.kind == Kind::NeedsYou));
+    }
+
+    /// Unknown events, unknown fields and wrong types are ignored, never a panic.
+    #[test]
+    fn odd_input_is_ignored() {
+        assert!(from_hook(&json!({"hook_event_name": "Elicitation", "session_id": "s"}), 1).is_none());
+        assert!(from_hook(&json!({"hook_event_name": 5, "session_id": "s"}), 1).is_none());
+        assert!(from_hook(&json!({"hook_event_name": "Stop", "session_id": 5}), 1).is_none());
+        assert!(from_hook(&json!([1, 2]), 1).is_none());
+        assert!(from_hook(&Value::Null, 1).is_none());
+        let odd = from_hook(
+            &json!({"hook_event_name": "PreToolUse", "session_id": "s", "tool_name": 3, "tool_input": "x", "extra": {"a": 1}}),
+            1,
+        )
+        .unwrap();
+        assert_eq!(odd.label.as_deref(), Some("Tool"));
+        let stop =
+            from_hook(&json!({"hook_event_name": "Stop", "session_id": "s", "cwd": 7, "last_assistant_message": ["x"]}), 1).unwrap();
+        assert_eq!((stop.project.as_str(), stop.text), ("", None));
+        let odd_lines = [
+            "",
+            "{",
+            "[]",
+            "null",
+            "\u{feff}",
+            r#"{"type":"assistant","message":{"content":"text"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":7}]}}"#,
+            r#"{"type":"rate_limit_event","rate_limit_info":"x"}"#,
+            r#"{"type":"stream_event","event":{"delta":"x"}}"#,
+            r#"{"type":"result","is_error":"yes","result":5}"#,
+            r#"{"type":"system","subtype":"brand_new_event","x":1}"#,
+        ];
+        for line in odd_lines {
+            let _ = from_stream_line(line, "p", 1);
+        }
+        // A byte order mark in front of a line doesn't hide it.
+        let init = format!("\u{feff}{}", r#"{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}"#);
+        assert_eq!(from_stream_line(&init, "p", 1).len(), 2);
     }
 
     #[test]
