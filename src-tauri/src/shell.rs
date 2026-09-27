@@ -209,9 +209,135 @@ pub fn find_on_path(name: &str, path_env: Option<&OsStr>) -> Option<PathBuf> {
     std::env::split_paths(path_env?).map(|dir| dir.join(name)).find(|p| p.is_file())
 }
 
-/// Opens a folder in VS Code when its CLI is on PATH, otherwise in the file manager.
+/// Windows: VS Code's CLI in the two common per-user/per-machine install locations. Pure
+/// (injected env values) so it's testable on every OS, even though only Windows calls it for real.
+/// Built with `\`-joined strings rather than `Path::join`, since `PathBuf` only treats `\` as a
+/// separator when actually compiled for Windows; this way the result (and CI's non-Windows test
+/// coverage of it) doesn't depend on the host running the build.
+pub fn windows_known_locations(local_appdata: Option<&str>, program_files: Option<&str>, program_files_x86: Option<&str>) -> Vec<PathBuf> {
+    let bases = [local_appdata.map(|d| format!("{d}\\Programs")), program_files.map(str::to_string), program_files_x86.map(str::to_string)];
+    bases.into_iter().flatten().map(|dir| PathBuf::from(format!("{dir}\\Microsoft VS Code\\bin\\code.cmd"))).collect()
+}
+
+/// macOS: the CLI inside the app bundle, system-wide and per-user.
+pub fn macos_known_locations(home: &Path) -> Vec<PathBuf> {
+    const SUFFIX: &str = "Visual Studio Code.app/Contents/Resources/app/bin/code";
+    vec![PathBuf::from("/Applications").join(SUFFIX), home.join("Applications").join(SUFFIX)]
+}
+
+/// Linux: common CLI locations across distro packages, Snap and Flatpak.
+pub fn linux_known_locations() -> Vec<PathBuf> {
+    ["/usr/bin/code", "/usr/share/code/bin/code", "/snap/bin/code", "/var/lib/flatpak/exports/bin/com.visualstudio.code"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// Where a `code-url-handler` registration would live on Linux, so the `vscode://` URL is only
+/// tried when something has actually registered it (otherwise a plain xdg-open would show a
+/// "choose an app" prompt instead of opening VS Code).
+pub fn linux_url_handler_locations(home: &Path) -> Vec<PathBuf> {
+    ["/usr/share/applications", "/usr/local/share/applications"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(std::iter::once(home.join(".local/share/applications")))
+        .map(|dir| dir.join("code-url-handler.desktop"))
+        .collect()
+}
+
+/// VS Code CLI candidates in order: PATH, then this OS's common install locations (step 1-2).
+pub fn vscode_cli_candidates(
+    path_env: Option<&OsStr>,
+    local_appdata: Option<&str>,
+    program_files: Option<&str>,
+    program_files_x86: Option<&str>,
+    home: &Path,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    out.extend(find_on_path(vscode_cli_name(), path_env));
+    if cfg!(windows) {
+        out.extend(windows_known_locations(local_appdata, program_files, program_files_x86));
+    } else if cfg!(target_os = "macos") {
+        out.extend(macos_known_locations(home));
+    } else {
+        out.extend(linux_known_locations());
+    }
+    out
+}
+
+/// Builds a `vscode://file/<path>/` URL (step 3): forward slashes, a trailing slash so VS Code
+/// treats it as a folder, and percent-encoding for everything that isn't an RFC 3986 unreserved
+/// character (`A-Za-z0-9-._~`) plus `/` and `:` (kept unescaped for path separators and a drive
+/// letter's colon). That's stricter than the minimum needed for a valid URL, deliberately: `?`
+/// starts a query string on any platform, and a folder named e.g. `a?b` would otherwise silently
+/// truncate the path to `a`.
+pub fn vscode_url(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let with_leading_slash = if normalized.starts_with('/') { normalized } else { format!("/{normalized}") };
+    let mut url = String::from("vscode://file");
+    for ch in with_leading_slash.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '.' | '_' | '~' | '/' | ':') {
+            url.push(ch);
+        } else {
+            let mut buf = [0u8; 4];
+            for byte in ch.encode_utf8(&mut buf).as_bytes() {
+                url.push('%');
+                url.push_str(&format!("{byte:02X}"));
+            }
+        }
+    }
+    if !url.ends_with('/') {
+        url.push('/');
+    }
+    url
+}
+
+/// Whether Windows has something registered for the `vscode:` URL scheme, so opening one never
+/// shows "How do you want to open this?". Shells out to `reg query` rather than adding a registry
+/// crate dependency for a single read-only lookup.
+#[cfg(windows)]
+fn windows_vscode_scheme_registered() -> bool {
+    ["HKCU\\Software\\Classes\\vscode", "HKCR\\vscode"].iter().any(|key| {
+        runner::background_command(Path::new("reg"))
+            .args(["query", key])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(not(windows))]
+fn windows_vscode_scheme_registered() -> bool {
+    false
+}
+
+/// Whether the `vscode://` URL is safe to try (step 3's gate): registered on Windows; on macOS or
+/// Linux, only when VS Code's app or its URL handler was actually found in step 2's locations.
+fn vscode_url_usable(home: &Path) -> bool {
+    if cfg!(windows) {
+        windows_vscode_scheme_registered()
+    } else if cfg!(target_os = "macos") {
+        macos_known_locations(home).iter().any(|p| p.is_file())
+    } else {
+        linux_url_handler_locations(home).iter().any(|p| p.is_file())
+    }
+}
+
+/// Opens a folder in VS Code (PATH, then known install locations, then the `vscode://` URL if the
+/// scheme is safe to use), falling back to the file manager.
 pub fn open_project(app: &AppHandle, dir: &Path) -> Result<(), String> {
-    if let Some(code) = find_on_path(vscode_cli_name(), std::env::var_os("PATH").as_deref()) {
+    let home = dirs::home_dir().unwrap_or_default();
+    let candidates = vscode_cli_candidates(
+        std::env::var_os("PATH").as_deref(),
+        std::env::var("LOCALAPPDATA").ok().as_deref(),
+        std::env::var("ProgramFiles").ok().as_deref(),
+        std::env::var("ProgramFiles(x86)").ok().as_deref(),
+        &home,
+    );
+    if let Some(code) = candidates.into_iter().find(|p| p.is_file()) {
         // Rust runs a .cmd through cmd.exe itself and escapes the arguments for it.
         let spawned = runner::background_command(&code)
             .arg(dir)
@@ -222,6 +348,9 @@ pub fn open_project(app: &AppHandle, dir: &Path) -> Result<(), String> {
         if spawned.is_ok() {
             return Ok(());
         }
+    }
+    if vscode_url_usable(&home) && app.opener().open_url(vscode_url(dir), None::<&str>).is_ok() {
+        return Ok(());
     }
     open_folder(app, dir)
 }
@@ -254,6 +383,76 @@ mod tests {
         assert_eq!(find_on_path("code.cmd", Some(&path)), Some(a.join("code.cmd")));
         assert_eq!(find_on_path("missing", Some(&path)), None);
         assert_eq!(find_on_path("code.cmd", None), None);
+    }
+
+    #[test]
+    fn windows_known_locations_use_each_env_var_when_present() {
+        assert_eq!(windows_known_locations(None, None, None), Vec::<PathBuf>::new());
+        assert_eq!(
+            windows_known_locations(Some("C:\\Users\\me\\AppData\\Local"), None, None),
+            vec![PathBuf::from("C:\\Users\\me\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd")]
+        );
+        assert_eq!(
+            windows_known_locations(Some("L"), Some("C:\\Program Files"), Some("C:\\Program Files (x86)")),
+            vec![
+                PathBuf::from("L\\Programs\\Microsoft VS Code\\bin\\code.cmd"),
+                PathBuf::from("C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd"),
+                PathBuf::from("C:\\Program Files (x86)\\Microsoft VS Code\\bin\\code.cmd"),
+            ]
+        );
+    }
+
+    #[test]
+    fn macos_known_locations_cover_system_and_user_applications() {
+        let home = Path::new("/Users/me");
+        let found = macos_known_locations(home);
+        assert_eq!(found[0], PathBuf::from("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"));
+        assert_eq!(found[1], home.join("Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"));
+    }
+
+    #[test]
+    fn linux_known_locations_cover_distro_snap_and_flatpak() {
+        let found = linux_known_locations();
+        assert!(found.contains(&PathBuf::from("/usr/bin/code")));
+        assert!(found.contains(&PathBuf::from("/snap/bin/code")));
+        assert!(found.contains(&PathBuf::from("/var/lib/flatpak/exports/bin/com.visualstudio.code")));
+    }
+
+    #[test]
+    fn linux_url_handler_locations_include_the_user_and_system_dirs() {
+        let home = Path::new("/home/me");
+        let found = linux_url_handler_locations(home);
+        assert!(found.contains(&PathBuf::from("/usr/share/applications/code-url-handler.desktop")));
+        assert!(found.contains(&home.join(".local/share/applications/code-url-handler.desktop")));
+    }
+
+    #[test]
+    fn cli_candidates_try_path_before_known_locations() {
+        let t = tempfile::tempdir().unwrap();
+        let on_path_dir = t.path().join("on-path");
+        std::fs::create_dir_all(&on_path_dir).unwrap();
+        std::fs::write(on_path_dir.join(vscode_cli_name()), "").unwrap();
+        let path_env = std::env::join_paths([&on_path_dir]).unwrap();
+        // Every platform's known-location env vars are supplied, so the list is non-empty on any OS.
+        let candidates = vscode_cli_candidates(Some(&path_env), Some("L"), Some("P"), Some("P86"), Path::new("/h"));
+        assert_eq!(candidates[0], on_path_dir.join(vscode_cli_name()));
+        assert!(candidates.len() > 1, "known locations should follow the PATH match");
+        // PATH missing entirely: falls straight to the platform's known locations.
+        let candidates = vscode_cli_candidates(None, Some("L"), Some("P"), Some("P86"), Path::new("/h"));
+        assert!(!candidates.is_empty());
+    }
+
+    #[test]
+    fn vscode_url_builder_handles_a_windows_drive_a_unc_and_a_unix_path() {
+        assert_eq!(vscode_url(Path::new(r"C:\Users\me\My Proj")), "vscode://file/C:/Users/me/My%20Proj/");
+        assert_eq!(vscode_url(Path::new(r"\\srv\share\proj #1")), "vscode://file//srv/share/proj%20%231/");
+        assert_eq!(vscode_url(Path::new("/home/me/café")), "vscode://file/home/me/caf%C3%A9/");
+        // Already has a trailing slash: not doubled.
+        assert_eq!(vscode_url(Path::new("/already/there/")), "vscode://file/already/there/");
+        // A literal percent must be escaped so it isn't read as the start of another escape.
+        assert_eq!(vscode_url(Path::new("/proj/100%")), "vscode://file/proj/100%25/");
+        // A literal `?` must be escaped too, or it starts a query string and truncates the path.
+        assert_eq!(vscode_url(Path::new("/proj/a?b")), "vscode://file/proj/a%3Fb/");
     }
 
     #[test]

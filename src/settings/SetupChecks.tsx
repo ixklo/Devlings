@@ -31,7 +31,7 @@ export function SetupChecks({ snap }: { snap: Snapshot }) {
     auth == null
       ? "Login not checked yet"
       : auth.status === "allowed"
-        ? `Logged in with Claude ${capitalize(auth.subscription)}`
+        ? `Logged in with Claude ${capitalize(auth.subscription)} (as reported by Claude Code)`
         : auth.reason;
   const hooksTone: Tone = setup.hooksInstalled ? "good" : config.hooksDeclined ? "neutral" : "bad";
   const hooksText = setup.hooksInstalled

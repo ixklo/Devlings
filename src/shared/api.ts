@@ -11,6 +11,7 @@ import type {
   PetEvent,
   PetInfo,
   PetOpen,
+  Placement,
   SettingsView,
   Snapshot,
   UpdateStatus,
@@ -112,6 +113,7 @@ export const api = {
   onPetEvent: (cb: (e: PetEvent) => void) => transport.listen<PetEvent>("pet-event", cb),
   onPetOpen: (cb: (o: PetOpen) => void) => transport.listen<PetOpen>("pet-open", cb),
   onPetPointer: (cb: (id: string | null) => void) => transport.listen<string | null>("pet-pointer", cb),
+  onPetPlacement: (cb: (p: Placement) => void) => transport.listen<Placement>("pet-placement", cb),
   onSettingsView: (cb: (v: SettingsView) => void) => transport.listen<SettingsView>("settings-view", cb),
 
   // Window and OS helpers.
