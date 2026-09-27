@@ -280,9 +280,22 @@ fn place_sprite(
 /// v1.0 on (the *sprite's* top-left), so an old saved spot still lands at the same visual spot (gate
 /// G2.2). v0.2 never flipped the layout, so the migration always uses the un-flipped offset.
 fn migrate_saved_position(window_pos: (i32, i32), scale: f64, pet_scale: f64, window_size: (i32, i32)) -> (i32, i32) {
+    sprite_anchor_of_window(window_pos, scale, pet_scale, window_size, false)
+}
+
+/// Where the sprite's top-left is (physical) for a window at `window_pos` in the given layout: the inverse of
+/// `place_sprite`'s window position. Saved positions are sprite anchors, so anything that only knows where the
+/// window is must convert first.
+fn sprite_anchor_of_window(
+    window_pos: (i32, i32),
+    scale: f64,
+    pet_scale: f64,
+    window_size: (i32, i32),
+    cards_below: bool,
+) -> (i32, i32) {
     let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
     let window_logical = (f64::from(window_size.0) / scale, f64::from(window_size.1) / scale);
-    let (ox, oy) = sprite_offset(false, pet_scale, window_logical);
+    let (ox, oy) = sprite_offset(cards_below, pet_scale, window_logical);
     (window_pos.0 + (ox * scale).round() as i32, window_pos.1 + (oy * scale).round() as i32)
 }
 
@@ -415,12 +428,21 @@ pub fn drag_pet_by(app: &AppHandle, dx: f64, dy: f64) -> Option<(i32, i32)> {
     let pet_scale = lock(&s.config).pet_scale;
     let cards_below = s.cards_below.load(Ordering::SeqCst);
     let (Ok(win_pos), Ok(scale)) = (pet.outer_position(), pet.scale_factor()) else { return None };
-    let win_size = outer_size(&pet);
-    let win_logical = (f64::from(win_size.0) / scale, f64::from(win_size.1) / scale);
-    let (ox, oy) = sprite_offset(cards_below, pet_scale, win_logical);
-    let current = (win_pos.x + (ox * scale).round() as i32, win_pos.y + (oy * scale).round() as i32);
+    let current = sprite_anchor_of_window((win_pos.x, win_pos.y), scale, pet_scale, outer_size(&pet), cards_below);
     let target = (current.0 + (dx * scale).round() as i32, current.1 + (dy * scale).round() as i32);
     apply_sprite_position(app, &pet, target)
+}
+
+/// Saves where the sprite is now (after a drag settles). The page only knows the window's position, which
+/// isn't what a saved position means (the sprite's anchor), so it's worked out here from the window itself.
+pub fn remember_current(app: &AppHandle) {
+    let Some(pet) = pet_window(app) else { return };
+    let s = app.state::<AppState>();
+    let pet_scale = lock(&s.config).pet_scale;
+    let cards_below = s.cards_below.load(Ordering::SeqCst);
+    let (Ok(win_pos), Ok(scale)) = (pet.outer_position(), pet.scale_factor()) else { return };
+    let anchor = sprite_anchor_of_window((win_pos.x, win_pos.y), scale, pet_scale, outer_size(&pet), cards_below);
+    remember(app, Some(anchor));
 }
 
 /// Nudges the pet by logical px (arrow keys) and saves the new spot.
@@ -814,6 +836,20 @@ mod tests {
         // v0.2 saved the window's top-left; the un-flipped offset at pet_scale 0.6 is (132, 423).
         let anchor = migrate_saved_position((1000, 300), 1.0, D9_PET_SCALE, D9_WINDOW);
         assert_eq!(anchor, (1000 + 132, 300 + 423));
+    }
+
+    #[test]
+    fn the_saved_anchor_is_worked_out_from_the_window_in_either_layout() {
+        // A drag ends with the page reporting the window's position; what's saved must be the sprite's anchor,
+        // so placing it again puts the window back exactly where it was.
+        for (anchor, area) in [((1200, 900), D9_AREA), ((1200, 0), D9_AREA)] {
+            for scale in [1.0, 1.5, 2.0] {
+                let (window_pos, placement) = place_sprite(anchor, area, scale, D9_WINDOW, D9_PET_SCALE, false);
+                let back = sprite_anchor_of_window(window_pos, scale, D9_PET_SCALE, D9_WINDOW, placement.cards_below);
+                assert_eq!(back, anchor, "anchor {anchor:?} at scale {scale} (cards below: {})", placement.cards_below);
+                assert_ne!(back, window_pos, "the window's position is not the anchor");
+            }
+        }
     }
 
     #[test]

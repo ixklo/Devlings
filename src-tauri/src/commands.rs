@@ -570,10 +570,11 @@ pub fn get_pet_placement(app: AppHandle) -> Option<crate::overlay::Placement> {
 }
 
 #[tauri::command]
+/// Saves the pet's spot once a drag settles. `x`/`y` are the window's position as the page sees it; the saved
+/// position is the sprite's anchor (design D9), so the backend works it out from the window itself.
 pub fn save_pet_position(app: AppHandle, x: i32, y: i32) {
-    let s = app.state::<AppState>();
-    lock(&s.config).pet_position = Some((x, y));
-    s.save_config();
+    let _ = (x, y);
+    overlay::remember_current(&app);
 }
 
 #[cfg(test)]
