@@ -13,6 +13,7 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 - **Perch is now Devlings.** The app has a new name; Perch the teal bird stays, as the default pet. Your pet, its name, projects, settings and Claude Code hooks carry over. On Windows, installing Devlings (or Perch's in-app update) removes Perch for you; on macOS and Linux, remove Perch yourself after installing (see "Upgrading from Perch" in the README). The installers are now `Devlings_<version>_…`, updates come from the renamed repository, and the logs and `settings.json` backups are named after Devlings too. For testers: `DEVLINGS_UPDATE_ENDPOINT` replaces `PERCH_UPDATE_ENDPOINT`, which still works.
 - The pet pickers in onboarding and Settings scroll, and the right-click **Change pet** menu lists every built-in pet, birds first.
 - Switching pets keeps a name you chose; if you never renamed your pet, the new pet brings its own name.
+- The hidden-threads count now sits in a small pill where the cards were, instead of on the pet.
 
 ### Fixed
 

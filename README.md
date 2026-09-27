@@ -69,7 +69,7 @@ Don't run both: they share one settings folder, and whichever starts second just
 | Hover a card, click × | Mark it seen |
 | Deny, Allow or Always allow on a permission card | Answer that Claude Code permission prompt (click only; no key answers it) |
 | Bell | Turn notifications on or off |
-| Chevron | Collapse the cards (a badge shows the count) |
+| Chevron | Collapse the cards into a small pill that shows the count; click the pill to bring them back |
 | Drag the pet | Move it (arrow keys nudge it, Esc sends it home) |
 | Right-click the pet | Settings, change pet, hide for an hour, quit |
 | Ctrl+Alt+P | Show or hide the pet |
