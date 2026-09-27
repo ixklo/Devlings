@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import { api } from "../shared/api";
+import { threadForOpen } from "../shared/threads";
 import { useNow } from "../shared/time";
 import type { Placement, PetState, ProjectEntry, Snapshot, ThreadInfo } from "../shared/types";
 import { useSnapshot } from "../shared/useSnapshot";
@@ -17,6 +18,7 @@ import { BubbleStack } from "./BubbleStack";
 import { ComposerCard } from "./ComposerCard";
 import { ControlBar } from "./ControlBar";
 import { PetSprite, type Badge } from "./PetSprite";
+import { activateThread } from "./ThreadCard";
 import { ThreadView } from "./ThreadView";
 import { visibleUpdate } from "./UpdateCard";
 import { useConversation } from "./useConversation";
@@ -157,18 +159,16 @@ export function PetApp() {
     [conversation.open],
   );
 
-  // Tray and shortcut ask the pet to open a view.
+  // The tray, the shortcut and notification clicks ask the pet to open a view. A thread opens exactly as a click on
+  // its card would: an Ask thread's mini chat, or a Watch thread's project.
   useEffect(() => {
     const unlisten = api.onPetOpen((o) => {
       if (o.view === "compose") {
         setView({ kind: "compose" });
         return;
       }
-      const s = snapRef.current;
-      const path =
-        s?.threads.find((t) => t.sessionId === o.sessionId)?.project ??
-        s?.projects.find((p) => p.askSessionId === o.sessionId)?.path;
-      if (path) openThread(path, o.sessionId);
+      const thread = threadForOpen(o, snapRef.current);
+      if (thread) void activateThread(thread, (t) => openThread(t.project, t.sessionId)).catch(() => {});
     });
     return () => {
       unlisten.then((f) => f());

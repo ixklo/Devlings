@@ -11,6 +11,7 @@ import { Messages } from "./Messages";
 import { StatusIndicator } from "./StatusIndicator";
 import { UntrustedNotice } from "./UntrustedNotice";
 import { useApprovalGhosts } from "./useApprovalGhosts";
+import { UsageNote } from "./UsageNote";
 import { useAskGate } from "./useAskGate";
 import type { Conversation } from "./useConversation";
 
@@ -184,6 +185,7 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
           sendDisabled={gate.busy || gate.pending !== null}
           autoFocus
         />
+        <UsageNote usage={snap.usage} />
       </footer>
     </section>
   );

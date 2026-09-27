@@ -398,7 +398,8 @@ mod tests {
     fn pump_passes_items_through() {
         let (kill, items, fake, _stdin) = run(include_str!("../tests/fixtures/stream_success.ndjson"));
         assert_eq!(kill, None);
-        assert_eq!(items.len(), 8);
+        assert_eq!(items.len(), 9);
+        assert!(matches!(items.first(), Some(StreamItem::Usage(u)) if u.status == "allowed_warning"));
         assert!(matches!(items.last(), Some(StreamItem::Pet(e)) if e.kind == Kind::Done));
         // The result ends the conversation, so stdin is closed and Claude Code exits.
         assert!(fake.wait_closed());
@@ -528,8 +529,27 @@ mod tests {
         );
         let (kill, items, fake, _stdin) = run(input);
         assert_eq!(kill, Some(KillReason::Overage { resets_at: Some(100) }));
-        assert_eq!(items.len(), 3);
-        assert_eq!(items[2], StreamItem::Overage { resets_at: Some(100) });
+        // Init, Started, then the event's usage (recorded before the kill) and the Overage that triggers it.
+        assert_eq!(items.len(), 4);
+        assert!(matches!(&items[2], StreamItem::Usage(u) if u.status == "allowed"));
+        assert_eq!(items[3], StreamItem::Overage { resets_at: Some(100) });
         assert!(fake.wait_closed());
+    }
+
+    /// Plan usage is information only: a rejected or near-limit status never stops a run by itself.
+    #[test]
+    fn pump_never_kills_on_usage_alone() {
+        let input = concat!(
+            r#"{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}"#, "
+",
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","utilization":0.97,"isUsingOverage":false},"session_id":"s"}"#, "
+",
+            r#"{"type":"result","is_error":false,"result":"x","session_id":"s"}"#, "
+",
+        );
+        let (kill, items, _fake, _stdin) = run(input);
+        assert_eq!(kill, None);
+        assert!(items.iter().any(|i| matches!(i, StreamItem::Usage(u) if u.utilization == Some(0.97))));
+        assert!(matches!(items.last(), Some(StreamItem::Pet(e)) if e.kind == Kind::Done));
     }
 }

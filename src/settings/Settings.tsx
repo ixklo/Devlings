@@ -6,6 +6,7 @@ import { About } from "./About";
 import { Section, Segmented, SwitchRow } from "./controls";
 import { NameField } from "./NameField";
 import { PetPicker } from "./PetPicker";
+import { PlanUsage } from "./PlanUsage";
 import { SetupChecks } from "./SetupChecks";
 import { TrustedFolders } from "./TrustedFolders";
 import { useAction } from "./useAction";
@@ -209,6 +210,7 @@ export function Settings({ snap }: { snap: Snapshot }) {
             Asks run Claude Code on your subscription, never an API key. If usage credits are on in your Claude account,{" "}
             {pet} stops a run the moment it would start using them.
           </p>
+          <PlanUsage usage={snap.usage} />
           <button type="button" className="link" onClick={() => void api.openUrl(USAGE_URL)}>
             Claude usage settings
             <IconExternal size={12} />

@@ -32,6 +32,7 @@ import type {
   Snapshot,
   ThreadInfo,
   UpdateStatus,
+  UsageInfo,
 } from "./types";
 
 type Listener = (payload: unknown) => void;
@@ -281,6 +282,16 @@ class MockBackend {
   running: string[] = params.get("empty") ? [] : [`${ROOT}perch`];
   setup: SetupStatus = params.get("setup") ? brokenSetup() : healthySetup();
   update: UpdateStatus = initialUpdate();
+  // Plan usage from "the last Ask" (v1.0 S4); ?usage=warning or ?usage=rejected previews the mini chat's note.
+  usage: UsageInfo | null = params.get("empty")
+    ? null
+    : {
+        status: params.get("usage") ?? "allowed",
+        utilization: params.get("usage") === "rejected" ? 1 : params.get("usage") === "warning" ? 0.82 : 0.42,
+        kind: "five_hour",
+        resetsAt: Date.now() + 65 * 60_000,
+        seenAt: Date.now() - 25 * 60_000,
+      };
   timers: number[] = [];
 
   constructor() {
@@ -319,6 +330,7 @@ class MockBackend {
       setup: { ...this.setup },
       update: { ...this.update },
       approvals: this.approvals.map((a) => ({ ...a })),
+      usage: this.usage && { ...this.usage },
     };
   }
 

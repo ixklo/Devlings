@@ -14,7 +14,6 @@ use std::{
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::{
     approvals::{self, PendingApproval, Registry, Resolved, Responder, WatchPolicy},
@@ -25,12 +24,14 @@ use crate::{
     locks::lock,
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
+    notify,
     overlay::HitRect,
     pets::{self, Pet},
     runner::{self, KillReason, StdinWriter},
     shell,
     store::{self, Config, ProjectEntry, Projects},
     threads::{self, PetState, ThreadInfo, ThreadStatus, Threads},
+    usage::UsageInfo,
 };
 
 /// What the bubbles show; the ticker compares it to catch changes caused only by time passing.
@@ -77,6 +78,8 @@ pub struct AppState {
     /// Bumped whenever the pet window moves, resizes or changes scale, so the cursor poll knows to
     /// re-read the window's geometry instead of asking for it on every poll (design D17).
     pub pet_geometry_gen: AtomicU64,
+    /// The latest plan usage an Ask run reported (v1.0 S4). Memory only: a restart shows nothing until the next Ask.
+    pub usage: Mutex<Option<UsageInfo>>,
 }
 
 impl AppState {
@@ -111,6 +114,7 @@ impl AppState {
             pet_minimized: AtomicBool::new(false),
             settings_minimized: AtomicBool::new(false),
             pet_geometry_gen: AtomicU64::new(0),
+            usage: Mutex::new(None),
         })
     }
 
@@ -149,6 +153,8 @@ pub struct Snapshot {
     pub update: crate::updater::UpdateStatus,
     /// Permission requests the user can answer from the pet, oldest first.
     pub approvals: Vec<PendingApproval>,
+    /// The latest plan usage from an Ask run, or null before the first one since launch (v1.0 S4).
+    pub usage: Option<UsageInfo>,
 }
 
 fn setup_status(s: &AppState) -> SetupStatus {
@@ -195,7 +201,8 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     if let Some(pet) = pets::resolve(&lock(&s.pets), &config.pet_id) {
         config.pet_id = pet.info.id.clone();
     }
-    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app), approvals }
+    let usage = lock(&s.usage).clone();
+    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app), approvals, usage }
 }
 
 /// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
@@ -264,23 +271,10 @@ fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
     if !enabled || focused {
         return;
     }
-    let short = |t: &str| threads::excerpt(t).map(|x| x.chars().take(120).collect::<String>());
-    let body = match status {
-        ThreadStatus::NeedsInput => "Needs your approval".to_string(),
-        ThreadStatus::Ready => ev.text.as_deref().and_then(short).unwrap_or_else(|| "Done".to_string()),
-        ThreadStatus::Blocked => ev
-            .text
-            .as_deref()
-            .and_then(short)
-            .or_else(|| ev.label.clone())
-            .unwrap_or_else(|| "Something went wrong".to_string()),
-        ThreadStatus::Running | ThreadStatus::Idle => return,
-    };
-    let project = lock(&s.threads)
-        .get(&ev.session_id)
-        .map(|t| t.project_name.clone())
-        .unwrap_or_else(|| store::project_name(&ev.project));
-    let _ = app.notification().builder().title(format!("{pet} · {project}")).body(body).show();
+    let thread = lock(&s.threads).get(&ev.session_id).cloned();
+    if let Some(notice) = notify::notice_for(&pet, ev, status, thread.as_ref()) {
+        notify::show(app, notice);
+    }
 }
 
 pub fn on_hook_body(app: &AppHandle, body: Value) {
@@ -639,6 +633,11 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWr
         // The pump refuses these itself.
         StreamItem::ControlRequest { .. } => {}
         StreamItem::Overage { .. } => {}
+        StreamItem::Usage(usage) => {
+            // Read-only (v1.0 S4); the money guard in `runner::pump` acts on the Overage item, not on this.
+            *lock(&s.usage) = Some(usage);
+            emit_snapshot(&app);
+        }
     });
 
     if let Some(reason) = &kill {
@@ -719,6 +718,58 @@ mod tests {
         let second = compute_recheck(Some(&bin), None, home, version_of, auth_status_of);
         assert!(matches!(second.auth, Some(AuthVerdict::Allowed { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 2, "a second recheck must call auth status again, not reuse the first result");
+    }
+
+    fn usage(status: &str) -> UsageInfo {
+        UsageInfo { status: status.into(), resets_at: Some(1_000), utilization: Some(0.42), kind: Some("five_hour".into()), seen_at: 7 }
+    }
+
+    fn snapshot_with(usage: Option<UsageInfo>) -> Snapshot {
+        Snapshot {
+            config: Config::default(),
+            pet_state: PetState::Idle,
+            threads: vec![],
+            projects: vec![],
+            running: vec![],
+            setup: SetupStatus {
+                claude_path: None,
+                claude_version: None,
+                claude_error: None,
+                hooks_installed: false,
+                auth: None,
+                hook_server_error: None,
+                setup_hint: None,
+                needs_setup: false,
+            },
+            update: Default::default(),
+            approvals: vec![],
+            usage,
+        }
+    }
+
+    #[test]
+    fn the_snapshot_carries_the_latest_usage_or_null() {
+        assert_eq!(serde_json::to_value(snapshot_with(None)).unwrap()["usage"], Value::Null);
+        assert_eq!(
+            serde_json::to_value(snapshot_with(Some(usage("allowed")))).unwrap()["usage"],
+            serde_json::json!({"status": "allowed", "resetsAt": 1000, "utilization": 0.42, "kind": "five_hour", "seenAt": 7})
+        );
+    }
+
+    #[test]
+    fn usage_starts_empty_and_is_never_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = AppState::load(dir.path().to_path_buf()).unwrap();
+        assert!(lock(&s.usage).is_none(), "a restart shows nothing until the next Ask");
+        *lock(&s.usage) = Some(usage("allowed_warning"));
+        s.save_config();
+        s.save_projects();
+        for file in ["config.json", "projects.json"] {
+            let saved = std::fs::read_to_string(dir.path().join(file)).unwrap();
+            assert!(!saved.contains("allowed_warning") && !saved.contains("utilization"), "{file}: {saved}");
+        }
+        let again = AppState::load(dir.path().to_path_buf()).unwrap();
+        assert!(lock(&again.usage).is_none());
     }
 
     #[test]

@@ -114,6 +114,25 @@ export interface Snapshot {
   update: UpdateStatus;
   /** Permission requests the user can answer from the pet, oldest first. */
   approvals: PendingApproval[];
+  /** The latest plan usage an Ask run reported, or null before the first one since launch (v1.0 S4). */
+  usage: UsageInfo | null;
+}
+
+/**
+ * Plan usage from the last `rate_limit_event` of an Ask run (v1.0 S4). Unset fields are absent. It's a snapshot of
+ * that moment, never live: always show it with its `seenAt` time.
+ */
+export interface UsageInfo {
+  /** `allowed`, `allowed_warning` or `rejected`; anything else is shown generically. */
+  status: string;
+  /** Epoch ms. */
+  resetsAt?: number;
+  /** Share of the limit used, 0-1. */
+  utilization?: number;
+  /** Which limit: `five_hour`, `seven_day`, `seven_day_opus`, ... */
+  kind?: string;
+  /** Epoch ms when Perch saw it. */
+  seenAt: number;
 }
 
 export type ApprovalDecision = "allow" | "deny" | "always";
@@ -192,7 +211,12 @@ export interface Placement {
   stageRoom: number;
 }
 
-export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string };
+/**
+ * `thread` opens a thread the way a click on its card does. A notification click (Windows, v1.0 S1) also carries the
+ * thread's `project` and `source`, so it still works after the thread has left the cards.
+ */
+export type ThreadOpen = { view: "thread"; sessionId: string; project?: string; source?: Source };
+export type PetOpen = { view: "compose" } | ThreadOpen;
 export type SettingsView = "settings" | "onboarding";
 
 export interface ChatTurn {
