@@ -12,8 +12,18 @@ describe("SetupChecks", () => {
   it("shows a healthy setup", () => {
     render(<SetupChecks snap={snap({})} />);
     expect(screen.getByText("Claude Code 2.1.282 found")).toBeInTheDocument();
-    expect(screen.getByText("Logged in with Claude Pro")).toBeInTheDocument();
+    expect(screen.getByText("Logged in with Claude Pro (as reported by Claude Code)")).toBeInTheDocument();
     expect(screen.getByText("Watching your sessions")).toBeInTheDocument();
+  });
+
+  it("labels the plan honestly as Claude Code's own report, since it can be stale", () => {
+    render(<SetupChecks snap={snap({ auth: { status: "allowed", subscription: "max" } })} />);
+    expect(screen.getByText("Logged in with Claude Max (as reported by Claude Code)")).toBeInTheDocument();
+  });
+
+  it("shows an unknown subscription value as-is, only capitalized", () => {
+    render(<SetupChecks snap={snap({ auth: { status: "allowed", subscription: "enterprise" } })} />);
+    expect(screen.getByText("Logged in with Claude Enterprise (as reported by Claude Code)")).toBeInTheDocument();
   });
 
   it("shows every problem", () => {
