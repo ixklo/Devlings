@@ -34,7 +34,7 @@ Free and open source (MIT). Perch is not affiliated with Anthropic.
 
 ## Install
 
-Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run: pick and name your pet, let it watch your sessions, and check Claude Code.
+Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run, in three steps: pick and name your pet and let it watch your sessions, see how asking from the pet works (with a check that Claude Code is ready), and choose whether it answers permission prompts for your other sessions.
 
 The installers aren't code-signed by a paid certificate, so each OS shows an unfamiliar-software warning the first time:
 
@@ -63,6 +63,9 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 | Drag the pet | Move it (arrow keys nudge it, Esc sends it home) |
 | Right-click the pet | Settings, change pet, hide for an hour, quit |
 | Ctrl+Alt+P | Show or hide the pet |
+| Tab, Enter or Space, Esc | Use the pet, its cards and Settings from the keyboard (the menu key opens the pet's menu) |
+
+Screen readers hear each status change once, for example "api-server: needs input", and Perch follows your system's reduced-motion setting.
 
 Clicking a notification to open its thread works on Windows only for now. On macOS and Linux, notifications still appear, but clicking one does nothing.
 

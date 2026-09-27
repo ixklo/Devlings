@@ -40,7 +40,10 @@ interface Props {
   renderUntrusted?: (turn: ChatTurn) => ReactNode;
 }
 
-/** The scrolling conversation inside the thread view. */
+/**
+ * The scrolling conversation inside the thread view. A log, but not a live one: a streamed reply would
+ * be read out token by token. The pet window's live region says when a reply finishes (announce.ts).
+ */
 export function Messages({ turns, loading, activity, empty, renderUntrusted }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -64,9 +67,9 @@ export function Messages({ turns, loading, activity, empty, renderUntrusted }: P
   const streaming = last?.role === "assistant" && last.pending;
 
   return (
-    <div className="messages" ref={scroller} role="log" aria-live="polite" aria-busy={loading}>
+    <div className="messages" ref={scroller} role="log" aria-live="off" aria-label="Messages" aria-busy={loading}>
       {loading && turns.length === 0 && (
-        <div className="messages-skeleton" aria-label="Loading conversation">
+        <div className="messages-skeleton" role="img" aria-label="Loading conversation">
           <span style={{ width: "46%" }} />
           <span style={{ width: "88%" }} />
           <span style={{ width: "72%" }} />
@@ -87,7 +90,7 @@ export function Messages({ turns, loading, activity, empty, renderUntrusted }: P
           </div>
         ) : (
           <div key={i} className={`msg-assistant md${t.pending ? " is-streaming" : ""}`}>
-            {t.text ? <Markdown text={t.text} /> : <span className="typing" aria-label="Writing" />}
+            {t.text ? <Markdown text={t.text} /> : <span className="typing" role="img" aria-label="Writing" />}
           </div>
         ),
       )}

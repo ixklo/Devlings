@@ -19,7 +19,7 @@ describe("UpdateCard", () => {
 
   it("says which version is ready, with Restart and Later", () => {
     render(<UpdateCard version="1.0.1" onRestart={async () => {}} onLater={() => {}} />);
-    const card = screen.getByRole("group", { name: "Update ready" });
+    const card = screen.getByRole("group", { name: /update ready/ });
     expect(cardText(card)).toContain("Perch 1.0.1 is ready. Restart to install.");
     expect(within(card).getByRole("button", { name: "Restart" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Later" })).toBeInTheDocument();
@@ -76,12 +76,12 @@ describe("BubbleStack with an update", () => {
 
   it("points the tail from the update card when it's the only card", () => {
     render(stack([]));
-    expect(screen.getByRole("group", { name: "Update ready" })).toHaveClass("has-tail");
+    expect(screen.getByRole("group", { name: /update ready/ })).toHaveClass("has-tail");
   });
 
   it("sits above the threads, which keep the tail", () => {
     render(stack([makeThread({ projectName: "app", status: "ready" })]));
-    const card = screen.getByRole("group", { name: "Update ready" });
+    const card = screen.getByRole("group", { name: /update ready/ });
     expect(card).not.toHaveClass("has-tail");
     expect(document.querySelectorAll(".has-tail")).toHaveLength(1);
   });
@@ -103,19 +103,19 @@ describe("PetApp update card", () => {
     const { emit } = setup(makeSnapshot({ update: READY, running: ["C:\\code\\app"] }));
     render(<PetApp />);
     await screen.findByRole("button", { name: /Mochi/ });
-    expect(screen.queryByRole("group", { name: "Update ready" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /update ready/ })).not.toBeInTheDocument();
     act(() => emit("snapshot", makeSnapshot({ update: READY, running: [] })));
-    expect(screen.getByRole("group", { name: "Update ready" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /update ready/ })).toBeInTheDocument();
   });
 
   it("Later hides it until a newer version is ready", async () => {
     const { emit } = setup(makeSnapshot({ update: READY }));
     render(<PetApp />);
     await userEvent.click(await screen.findByRole("button", { name: "Later" }));
-    expect(screen.queryByRole("group", { name: "Update ready" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /update ready/ })).not.toBeInTheDocument();
     act(() => emit("snapshot", makeSnapshot({ update: READY })));
-    expect(screen.queryByRole("group", { name: "Update ready" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /update ready/ })).not.toBeInTheDocument();
     act(() => emit("snapshot", makeSnapshot({ update: { state: "ready", version: "1.0.2" } })));
-    expect(cardText(screen.getByRole("group", { name: "Update ready" }))).toContain("Perch 1.0.2 is ready.");
+    expect(cardText(screen.getByRole("group", { name: /update ready/ }))).toContain("Perch 1.0.2 is ready.");
   });
 });

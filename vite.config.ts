@@ -15,5 +15,6 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**"] },
   },
   // Threads, not forks: forked workers time out starting up on a busy machine and the run reports "no tests".
-  test: { environment: "jsdom", setupFiles: ["./src/test-setup.ts"], pool: "threads" },
+  // `css.include`: the contrast test reads the colour tokens as text (`styles.css?raw`); other CSS stays stubbed.
+  test: { environment: "jsdom", setupFiles: ["./src/test-setup.ts"], pool: "threads", css: { include: [/\/src\/styles\.css/] } },
 });

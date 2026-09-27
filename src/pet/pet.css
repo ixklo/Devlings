@@ -172,6 +172,11 @@ body[data-window="pet"] {
   margin-top: 1px;
 }
 
+/* The button fills the card, so its focus ring goes inside the card, on the card's own surface. */
+.thread-card-main:focus-visible {
+  outline-offset: -2px;
+}
+
 .thread-card-body {
   display: flex;
   flex-direction: column;
@@ -548,8 +553,17 @@ body[data-window="pet"] {
   background: var(--wait);
   transform-origin: left center;
   animation-name: approval-countdown;
+  animation-duration: var(--countdown-ms, 0ms);
   animation-timing-function: linear;
   animation-fill-mode: forwards;
+}
+
+/* Reduced motion ends animations at once (styles.css), which would show this bar empty as soon as a
+   card appears. It's a slow, steady progress bar that says how long is left, so it keeps its pace. */
+@media (prefers-reduced-motion: reduce) {
+  .approval-countdown-bar {
+    animation-duration: var(--countdown-ms, 0ms) !important;
+  }
 }
 
 @keyframes approval-countdown {
@@ -661,6 +675,8 @@ body[data-window="pet"] {
 
 .status-needs_input .status-dot {
   background: var(--wait);
+  /* The amber alone is too light on white; a darker edge keeps the dot at 3:1. */
+  box-shadow: inset 0 0 0 1px var(--wait-ink);
 }
 
 .status-needs_input .status-dot::after {
@@ -686,6 +702,10 @@ body[data-window="pet"] {
 
 .status-blocked .status-fill {
   fill: var(--err);
+}
+
+.status-glyph {
+  stroke: var(--on-color);
 }
 
 @keyframes spin {
@@ -893,8 +913,12 @@ body[data-window="pet"] {
 
 .menu-item:hover,
 .menu-item:focus-visible {
-  outline: none;
   background: var(--fill-1);
+}
+
+.menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .menu-item.has-detail {
@@ -1289,6 +1313,19 @@ body[data-window="pet"] {
   background: var(--surface);
 }
 
+/* The message boxes draw no outline of their own; their box shows focus instead. */
+.composer-input.is-row:has(.composer-text:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.composer-card:has(.composer-text:focus-visible) {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-card);
+}
+
 .composer-input.is-row .composer-text {
   padding: 4px 0;
 }
@@ -1313,6 +1350,13 @@ body[data-window="pet"] {
 
 .pet:active {
   cursor: grabbing;
+}
+
+/* The pet and the "+N more" pill sit over whatever is on the desktop, so their focus ring gets a halo
+   in the surface colour on both sides: visible on any background. */
+.pet:focus-visible,
+.more-pill:focus-visible {
+  box-shadow: 0 0 0 6px var(--surface);
 }
 
 .sprite {
@@ -1344,12 +1388,12 @@ body[data-window="pet"] {
 
 .pet-badge.is-wait {
   background: var(--wait);
-  color: #1c1300;
+  color: var(--on-wait);
 }
 
 .pet-badge.is-err {
-  background: var(--err);
-  color: #ffffff;
+  background: var(--err-ink);
+  color: var(--on-color);
 }
 
 .control-bar {
@@ -1373,6 +1417,11 @@ body[data-window="pet"] {
   opacity: 1;
   transform: none;
   pointer-events: auto;
+}
+
+/* Keep the ring inside the pill's padding, on its surface. */
+.control-bar .icon-btn:focus-visible {
+  outline-offset: 0;
 }
 
 .control-bar .icon-btn.is-active {

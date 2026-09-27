@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { api } from "../shared/api";
 import { IconAlert, IconShield } from "../shared/icons";
 import type { ApprovalDecision, PendingApproval, Snapshot } from "../shared/types";
@@ -33,7 +33,11 @@ function Countdown({ expiresAt, holdMs }: { expiresAt: number; holdMs: number })
   const from = holdMs > 0 ? Math.min(1, remaining / holdMs) : 0;
   return (
     <div className="approval-countdown" aria-hidden="true">
-      <span className="approval-countdown-bar" style={{ transform: `scaleX(${from})`, animationDuration: `${remaining}ms` }} />
+      <span
+        className="approval-countdown-bar"
+        // A custom property, so reduced motion can keep the bar's pace (pet.css).
+        style={{ transform: `scaleX(${from})`, "--countdown-ms": `${remaining}ms` } as CSSProperties}
+      />
     </div>
   );
 }
@@ -95,7 +99,7 @@ export function ApprovalCard({ approval: a, holdMs, variant = "card", tail, layo
       data-hit=""
       data-armed={arm.armed}
       role="group"
-      aria-label={`${a.toolName} request in ${a.projectName}`}
+      aria-label={`${a.toolName} request in ${a.projectName}: needs your answer`}
     >
       <div className="approval-head">
         <span className="status status-approval" aria-hidden="true">
@@ -146,14 +150,16 @@ export function ApprovalCard({ approval: a, holdMs, variant = "card", tail, layo
   );
 }
 
-/** Keeps a removed request's place for a moment, so the cards around it don't slide under the cursor. */
+/**
+ * Keeps a removed request's place for a moment, so the cards around it don't slide under the cursor.
+ * Not a live region: the pet window's one live region announces status changes (announce.ts).
+ */
 export function ApprovalGhost({ text, height, variant = "card", tail }: { text: string; height: number; variant?: "card" | "row"; tail?: boolean }) {
   return (
     <div
       className={variant === "card" ? `card thread-card approval-ghost${tail ? " has-tail" : ""}` : "approval-row approval-ghost"}
       data-hit=""
       style={height > 0 ? { minHeight: height } : undefined}
-      role="status"
     >
       {text}
     </div>

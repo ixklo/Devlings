@@ -128,6 +128,7 @@ export function Settings({ snap }: { snap: Snapshot }) {
             <button
               type="button"
               className="btn btn-danger btn-sm"
+              aria-label="Remove hooks"
               disabled={action.busy}
               onClick={() => void action.run(api.uninstallHooks, "Hooks removed.")}
             >
@@ -137,6 +138,7 @@ export function Settings({ snap }: { snap: Snapshot }) {
             <button
               type="button"
               className="btn btn-primary btn-sm"
+              aria-label="Install hooks"
               disabled={action.busy}
               onClick={() => void action.run(api.installHooks, "Hooks installed.")}
             >

@@ -16,7 +16,7 @@ interface SetupProps {
 /** Shown instead of nothing when Perch can't work yet; opens the settings window. */
 export function SetupCard({ detail, tail, onOpen }: SetupProps) {
   return (
-    <div className={`card thread-card setup-card${tail ? " has-tail" : ""}`} data-hit="">
+    <div className={`card thread-card setup-card${tail ? " has-tail" : ""}`} data-hit="" role="group" aria-label="Perch: needs setup">
       <button type="button" className="thread-card-main" onClick={onOpen}>
         <span className="status status-setup" aria-hidden="true">
           <IconAlert size={16} />
@@ -119,7 +119,7 @@ export function BubbleStack({
           ? "update"
           : "intro";
   return (
-    <div className="bubbles" aria-label="Claude Code threads">
+    <div className="bubbles" role="region" aria-label="Claude Code sessions">
       {setup && <SetupCard detail={setup.detail} onOpen={setup.onOpen} tail />}
       {shown.approvals.map((it, i) => (
         // Same key for a card and the placeholder that replaces it, so the slot doesn't replay its entrance.

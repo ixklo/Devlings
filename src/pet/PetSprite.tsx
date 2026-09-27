@@ -18,6 +18,8 @@ interface Props {
   clip: Clip;
   onClipDone: () => void;
   label: string;
+  /** Id of an element describing the keys (Enter, arrows, Esc, the menu key). */
+  describedBy?: string;
   badge: Badge | null;
   /** A click without movement. */
   onActivate: () => void;
@@ -49,6 +51,7 @@ export function PetSprite({
   clip,
   onClipDone,
   label,
+  describedBy,
   badge,
   onActivate,
   onHover,
@@ -91,6 +94,7 @@ export function PetSprite({
       role="button"
       tabIndex={0}
       aria-label={label}
+      aria-describedby={describedBy}
       title={label}
       data-hit="pet"
       onPointerEnter={onHover}

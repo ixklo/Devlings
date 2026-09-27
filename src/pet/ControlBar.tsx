@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import { IconBell, IconBellFilled, IconChevronDown, IconChevronUp, IconPencil } from "../shared/icons";
 
 interface Props {
@@ -8,6 +9,20 @@ interface Props {
   onCompose: () => void;
   onToggleNotifications: () => void;
   onToggleCollapsed: () => void;
+}
+
+/** Left/Right (and Home/End) move between the bar's buttons, as in any toolbar; Tab works too. */
+function onToolbarKey(e: KeyboardEvent<HTMLDivElement>) {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!keys.includes(e.key)) return;
+  const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+  const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  const last = buttons.length - 1;
+  const next = e.key === "Home" ? 0 : e.key === "End" ? last : e.key === "ArrowLeft" ? (i <= 0 ? last : i - 1) : i >= last ? 0 : i + 1;
+  e.preventDefault();
+  // Arrow keys elsewhere nudge the pet; here they only move focus.
+  e.stopPropagation();
+  buttons[next]?.focus();
 }
 
 /** The pill under the pet: composer, notifications, collapse. */
@@ -26,12 +41,13 @@ export function ControlBar({
       role="toolbar"
       aria-label="Pet controls"
       data-hit={visible ? "bar" : undefined}
+      onKeyDown={onToolbarKey}
     >
       <button
         type="button"
         className={`icon-btn${composerOpen ? " is-active" : ""}`}
         aria-label={composerOpen ? "Close composer" : "New message"}
-        aria-pressed={composerOpen}
+        aria-expanded={composerOpen}
         title={composerOpen ? "Close composer" : "New message"}
         onClick={onCompose}
       >

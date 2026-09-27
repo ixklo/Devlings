@@ -6,7 +6,7 @@ Run on a Windows 11 machine with Claude Code logged in with a subscription, and 
 
 ## G2.1 — Fresh install, no terminal
 
-- [ ] Install from the built NSIS installer with no terminal open at any point. Onboarding walks through: name the pet, install hooks, three green setup checks.
+- [ ] Install from the built NSIS installer with no terminal open at any point. Onboarding has three steps: Watch (pick and name the pet, install hooks), Ask (subscription, never an API key, Agent SDK credit link, three green setup checks), Permission prompts (the switch, off by default); Finish closes it.
 - [ ] `settings.json` now has Perch's hook entries (§3 of `docs/specs/2026-09-26-perch-v1.0-design.md`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Notification, PermissionDenied, PermissionRequest, Stop, StopFailure, SessionEnd) and a `settings.json.perch-backup-*` exists.
 - [ ] A live Claude Code session in VS Code shows up as a card within a few seconds.
 

@@ -158,11 +158,11 @@ describe("BubbleStack placeholders", () => {
     const slots = Array.from(document.querySelectorAll(".bubble-slot")).map((el) => el.textContent);
     expect(slots[0]).toBe("No longer waiting");
     expect(slots[1]).toContain("second");
-    expect(screen.getByRole("status")).toHaveAttribute("data-hit");
+    expect(document.querySelector(".approval-ghost")).toHaveAttribute("data-hit");
     act(() => {
       vi.advanceTimersByTime(GHOST_MS);
     });
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.querySelector(".approval-ghost")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".bubble-slot")).toHaveLength(1);
   });
 
@@ -176,14 +176,14 @@ describe("BubbleStack placeholders", () => {
     fireEvent.click(screen.getByRole("button", { name: "Allow" }), { detail: 1 });
     await act(async () => {});
     rerender(stack([]));
-    expect(screen.getByRole("status")).toHaveTextContent("Answered");
+    expect(document.querySelector(".approval-ghost")).toHaveTextContent("Answered");
   });
 
   it("leaves no placeholder when the cards are collapsed", () => {
     const a = makeApproval({ id: "a" });
     const { rerender } = render(stack([a]));
     rerender(stack([a], { approvalsHidden: true }));
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.querySelector(".approval-ghost")).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: /request in/ })).not.toBeInTheDocument();
   });
 });
