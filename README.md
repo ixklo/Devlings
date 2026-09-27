@@ -6,7 +6,6 @@
 
 <p align="center">
   <a href="https://github.com/yeetstick/perch/releases/latest"><img src="https://img.shields.io/github/v/release/yeetstick/perch?label=release" alt="Latest release"></a>
-  <a href="https://github.com/yeetstick/perch/releases"><img src="https://img.shields.io/github/downloads/yeetstick/perch/total" alt="Total downloads"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/yeetstick/perch" alt="MIT license"></a>
   <a href="https://github.com/yeetstick/perch/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/yeetstick/perch/ci.yml?branch=main&label=CI" alt="CI status"></a>
 </p>
