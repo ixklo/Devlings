@@ -122,6 +122,7 @@ Perch never uses an API key and has no login of its own.
 
 - **Watching is free.** It only listens to Claude Code's hooks, so no prompts are sent.
 - **Asks use your Claude subscription.** Perch runs your own Claude Code in non-interactive mode (`claude -p`). Anthropic meters that kind of use separately from interactive Claude Code: it draws on a monthly Agent SDK credit that comes with paid plans and that you claim once in your Claude account. If the credit runs out and paid usage credits are off, Asks stop working until it refreshes; interactive Claude Code isn't affected. See [Anthropic's help article](https://support.claude.com/en/articles/15036540) for the current amounts.
+- **Plan usage.** **Settings → Cost** shows how much of your plan's limit is used, as Claude Code reported it during your last Ask, with the time it was seen. It isn't live and Perch makes no extra requests for it; after a restart it's empty until your next Ask.
 - **Guards.** Before every Ask, Perch checks that Claude Code is logged in with a subscription and strips API-key environment variables from the process. It stops a run the moment Claude Code reports it would start drawing on paid usage credits.
 
 ## How watching works

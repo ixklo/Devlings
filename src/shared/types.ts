@@ -106,6 +106,25 @@ export interface Snapshot {
   running: string[];
   setup: SetupStatus;
   update: UpdateStatus;
+  /** The latest plan usage an Ask run reported, or null before the first one since launch (v1.0 S4). */
+  usage: UsageInfo | null;
+}
+
+/**
+ * Plan usage from the last `rate_limit_event` of an Ask run (v1.0 S4). Unset fields are absent. It's a snapshot of
+ * that moment, never live: always show it with its `seenAt` time.
+ */
+export interface UsageInfo {
+  /** `allowed`, `allowed_warning` or `rejected`; anything else is shown generically. */
+  status: string;
+  /** Epoch ms. */
+  resetsAt?: number;
+  /** Share of the limit used, 0-1. */
+  utilization?: number;
+  /** Which limit: `five_hour`, `seven_day`, `seven_day_opus`, ... */
+  kind?: string;
+  /** Epoch ms when Perch saw it. */
+  seenAt: number;
 }
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "disabled";

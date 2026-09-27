@@ -1095,3 +1095,11 @@ body[data-window="pet"] {
 .control-bar .icon-btn.is-on {
   color: var(--ink);
 }
+
+/* Plan usage near or at its limit, from the last Ask (v1.0 S4). Quiet: it's a snapshot, not an alert. */
+.usage-note {
+  margin: 0 4px;
+  color: var(--ink-3);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}

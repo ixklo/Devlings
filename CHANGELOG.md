@@ -15,6 +15,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 - `SECURITY.md`, `CONTRIBUTING.md`, issue and pull request templates, and a `.github/release-notes-template.md`.
 - A rewritten `docs/release-checklist.md`, now the v1.0 manual QA checklist mapped to the release gates in `docs/release/v1.0.0.md`.
 - On Windows, clicking a notification brings up the pet and opens that thread, just like clicking its card: an Ask opens its chat, and a watched session opens its project. macOS and Linux notifications don't respond to clicks yet.
+- **Settings → Cost** shows your plan usage as Claude Code reported it during your last Ask, for example "42% of your 5-hour limit, resets 3:10 PM", always labelled with the time it was seen. The mini chat adds a short note when you're near or at a limit. Perch makes no extra requests for this, and it starts empty after a restart until your next Ask.
 - Asks in a folder Claude Code hasn't trusted no longer run that folder's project hooks, environment variables, helper commands, MCP servers or skills. Perch runs Claude Code without the folder's project settings, says in the chat what it skipped, and offers to trust the folder in Perch. Undo it from the chat or **Settings → Trusted folders**.
 
 ### Changed

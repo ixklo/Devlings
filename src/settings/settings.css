@@ -595,3 +595,7 @@ body[data-window="settings"] {
 .onboarding-foot > .btn-ghost:first-child {
   margin-left: -12px;
 }
+
+.row-desc.plan-usage {
+  margin: 6px 0 8px;
+}

@@ -19,6 +19,7 @@ mod threads;
 mod transcript;
 mod trust;
 mod updater;
+mod usage;
 
 pub fn run() {
     // Headless modes (the hook relay and the uninstaller's cleanup) come before anything else, so they stay fast

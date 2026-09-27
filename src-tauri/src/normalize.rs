@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use crate::events::{Kind, PetEvent, Source};
+use crate::usage::{self, UsageInfo};
 
 pub static NULL: Value = Value::Null;
 
@@ -90,6 +91,9 @@ pub enum StreamItem {
     Pet(PetEvent),
     Overage { resets_at: Option<i64> },
     LimitRejected { resets_at: Option<i64> },
+    /// Plan usage from a `rate_limit_event` (v1.0 S4), read-only. It comes before that event's Overage or
+    /// LimitRejected, which are unchanged.
+    Usage(UsageInfo),
 }
 
 pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> {
@@ -131,7 +135,7 @@ pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> 
             let info = v.get("rate_limit_info");
             let field = |k: &str| info.and_then(|i| i.get(k));
             let resets_at = field("resetsAt").and_then(Value::as_i64);
-            let mut out = vec![];
+            let mut out: Vec<StreamItem> = info.and_then(|i| usage::from_rate_limit_info(i, now)).map(StreamItem::Usage).into_iter().collect();
             if field("isUsingOverage").and_then(Value::as_bool) == Some(true) {
                 out.push(StreamItem::Overage { resets_at });
             }
@@ -297,6 +301,13 @@ mod tests {
         assert_eq!(
             items,
             vec![
+                StreamItem::Usage(UsageInfo {
+                    status: "allowed_warning".into(),
+                    resets_at: Some(1_790_679_600_000),
+                    utilization: Some(0.82),
+                    kind: Some("seven_day".into()),
+                    seen_at: 7,
+                }),
                 StreamItem::Init { session_id: "bf558c52".into(), api_key_source: "none".into() },
                 ev(Kind::Started, None, None),
                 ev(Kind::Step, Some("Reading hello.txt"), None),
@@ -309,14 +320,37 @@ mod tests {
         );
     }
 
+    /// The money guard's items, without the read-only usage item that rides along (tested below).
+    fn guard_items(line: &str) -> Vec<StreamItem> {
+        from_stream_line(line, "p", 1).into_iter().filter(|i| !matches!(i, StreamItem::Usage(_))).collect()
+    }
+
     #[test]
     fn overage_and_rejection() {
         let over = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1790679600,"isUsingOverage":true},"session_id":"s"}"#;
-        assert_eq!(from_stream_line(over, "p", 1), vec![StreamItem::Overage { resets_at: Some(1790679600) }]);
+        assert_eq!(guard_items(over), vec![StreamItem::Overage { resets_at: Some(1790679600) }]);
         let rejected = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1790679600,"isUsingOverage":false},"session_id":"s"}"#;
-        assert_eq!(from_stream_line(rejected, "p", 1), vec![StreamItem::LimitRejected { resets_at: Some(1790679600) }]);
+        assert_eq!(guard_items(rejected), vec![StreamItem::LimitRejected { resets_at: Some(1790679600) }]);
         let fine = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","isUsingOverage":false},"session_id":"s"}"#;
-        assert!(from_stream_line(fine, "p", 1).is_empty());
+        assert!(guard_items(fine).is_empty());
+    }
+
+    /// Every rate_limit_event with a status also reports plan usage, first, so it's recorded even when the overage
+    /// kill follows. The kill items themselves are exactly as before.
+    #[test]
+    fn rate_limit_events_also_carry_usage() {
+        let usage = |status: &str| {
+            StreamItem::Usage(UsageInfo { status: status.into(), resets_at: Some(1_790_679_600_000), utilization: None, kind: None, seen_at: 1 })
+        };
+        let over = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","resetsAt":1790679600,"isUsingOverage":true},"session_id":"s"}"#;
+        assert_eq!(from_stream_line(over, "p", 1), vec![usage("allowed"), StreamItem::Overage { resets_at: Some(1790679600) }]);
+        let rejected = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1790679600,"isUsingOverage":false},"session_id":"s"}"#;
+        assert_eq!(from_stream_line(rejected, "p", 1), vec![usage("rejected"), StreamItem::LimitRejected { resets_at: Some(1790679600) }]);
+        let fine = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1790679600},"session_id":"s"}"#;
+        assert_eq!(from_stream_line(fine, "p", 1), vec![usage("allowed_warning")]);
+        // No status: no usage, and the guard still sees the overage flag.
+        let bare = r#"{"type":"rate_limit_event","rate_limit_info":{"isUsingOverage":true},"session_id":"s"}"#;
+        assert_eq!(from_stream_line(bare, "p", 1), vec![StreamItem::Overage { resets_at: None }]);
     }
 
     #[test]
@@ -348,8 +382,9 @@ mod tests {
             .collect()
     }
 
+    /// A captured stream's items, without the usage items (their parsing is tested in `usage`).
     fn stream(fixture: &str) -> Vec<StreamItem> {
-        fixture.lines().flat_map(|l| from_stream_line(l, "C:\\proj", 1)).collect()
+        fixture.lines().flat_map(|l| from_stream_line(l, "C:\\proj", 1)).filter(|i| !matches!(i, StreamItem::Usage(_))).collect()
     }
 
     fn label(kind: &str, label: Option<&str>) -> (String, Option<String>) {

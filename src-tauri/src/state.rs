@@ -30,6 +30,7 @@ use crate::{
     shell,
     store::{self, Config, ProjectEntry, Projects},
     threads::{self, PetState, ThreadInfo, ThreadStatus, Threads},
+    usage::UsageInfo,
 };
 
 /// What the bubbles show; the ticker compares it to catch changes caused only by time passing.
@@ -65,6 +66,8 @@ pub struct AppState {
     /// Whether cards currently open below the sprite instead of above it (design D9). Runtime
     /// only, for the flip's hysteresis; not persisted, so a restart re-derives it from scratch.
     pub cards_below: AtomicBool,
+    /// The latest plan usage an Ask run reported (v1.0 S4). Memory only: a restart shows nothing until the next Ask.
+    pub usage: Mutex<Option<UsageInfo>>,
 }
 
 impl AppState {
@@ -91,6 +94,7 @@ impl AppState {
             hit_regions: Mutex::new(None),
             pet_visibility_gen: AtomicU64::new(0),
             cards_below: AtomicBool::new(false),
+            usage: Mutex::new(None),
         })
     }
 
@@ -127,6 +131,8 @@ pub struct Snapshot {
     pub running: Vec<String>,
     pub setup: SetupStatus,
     pub update: crate::updater::UpdateStatus,
+    /// The latest plan usage from an Ask run, or null before the first one since launch (v1.0 S4).
+    pub usage: Option<UsageInfo>,
 }
 
 fn setup_status(s: &AppState) -> SetupStatus {
@@ -168,7 +174,8 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     if let Some(pet) = pets::resolve(&lock(&s.pets), &config.pet_id) {
         config.pet_id = pet.info.id.clone();
     }
-    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app) }
+    let usage = lock(&s.usage).clone();
+    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app), usage }
 }
 
 /// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
@@ -515,6 +522,11 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
             handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Plan limit reached", Some(text)));
         }
         StreamItem::Overage { .. } => {}
+        StreamItem::Usage(usage) => {
+            // Read-only (v1.0 S4); the money guard in `runner::pump` acts on the Overage item, not on this.
+            *lock(&s.usage) = Some(usage);
+            emit_snapshot(&app);
+        }
     });
 
     if let Some(reason) = &kill {
@@ -591,6 +603,57 @@ mod tests {
         let second = compute_recheck(Some(&bin), None, home, version_of, auth_status_of);
         assert!(matches!(second.auth, Some(AuthVerdict::Allowed { .. })));
         assert_eq!(calls.load(Ordering::SeqCst), 2, "a second recheck must call auth status again, not reuse the first result");
+    }
+
+    fn usage(status: &str) -> UsageInfo {
+        UsageInfo { status: status.into(), resets_at: Some(1_000), utilization: Some(0.42), kind: Some("five_hour".into()), seen_at: 7 }
+    }
+
+    fn snapshot_with(usage: Option<UsageInfo>) -> Snapshot {
+        Snapshot {
+            config: Config::default(),
+            pet_state: PetState::Idle,
+            threads: vec![],
+            projects: vec![],
+            running: vec![],
+            setup: SetupStatus {
+                claude_path: None,
+                claude_version: None,
+                claude_error: None,
+                hooks_installed: false,
+                auth: None,
+                hook_server_error: None,
+                setup_hint: None,
+                needs_setup: false,
+            },
+            update: Default::default(),
+            usage,
+        }
+    }
+
+    #[test]
+    fn the_snapshot_carries_the_latest_usage_or_null() {
+        assert_eq!(serde_json::to_value(snapshot_with(None)).unwrap()["usage"], Value::Null);
+        assert_eq!(
+            serde_json::to_value(snapshot_with(Some(usage("allowed")))).unwrap()["usage"],
+            serde_json::json!({"status": "allowed", "resetsAt": 1000, "utilization": 0.42, "kind": "five_hour", "seenAt": 7})
+        );
+    }
+
+    #[test]
+    fn usage_starts_empty_and_is_never_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = AppState::load(dir.path().to_path_buf()).unwrap();
+        assert!(lock(&s.usage).is_none(), "a restart shows nothing until the next Ask");
+        *lock(&s.usage) = Some(usage("allowed_warning"));
+        s.save_config();
+        s.save_projects();
+        for file in ["config.json", "projects.json"] {
+            let saved = std::fs::read_to_string(dir.path().join(file)).unwrap();
+            assert!(!saved.contains("allowed_warning") && !saved.contains("utilization"), "{file}: {saved}");
+        }
+        let again = AppState::load(dir.path().to_path_buf()).unwrap();
+        assert!(lock(&again.usage).is_none());
     }
 
     #[test]

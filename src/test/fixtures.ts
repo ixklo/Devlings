@@ -64,6 +64,7 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
     running: [],
     setup: makeSetup(),
     update: { state: "idle" },
+    usage: null,
     ...over,
   };
 }
