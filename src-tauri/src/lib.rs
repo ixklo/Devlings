@@ -1,3 +1,4 @@
+mod approvals;
 mod cli;
 mod commands;
 mod diagnostics;
@@ -52,6 +53,7 @@ pub fn run() {
             let handle = app.handle().clone();
             shell::setup_tray(&handle)?;
             shell::register_shortcut(&handle);
+            shell::hide_settings_page_at_startup(&handle);
             overlay::place_pet(&handle);
             overlay::start_click_through(handle.clone());
             updater::start(handle.clone());
@@ -79,6 +81,10 @@ pub fn run() {
             commands::untrust_project,
             commands::mark_credits_notice_seen,
             commands::finish_onboarding,
+            commands::answer_approval,
+            commands::set_watch_approvals,
+            commands::set_approval_hold,
+            commands::mark_approvals_intro_seen,
             commands::set_notifications,
             commands::set_launch_at_login,
             updater::check_for_update,
@@ -104,6 +110,12 @@ pub fn run() {
             commands::get_diagnostics,
             commands::open_log_folder,
         ])
-        .run(context)
-        .expect("error while running Perch");
+        .build(context)
+        .expect("error while building Perch")
+        .run(|app, event| {
+            // Quitting answers every pending permission request, so no session keeps waiting on Perch.
+            if let tauri::RunEvent::Exit = event {
+                state::shutdown(app);
+            }
+        });
 }

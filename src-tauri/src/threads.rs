@@ -99,7 +99,8 @@ fn is_result(s: ThreadStatus) -> bool {
     matches!(s, ThreadStatus::Ready | ThreadStatus::Blocked)
 }
 
-fn display_name(project: &str) -> String {
+/// A project's name for cards, or "Claude Code" for a session without a folder.
+pub fn display_name(project: &str) -> String {
     let name = store::project_name(project);
     if name.is_empty() { "Claude Code".to_string() } else { name }
 }
@@ -137,6 +138,11 @@ pub fn pet_state(visible: &[ThreadInfo], setup: bool) -> PetState {
         Some(ThreadStatus::Running) => PetState::Running,
         Some(ThreadStatus::Idle) | None => PetState::Idle,
     }
+}
+
+/// A pending approval makes the pet wait, like a thread that needs input (setup still wins).
+pub fn with_approvals(state: PetState, approvals_pending: bool) -> PetState {
+    if approvals_pending && state != PetState::Setup { PetState::NeedsInput } else { state }
 }
 
 impl Threads {
@@ -426,6 +432,15 @@ mod tests {
         assert_eq!(pet_state(&t.visible(0), false), PetState::NeedsInput);
         assert_eq!(pet_state(&t.visible(0), true), PetState::Setup);
         assert_eq!(pet_state(&[], true), PetState::Setup);
+    }
+
+    #[test]
+    fn a_pending_approval_makes_the_pet_wait() {
+        for state in [PetState::Idle, PetState::Running, PetState::Ready, PetState::Blocked, PetState::NeedsInput] {
+            assert_eq!(with_approvals(state, true), PetState::NeedsInput, "{state:?}");
+            assert_eq!(with_approvals(state, false), state, "{state:?}");
+        }
+        assert_eq!(with_approvals(PetState::Setup, true), PetState::Setup);
     }
 
     #[test]

@@ -54,8 +54,15 @@ Work through the README's "Using it" table on a live pet with at least one activ
 ## G3.4 — Permission answering in VS Code, the terminal and Ask
 
 - [ ] With watch-approvals **off** (default), a permission prompt in VS Code/terminal behaves exactly as it does without Perch running (Perch only shows "needs input", it doesn't answer).
-- [ ] Turn watch-approvals on. With a Claude Code host (VS Code, the terminal, `claude` itself) in the foreground, a permission request is answered immediately (`{}`, i.e. handled natively) per D3. With no such host focused, Perch holds the request for `approvalHoldSecs` and shows the approval card with Deny / Allow / (Always allow, when Claude Code sent a suggestion).
-- [ ] In an Ask run, an approval renders inline in the mini chat; Stop and New chat both cancel any pending request for that run.
+- [ ] After upgrading from a build without approvals (hooks installed, onboarding done), the intro card appears once; **Not now** hides it for good, **Turn on** switches watch-approvals on.
+- [ ] Turn watch-approvals on (Settings → Approvals). A permission prompt in VS Code and in the terminal shows an approval card above the pet at the same moment as Claude Code's own prompt, with the exact command, Claude's description, Deny / Allow and the always button when Claude Code offered a rule, plus a countdown bar. Nothing is focused and Enter does nothing.
+- [ ] **Allow** in Perch: Claude Code's own prompt goes away and the tool runs. **Deny**: the tool is blocked with "The user declined this in Perch." **Always allow / Allow for this session**: the tool runs and the rule applies to the next matching call.
+- [ ] Answer in Claude Code instead: the card disappears once the tool has run (or at the next prompt); clicking the stale card before then does nothing harmful.
+- [ ] Let the hold run out (set 30 s): the card goes, the thread shows "needs input", and Claude Code's own prompt still works.
+- [ ] A fresh card's buttons are faded and ignore clicks for about a second, then fade in; when a card above or below it goes away (placeholder "Answered" / "No longer waiting"), or the cards flip below the pet, they fade out again briefly.
+- [ ] An MCP tool card shows the raw `mcp__…` name and opens Details by default; a Write/Edit card's Details show the content / old and new text; a very large Write offers only Deny with "Too long to review here. Answer in Claude Code."
+- [ ] A question (AskUserQuestion) or plan (ExitPlanMode) in a watched session shows "Has a question for you" / "Has a plan for you to review" with no card; Claude Code's own dialog handles it. In an Ask, the chat shows a note and Claude carries on.
+- [ ] In an Ask run, an approval renders inline in the mini chat and as a card; Allow/Deny work; Stop and New chat both cancel any pending request for that run.
 
 ## G3.5 — Recovery from an extension path change and an off-screen position
 

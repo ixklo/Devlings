@@ -8,6 +8,10 @@
 // update=ready|downloading|error|disabled|none (none: checks find nothing),
 // untrusted=1 (every Ask shows the untrusted-folder notice; without it, only
 // Asks in billing-service and ml-notebooks do, until trusted),
+// approvals=none|mcp|ask (no sample permission card; or also an MCP tool
+// card; or also one inline in the running Ask's chat), intro=1 (the one-time
+// "answer permission prompts" card; hidden while watching is on, so it also
+// starts with watching off),
 // debug=hits (outlines the click-through regions).
 
 import { placeholderAtlas } from "../sprite/placeholderAtlas";
@@ -18,6 +22,7 @@ import type {
   ChatTurn,
   Config,
   HitRect,
+  PendingApproval,
   PermissionMode,
   PetEvent,
   PetInfo,
@@ -147,6 +152,78 @@ function brokenSetup(): SetupStatus {
 
 const PRIORITY: PetState[] = ["needs_input", "blocked", "ready", "running"];
 const NEXT_VERSION = "1.0.1";
+const HOLDS = [30, 60, 120, 240];
+
+/** A watched session's permission request (billing-service already shows as "needs input"), and optionally the running Ask's. */
+function initialApprovals(holdSecs: number): PendingApproval[] {
+  if (params.get("empty") || params.get("approvals") === "none") return [];
+  const list: PendingApproval[] = [
+    {
+      id: "preview-watch-1",
+      sessionId: "watch-billing-service",
+      project: `${ROOT}billing-service`,
+      projectName: "billing-service",
+      source: "watch",
+      toolName: "Bash",
+      rawToolName: null,
+      summary: "npm install stripe@18",
+      description: "Install the Stripe SDK",
+      details: JSON.stringify({ command: "npm install stripe@18", description: "Install the Stripe SDK" }, null, 2),
+      lossy: false,
+      tooLong: false,
+      risks: [],
+      canAlwaysAllow: true,
+      alwaysLabel: "Always allow",
+      alwaysDetail: "Adds the rule Bash(npm install:*) to this project's local settings",
+      expiresAt: Date.now() + holdSecs * 1000,
+    },
+  ];
+  if (params.get("approvals") === "mcp") {
+    const input = { owner: "you", repo: "billing-service", title: "Flaky webhook test", body: "Seen twice on CI today." };
+    list.push({
+      id: "preview-watch-2",
+      sessionId: "watch-docs-site",
+      project: `${ROOT}docs-site`,
+      projectName: "docs-site",
+      source: "watch",
+      toolName: "Create issue",
+      rawToolName: "mcp__github__create_issue",
+      summary: JSON.stringify(input),
+      description: null,
+      details: JSON.stringify(input, null, 2),
+      lossy: true,
+      tooLong: false,
+      risks: [],
+      canAlwaysAllow: false,
+      alwaysLabel: null,
+      alwaysDetail: null,
+      expiresAt: Date.now() + holdSecs * 1000,
+    });
+  }
+  if (params.get("approvals") === "ask") {
+    const file = `${ROOT}perch\\src\\shared\\useSnapshot.ts`;
+    list.push({
+      id: "preview-ask-1",
+      sessionId: "ask-perch",
+      project: `${ROOT}perch`,
+      projectName: "perch",
+      source: "ask",
+      toolName: "Edit",
+      rawToolName: null,
+      summary: file,
+      description: null,
+      details: JSON.stringify({ file_path: file, old_string: "let fresh = false;", new_string: "let fresh = true;" }, null, 2),
+      lossy: false,
+      tooLong: false,
+      risks: [],
+      canAlwaysAllow: true,
+      alwaysLabel: "Allow for this session",
+      alwaysDetail: "Lets Claude Code edit files for the rest of this session",
+      expiresAt: null,
+    });
+  }
+  return list;
+}
 
 function initialUpdate(): UpdateStatus {
   switch (params.get("update")) {
@@ -188,7 +265,11 @@ class MockBackend {
     threadsCollapsed: !!params.get("collapsed"),
     autoUpdate: true,
     lastUpdateCheck: null,
+    watchApprovals: !params.get("intro"),
+    approvalHoldSecs: 60,
+    approvalsIntroSeen: !params.get("intro"),
   };
+  approvals: PendingApproval[] = initialApprovals(this.config.approvalHoldSecs);
   projects: ProjectEntry[] = [
     project("perch", 0, "edit_files", true),
     project("billing-service", 1),
@@ -213,6 +294,14 @@ class MockBackend {
       t.updatedAt = Date.now();
       this.publish();
     }, 7000);
+    // Like a watch hold ending: the card goes and the session keeps its "needs input" card.
+    window.setInterval(() => {
+      const now = Date.now();
+      const left = this.approvals.filter((a) => a.expiresAt === null || a.expiresAt > now);
+      if (left.length === this.approvals.length) return;
+      this.approvals = left;
+      this.publish();
+    }, 1000);
     // The Ask that's already running in the preview finishes after a while.
     if (this.running.length) this.stream(`${ROOT}perch`, "ask-perch", 2600, false);
   }
@@ -220,7 +309,7 @@ class MockBackend {
   snapshot(): Snapshot {
     const visible = sortThreads(this.threads.filter((t) => t.status !== "idle"));
     const top = PRIORITY.find((s) => visible.some((t) => t.status === s));
-    const petState: PetState = this.setup.needsSetup ? "setup" : (top ?? "idle");
+    const petState: PetState = this.setup.needsSetup ? "setup" : this.approvals.length ? "needs_input" : (top ?? "idle");
     return {
       config: { ...this.config },
       petState,
@@ -229,7 +318,24 @@ class MockBackend {
       running: [...this.running],
       setup: { ...this.setup },
       update: { ...this.update },
+      approvals: this.approvals.map((a) => ({ ...a })),
     };
+  }
+
+  /** Like `answer_approval`: the first answer wins, and the thread goes back to work. */
+  answerApproval(id: string, decision: string) {
+    const a = this.approvals.find((x) => x.id === id);
+    if (!a) throw "That request was already answered or is no longer waiting.";
+    if (decision === "always" && !a.canAlwaysAllow) throw "Claude Code didn't offer a rule for this request.";
+    this.approvals = this.approvals.filter((x) => x.id !== id);
+    const t = this.threads.find((x) => x.sessionId === a.sessionId);
+    if (t && !this.approvals.some((x) => x.sessionId === a.sessionId)) {
+      t.status = "running";
+      t.label = decision === "deny" ? `Declined: ${a.toolName}` : `Running ${a.summary}`;
+      t.updatedAt = Date.now();
+    }
+    console.info(`[preview] answer_approval ${decision}: ${a.summary}`);
+    return this.publish();
   }
 
   emit(event: string, payload: unknown) {
@@ -386,6 +492,7 @@ class MockBackend {
       }
       case "new_conversation":
         delete HISTORY[String(a.project)];
+        this.approvals = this.approvals.filter((x) => !(x.source === "ask" && samePath(x.project, String(a.project))));
         return this.publish();
       case "load_conversation": {
         const key = Object.keys(HISTORY).find((k) => samePath(k, String(a.project)));
@@ -420,6 +527,8 @@ class MockBackend {
         const path = String(a.project);
         if (!this.running.some((r) => samePath(r, path))) return null;
         this.running = this.running.filter((r) => !samePath(r, path));
+        // Stop denies the run's pending requests first.
+        this.approvals = this.approvals.filter((x) => !(x.source === "ask" && samePath(x.project, path)));
         const t = this.threads.find((x) => x.source === "ask" && samePath(x.project, path));
         if (t) (t.status = "idle"), (t.updatedAt = Date.now());
         this.petEvent({ sessionId: t?.sessionId ?? "", project: path, kind: "ended", label: "Stopped" });
@@ -438,6 +547,22 @@ class MockBackend {
         return this.publish();
       case "finish_onboarding":
         c.onboarded = true;
+        c.approvalsIntroSeen = true;
+        return this.publish();
+      case "answer_approval":
+        return this.answerApproval(String(a.id), String(a.decision));
+      case "set_watch_approvals":
+        c.watchApprovals = !!a.enabled;
+        if (c.watchApprovals) c.approvalsIntroSeen = true;
+        // Turning it off answers every held request "no decision"; the threads keep "needs input".
+        if (!c.watchApprovals) this.approvals = this.approvals.filter((x) => x.source !== "watch");
+        return this.publish();
+      case "set_approval_hold":
+        if (!HOLDS.includes(Number(a.secs))) throw "Choose 30 seconds, 1 minute, 2 minutes or 4 minutes.";
+        c.approvalHoldSecs = Number(a.secs);
+        return this.publish();
+      case "mark_approvals_intro_seen":
+        c.approvalsIntroSeen = true;
         return this.publish();
       case "set_notifications":
         c.notifications = !!a.enabled;

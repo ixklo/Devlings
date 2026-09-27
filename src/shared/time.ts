@@ -11,12 +11,23 @@ export function relativeTime(at: number, now: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-/** Re-renders every `ms` so relative times stay fresh. */
+/**
+ * Re-renders every `ms` so relative times stay fresh. A hidden page's timers are throttled
+ * (a hidden window hides its page, design D17), so it also catches up the moment the page shows.
+ */
 export function useNow(ms = 30_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), ms);
-    return () => window.clearInterval(t);
+    const tick = () => setNow(Date.now());
+    const t = window.setInterval(tick, ms);
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden") tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [ms]);
   return now;
 }

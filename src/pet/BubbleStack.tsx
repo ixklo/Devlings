@@ -1,9 +1,11 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { IconAlert, IconChevronRight } from "../shared/icons";
-import { MAX_BUBBLES, stackBubbles } from "../shared/threads";
-import type { ThreadInfo } from "../shared/types";
+import { stackCards } from "../shared/threads";
+import type { PendingApproval, ThreadInfo } from "../shared/types";
+import { ApprovalCard, ApprovalGhost, ApprovalsIntroCard } from "./ApprovalCard";
 import { ThreadCard } from "./ThreadCard";
 import { UpdateCard } from "./UpdateCard";
+import { useApprovalGhosts, type ApprovalItem } from "./useApprovalGhosts";
 
 interface SetupProps {
   detail: string;
@@ -64,21 +66,81 @@ interface Props {
   setup?: { detail: string; onOpen: () => void } | null;
   /** A downloaded update waiting for a restart; shown above the threads. */
   update?: { version: string; onRestart: () => Promise<void>; onLater: () => void } | null;
+  /** Permission requests the user can answer, oldest first; shown nearest the pet. */
+  approvals?: PendingApproval[];
+  /** The configured hold, for the approval cards' countdown bars. */
+  holdMs?: number;
+  /** Collapsed cards: approvals aren't drawn (and don't leave placeholders). */
+  approvalsHidden?: boolean;
+  /** Changes when the stage is laid out differently (flipped below the pet, shifted): re-arms approval buttons. */
+  layoutKey?: unknown;
+  /** The one-time "answer permission prompts" intro, shown at the top. */
+  intro?: { petName: string } | null;
 }
 
+type Stacked = ApprovalItem & { sessionId: string };
+
+const itemKey = (it: ApprovalItem) => `approval-${it.kind === "live" ? it.approval.id : it.id}`;
+
 /**
- * Thread cards above the pet. The first card in priority order sits nearest
- * the pet and carries the tail; beyond three, a "+N more" pill expands the stack.
+ * Cards above the pet, nearest first: setup, permission requests, then threads
+ * in priority order. The nearest card carries the tail; beyond three cards, a
+ * "+N more" pill expands the stack.
  */
-export function BubbleStack({ threads, now, expanded, onToggleExpanded, onOpenThread, setup, update }: Props) {
-  const { shown, more } = stackBubbles(threads, expanded);
-  const collapsible = expanded && threads.length > MAX_BUBBLES;
+export function BubbleStack({
+  threads,
+  now,
+  expanded,
+  onToggleExpanded,
+  onOpenThread,
+  setup,
+  update,
+  approvals = [],
+  holdMs = 60_000,
+  approvalsHidden = false,
+  layoutKey,
+  intro,
+}: Props) {
+  const ghosts = useApprovalGhosts(approvals);
+  // A placeholder keeps a gone request's place (and never hides a thread card).
+  const stackable: Stacked[] = approvalsHidden
+    ? []
+    : ghosts.items.map((it) => ({ ...it, sessionId: it.kind === "live" ? it.approval.sessionId : "" }));
+  const shown = stackCards(stackable, threads, expanded);
+  const { more } = shown;
+  const collapsible = expanded && stackCards(stackable, threads, false).more > 0;
+  const first = setup
+    ? "setup"
+    : shown.approvals.length
+      ? "approval"
+      : shown.threads.length
+        ? "thread"
+        : update
+          ? "update"
+          : "intro";
   return (
     <div className="bubbles" aria-label="Claude Code threads">
       {setup && <SetupCard detail={setup.detail} onOpen={setup.onOpen} tail />}
-      {shown.map((t, i) => (
-        <BubbleSlot key={t.sessionId} index={i}>
-          <ThreadCard thread={t} now={now} tail={!setup && i === 0} onOpenThread={onOpenThread} />
+      {shown.approvals.map((it, i) => (
+        // Same key for a card and the placeholder that replaces it, so the slot doesn't replay its entrance.
+        <BubbleSlot key={itemKey(it)} index={i}>
+          {it.kind === "live" ? (
+            <ApprovalCard
+              approval={it.approval}
+              holdMs={holdMs}
+              tail={first === "approval" && i === 0}
+              layoutKey={layoutKey}
+              onHeight={(h) => ghosts.onHeight(it.approval.id, h)}
+              onAnswered={() => ghosts.onAnswered(it.approval.id)}
+            />
+          ) : (
+            <ApprovalGhost text={it.text} height={it.height} tail={first === "approval" && i === 0} />
+          )}
+        </BubbleSlot>
+      ))}
+      {shown.threads.map((t, i) => (
+        <BubbleSlot key={t.sessionId} index={shown.approvals.length + i}>
+          <ThreadCard thread={t} now={now} tail={first === "thread" && i === 0} onOpenThread={onOpenThread} />
         </BubbleSlot>
       ))}
       {more > 0 && (
@@ -92,13 +154,18 @@ export function BubbleStack({ threads, now, expanded, onToggleExpanded, onOpenTh
         </button>
       )}
       {update && (
-        <BubbleSlot key={`update-${update.version}`} index={shown.length}>
+        <BubbleSlot key={`update-${update.version}`} index={shown.approvals.length + shown.threads.length}>
           <UpdateCard
             version={update.version}
-            tail={!setup && shown.length === 0}
+            tail={first === "update"}
             onRestart={update.onRestart}
             onLater={update.onLater}
           />
+        </BubbleSlot>
+      )}
+      {intro && (
+        <BubbleSlot key="approvals-intro" index={shown.approvals.length + shown.threads.length + 1}>
+          <ApprovalsIntroCard petName={intro.petName} tail={first === "intro"} />
         </BubbleSlot>
       )}
     </div>
