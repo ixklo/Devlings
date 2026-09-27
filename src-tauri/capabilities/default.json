@@ -5,7 +5,6 @@
   "windows": ["pet", "settings"],
   "permissions": [
     "core:default",
-    "core:window:allow-start-dragging",
     "core:window:allow-set-focus",
     "opener:default",
     "dialog:allow-open"
