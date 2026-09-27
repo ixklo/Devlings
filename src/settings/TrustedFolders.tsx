@@ -10,7 +10,7 @@ interface Props {
 }
 
 /**
- * Folders trusted in Perch (v1.0 D6), each with Stop trusting. Hidden while there are none; folders get here from
+ * Folders trusted in Devlings (v1.0 D6), each with Stop trusting. Hidden while there are none; folders get here from
  * the "Trust this folder" button on an untrusted-folder notice in the mini chat.
  */
 export function TrustedFolders({ projects, petName, action }: Props) {

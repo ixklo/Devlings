@@ -6,7 +6,7 @@
 # there's no real one to launch a GUI app against.
 set -e
 
-BIN=src-tauri/target/debug/perch
+BIN=src-tauri/target/debug/devlings
 chmod +x "$BIN"
 
 OS="$(uname -s)"

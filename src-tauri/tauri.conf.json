@@ -1,6 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Perch",
+  "productName": "Devlings",
+  "mainBinaryName": "devlings",
   "version": "1.0.0",
   "identifier": "io.github.perchpet.perch",
   "build": {
@@ -14,7 +15,7 @@
     "windows": [
       {
         "label": "pet",
-        "title": "Perch",
+        "title": "Devlings",
         "width": 380,
         "height": 600,
         "resizable": false,
@@ -28,7 +29,7 @@
       },
       {
         "label": "settings",
-        "title": "Perch",
+        "title": "Devlings",
         "width": 480,
         "height": 680,
         "minWidth": 420,
@@ -81,7 +82,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFNjg5MzY4RjcwNjJBNjAKUldSZ0tnYjNhSk5vL3BzRHZSR1NzWlM1VldjanFla0NWWjNSMHpFbWN3Z2VnMmRkUnBwelRvYVIK",
       "endpoints": [
-        "https://github.com/yeetstick/perch/releases/latest/download/latest.json"
+        "https://github.com/ixklo/devlings/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

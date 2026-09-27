@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds Perch's bundled pets in the Codex pet format.
+// Builds Devlings' bundled pets in the Codex pet format.
 //
 //   node scripts/pets/build.mjs
 //

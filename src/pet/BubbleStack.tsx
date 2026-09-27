@@ -13,17 +13,17 @@ interface SetupProps {
   onOpen: () => void;
 }
 
-/** Shown instead of nothing when Perch can't work yet; opens the settings window. */
+/** Shown instead of nothing when Devlings can't work yet; opens the settings window. */
 export function SetupCard({ detail, tail, onOpen }: SetupProps) {
   return (
-    <div className={`card thread-card setup-card${tail ? " has-tail" : ""}`} data-hit="" role="group" aria-label="Perch: needs setup">
+    <div className={`card thread-card setup-card${tail ? " has-tail" : ""}`} data-hit="" role="group" aria-label="Devlings: needs setup">
       <button type="button" className="thread-card-main" onClick={onOpen}>
         <span className="status status-setup" aria-hidden="true">
           <IconAlert size={16} />
         </span>
         <span className="thread-card-body">
           <span className="thread-card-top">
-            <span className="thread-card-project">Finish setting up Perch</span>
+            <span className="thread-card-project">Finish setting up Devlings</span>
           </span>
           <span className="thread-card-line">{detail}</span>
         </span>

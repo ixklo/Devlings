@@ -128,7 +128,7 @@ pub fn locate(cands: &[PathBuf], version_of: impl Fn(&Path) -> Option<String>) -
             return Ok(Located { path: c.clone(), version: format!("{}.{}.{}", v.0, v.1, v.2) });
         }
         too_old.get_or_insert(format!(
-            "Claude Code {}.{}.{} at {} is too old. Perch needs 2.1.259 or newer; run `claude update` or update the VS Code extension.",
+            "Claude Code {}.{}.{} at {} is too old. Devlings needs 2.1.259 or newer; run `claude update` or update the VS Code extension.",
             v.0, v.1, v.2, c.display()
         ));
     }

@@ -1,10 +1,10 @@
-# Contributing to Perch
+# Contributing to Devlings
 
-Thanks for taking an interest in Perch. It's a small, free, MIT-licensed project — contributions, bug reports and ideas are all welcome.
+Thanks for taking an interest in Devlings. It's a small, free, MIT-licensed project — contributions, bug reports and ideas are all welcome.
 
 ## Reporting bugs
 
-Open an [issue](../../issues/new/choose) and pick the bug report template. The single most useful thing you can attach is **Settings → About → Copy diagnostics**, which includes your OS, Perch version, Claude Code version and recent (redacted) logs. Steps to reproduce help too.
+Open an [issue](../../issues/new/choose) and pick the bug report template. The single most useful thing you can attach is **Settings → About → Copy diagnostics**, which includes your OS, Devlings version, Claude Code version and recent (redacted) logs. Steps to reproduce help too.
 
 Found a security issue instead? See [SECURITY.md](SECURITY.md) — please don't file it as a public issue.
 

@@ -68,7 +68,7 @@ describe("BubbleStack", () => {
   it("shows the setup card above the pet and opens settings from it", async () => {
     const onOpen = vi.fn();
     render(<Harness threads={[]} setup={{ detail: "Claude Code wasn't found.", onOpen }} />);
-    await userEvent.click(screen.getByRole("button", { name: /Finish setting up Perch/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Finish setting up Devlings/ }));
     expect(onOpen).toHaveBeenCalled();
   });
 

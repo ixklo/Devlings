@@ -3,7 +3,7 @@ import { makeApproval, makeSetup, makeSnapshot, makeThread } from "../test/fixtu
 import { announcements } from "./announce";
 
 describe("announcements (the pet window's live region)", () => {
-  it("says nothing for the first snapshot, so launching Perch doesn't read out every card", () => {
+  it("says nothing for the first snapshot, so launching Devlings doesn't read out every card", () => {
     expect(announcements(null, makeSnapshot({ threads: [makeThread({ status: "needs_input" })] }))).toEqual([]);
   });
 
@@ -56,17 +56,17 @@ describe("announcements (the pet window's live region)", () => {
   it("announces an update once it's ready to install, once per version", () => {
     const a = makeSnapshot({ update: { state: "downloading", version: "1.0.1", progress: 90 } });
     const b = makeSnapshot({ update: { state: "ready", version: "1.0.1" } });
-    expect(announcements(a, b)).toEqual(["Perch 1.0.1 is ready to install"]);
+    expect(announcements(a, b)).toEqual(["Devlings 1.0.1 is ready to install"]);
     expect(announcements(b, makeSnapshot({ update: { state: "ready", version: "1.0.1" } }))).toEqual([]);
     expect(announcements(b, makeSnapshot({ update: { state: "ready", version: "1.0.2" } }))).toEqual([
-      "Perch 1.0.2 is ready to install",
+      "Devlings 1.0.2 is ready to install",
     ]);
   });
 
-  it("announces when Perch starts needing setup", () => {
+  it("announces when Devlings starts needing setup", () => {
     const a = makeSnapshot();
     const b = makeSnapshot({ setup: makeSetup({ needsSetup: true }) });
-    expect(announcements(a, b)).toEqual(["Perch needs setup"]);
+    expect(announcements(a, b)).toEqual(["Devlings needs setup"]);
     expect(announcements(b, b)).toEqual([]);
   });
 });

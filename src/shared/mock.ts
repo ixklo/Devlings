@@ -70,7 +70,7 @@ const un = api.onSnapshot((s) => {
 I made that change in \`src/shared/useSnapshot.ts\` and the suite now passes 20 runs in a row.`;
 
 const HISTORY: Record<string, ChatTurn[]> = {
-  [`${ROOT}perch`]: [
+  [`${ROOT}devlings`]: [
     { role: "user", text: "Why does the settings window flash white on open?" },
     {
       role: "assistant",
@@ -125,7 +125,7 @@ function initialThreads(): ThreadInfo[] {
   if (params.get("empty")) return [];
   return [
     thread("billing-service", "watch", "needs_input", 1, "Wants to run: npm install stripe@18"),
-    thread("perch", "ask", "running", 0, "Reading src/shared/useSnapshot.ts"),
+    thread("devlings", "ask", "running", 0, "Reading src/shared/useSnapshot.ts"),
     thread("docs-site", "watch", "ready", 4, "Done", "Updated the install guide and fixed 3 broken links in the FAQ."),
     thread("ml-notebooks", "watch", "blocked", 12, "Failed", "Plan limit reached. Resets in 1h 12m."),
     thread("dotfiles", "watch", "running", 2, "Editing .config/nvim/init.lua"),
@@ -208,12 +208,12 @@ function initialApprovals(holdSecs: number): PendingApproval[] {
     });
   }
   if (params.get("approvals") === "ask") {
-    const file = `${ROOT}perch\\src\\shared\\useSnapshot.ts`;
+    const file = `${ROOT}devlings\\src\\shared\\useSnapshot.ts`;
     list.push({
       id: "preview-ask-1",
-      sessionId: "ask-perch",
-      project: `${ROOT}perch`,
-      projectName: "perch",
+      sessionId: "ask-devlings",
+      project: `${ROOT}devlings`,
+      projectName: "devlings",
       source: "ask",
       toolName: "Edit",
       rawToolName: null,
@@ -247,7 +247,7 @@ function initialUpdate(): UpdateStatus {
   }
 }
 
-const DIAGNOSTICS = `Perch 0.2.0 (browser preview)
+const DIAGNOSTICS = `Devlings 0.2.0 (browser preview)
 OS: Windows 11 (x86_64)
 Claude Code: 2.1.282 at ~/.local/bin/claude.exe
 Hooks: installed on port 49152
@@ -278,14 +278,14 @@ class MockBackend {
   };
   approvals: PendingApproval[] = initialApprovals(this.config.approvalHoldSecs);
   projects: ProjectEntry[] = [
-    project("perch", 0, "edit_files", true),
+    project("devlings", 0, "edit_files", true),
     project("billing-service", 1),
     project("docs-site", 4, "read_only"),
     project("dotfiles", 30, "auto"),
     project("ml-notebooks", 60 * 5),
   ];
   threads: ThreadInfo[] = initialThreads();
-  running: string[] = params.get("empty") ? [] : [`${ROOT}perch`];
+  running: string[] = params.get("empty") ? [] : [`${ROOT}devlings`];
   setup: SetupStatus = params.get("setup") ? brokenSetup() : healthySetup();
   update: UpdateStatus = initialUpdate();
   // Plan usage from "the last Ask" (v1.0 S4); ?usage=warning or ?usage=rejected previews the mini chat's note.
@@ -320,7 +320,7 @@ class MockBackend {
       this.publish();
     }, 1000);
     // The Ask that's already running in the preview finishes after a while.
-    if (this.running.length) this.stream(`${ROOT}perch`, "ask-perch", 2600, false);
+    if (this.running.length) this.stream(`${ROOT}devlings`, "ask-devlings", 2600, false);
   }
 
   snapshot(): Snapshot {
@@ -638,7 +638,7 @@ class MockBackend {
         c.threadsCollapsed = !!a.collapsed;
         return this.publish();
       case "open_settings":
-        window.open(`/?window=settings${a.view === "onboarding" ? "&onboarding=1" : ""}`, "perch-settings", "width=480,height=680");
+        window.open(`/?window=settings${a.view === "onboarding" ? "&onboarding=1" : ""}`, "devlings-settings", "width=480,height=680");
         return null;
       case "open_pets_folder":
         console.info("[preview] open_pets_folder");
@@ -712,7 +712,7 @@ export function createMockTransport(): Transport {
         const view = pendingOpen;
         pendingOpen = null;
         window.setTimeout(() => {
-          backend.emit("pet-open", view === "thread" ? { view: "thread", sessionId: "ask-perch" } : { view: "compose" });
+          backend.emit("pet-open", view === "thread" ? { view: "thread", sessionId: "ask-devlings" } : { view: "compose" });
         }, 400);
       }
       return () => void set.delete(entry);

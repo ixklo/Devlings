@@ -5,7 +5,7 @@ import type { Snapshot, UpdateStatus } from "../shared/types";
 import { Section, SwitchRow } from "./controls";
 import type { useAction } from "./useAction";
 
-export const REPO_URL = "https://github.com/yeetstick/perch";
+export const REPO_URL = "https://github.com/ixklo/devlings";
 export const LICENSES_URL = `${REPO_URL}/blob/main/THIRD_PARTY_NOTICES.md`;
 const COPIED_MS = 2000;
 
@@ -15,17 +15,17 @@ export function updateLine(u: UpdateStatus, upToDate: boolean): string | null {
     case "checking":
       return "Checking for updates…";
     case "available":
-      return `Perch ${u.version} is available. Downloading…`;
+      return `Devlings ${u.version} is available. Downloading…`;
     case "downloading":
-      return `Downloading Perch ${u.version}…${u.progress == null ? "" : ` ${u.progress}%`}`;
+      return `Downloading Devlings ${u.version}…${u.progress == null ? "" : ` ${u.progress}%`}`;
     case "ready":
-      return `Perch ${u.version} is ready. Restart to install.`;
+      return `Devlings ${u.version} is ready. Restart to install.`;
     case "error":
       return u.error ?? "Couldn't check for updates.";
     case "disabled":
       return u.error ?? "Updates are off in this build.";
     case "idle":
-      return upToDate ? "Perch is up to date." : null;
+      return upToDate ? "Devlings is up to date." : null;
   }
 }
 
@@ -89,7 +89,7 @@ export function About({ snap, action }: Props) {
     <Section title="About">
       <div className="row">
         <div className="row-text">
-          <span className="row-label">Perch {version ? `v${version}` : ""}</span>
+          <span className="row-label">Devlings {version ? `v${version}` : ""}</span>
           <p className="row-desc">Free and open source. Not affiliated with Anthropic.</p>
         </div>
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => void api.openUrl(REPO_URL)}>
@@ -107,7 +107,7 @@ export function About({ snap, action }: Props) {
         <div className="row-text">
           <span className="row-label">Updates</span>
           <p className={`row-desc${update.state === "error" ? " is-error" : ""}`} aria-live="polite">
-            {line ?? "Perch checks GitHub Releases for new versions."}
+            {line ?? "Devlings checks GitHub Releases for new versions."}
           </p>
         </div>
         {update.state === "ready" ? (
@@ -135,7 +135,7 @@ export function About({ snap, action }: Props) {
         <div className="row-text">
           <span className="row-label">More pets</span>
           <p className="row-desc">
-            Pet format compatible with Codex pets; drop pets into <code>~/.codex/pets</code> or Perch's pets folder.
+            Pet format compatible with Codex pets; drop pets into <code>~/.codex/pets</code> or the Devlings pets folder.
           </p>
         </div>
         <button type="button" className="btn btn-secondary btn-sm" onClick={() => void action.run(api.openPetsFolder)}>

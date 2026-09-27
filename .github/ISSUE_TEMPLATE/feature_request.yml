@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea for Perch.
+description: Suggest an idea for Devlings.
 labels: [enhancement]
 body:
   - type: textarea
@@ -7,7 +7,7 @@ body:
     attributes:
       label: What's the scenario?
       description: What are you doing when you run into this, and what happens (or doesn't happen) that you'd want to be different?
-      placeholder: "When I ..., I'd want Perch to ..., because ..."
+      placeholder: "When I ..., I'd want Devlings to ..., because ..."
     validations:
       required: true
   - type: textarea

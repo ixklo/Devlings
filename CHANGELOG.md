@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Perch are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to Devlings (called Perch up to 1.0) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
@@ -10,6 +10,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 ### Changed
 
+- **Perch is now Devlings.** The app has a new name; Perch the teal bird stays, as the default pet. Your pet, its name, projects, settings and Claude Code hooks carry over. On Windows, installing Devlings (or Perch's in-app update) removes Perch for you; on macOS and Linux, remove Perch yourself after installing (see "Upgrading from Perch" in the README). The installers are now `Devlings_<version>_…`, updates come from the renamed repository, and the logs and `settings.json` backups are named after Devlings too. For testers: `DEVLINGS_UPDATE_ENDPOINT` replaces `PERCH_UPDATE_ENDPOINT`, which still works.
 - The pet pickers in onboarding and Settings scroll, and the right-click **Change pet** menu lists every built-in pet, birds first.
 - Switching pets keeps a name you chose; if you never renamed your pet, the new pet brings its own name.
 
@@ -95,7 +96,7 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/yeetstick/perch/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/yeetstick/perch/compare/v0.2.0...v1.0.0
-[0.2.0]: https://github.com/yeetstick/perch/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/yeetstick/perch/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ixklo/devlings/compare/v0.2.0...v1.0.0
+[0.2.0]: https://github.com/ixklo/devlings/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ixklo/devlings/releases/tag/v0.1.0

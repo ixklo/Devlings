@@ -84,7 +84,7 @@ export interface ProjectEntry {
   permissionMode: PermissionMode;
   askSessionId: string | null;
   transcriptPath: string | null;
-  /** Trusted in Perch: Asks here use the folder's own Claude Code settings (v1.0 D6). */
+  /** Trusted in Devlings: Asks here use the folder's own Claude Code settings (v1.0 D6). */
   trusted: boolean;
 }
 
@@ -97,7 +97,7 @@ export interface SetupStatus {
   hooksInstalled: boolean;
   auth: AuthVerdict | null;
   hookServerError: string | null;
-  /** Advice that doesn't block setup, e.g. "Move Perch to Applications…" when it runs from a disk image. */
+  /** Advice that doesn't block setup, e.g. "Move Devlings to Applications…" when it runs from a disk image. */
   setupHint: string | null;
   needsSetup: boolean;
 }
@@ -131,7 +131,7 @@ export interface UsageInfo {
   utilization?: number;
   /** Which limit: `five_hour`, `seven_day`, `seven_day_opus`, ... */
   kind?: string;
-  /** Epoch ms when Perch saw it. */
+  /** Epoch ms when Devlings saw it. */
   seenAt: number;
 }
 

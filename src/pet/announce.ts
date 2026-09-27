@@ -10,14 +10,14 @@ const SAID: Partial<Record<ThreadStatus, string>> = {
 
 /**
  * What changed between two snapshots, in short phrases for the pet window's live region, e.g.
- * "api-server: needs input" or "Perch 1.0.1 is ready to install". Only status changes count, each
+ * "api-server: needs input" or "Devlings 1.0.1 is ready to install". Only status changes count, each
  * once: a label or excerpt changing while a session works (streaming) never does, and neither does
- * the first snapshot, so launching Perch doesn't read out every card.
+ * the first snapshot, so launching Devlings doesn't read out every card.
  */
 export function announcements(prev: Snapshot | null, next: Snapshot): string[] {
   if (!prev) return [];
   const out: string[] = [];
-  if (next.setup.needsSetup && !prev.setup.needsSetup) out.push("Perch needs setup");
+  if (next.setup.needsSetup && !prev.setup.needsSetup) out.push("Devlings needs setup");
 
   const known = new Set(prev.approvals.map((a) => a.id));
   const asked = new Set<string>();
@@ -39,7 +39,7 @@ export function announcements(prev: Snapshot | null, next: Snapshot): string[] {
   const u = next.update;
   const was = prev.update;
   if (u.state === "ready" && u.version && !(was.state === "ready" && was.version === u.version)) {
-    out.push(`Perch ${u.version} is ready to install`);
+    out.push(`Devlings ${u.version} is ready to install`);
   }
   return out;
 }

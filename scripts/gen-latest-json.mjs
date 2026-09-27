@@ -98,7 +98,7 @@ if (missing.length > 0) {
 
 const latest = {
   version,
-  notes: `Perch ${version}. See the GitHub release for details.`,
+  notes: `Devlings ${version}. See the GitHub release for details.`,
   pub_date: new Date().toISOString(),
   platforms,
 };

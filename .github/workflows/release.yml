@@ -41,7 +41,7 @@ jobs:
           set -e
           gh release create "$TAG" \
             --repo "$REPO" \
-            --title "Perch $TAG" \
+            --title "Devlings $TAG" \
             --draft \
             --notes "$(cat <<'EOF'
           Draft release, still being built.

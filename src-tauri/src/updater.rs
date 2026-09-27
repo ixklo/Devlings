@@ -18,7 +18,9 @@ use crate::state::{self, now_ms, AppState, Snapshot};
 
 /// Points the updater at another `latest.json`, e.g. a pre-release's asset, since
 /// `/releases/latest` ignores pre-releases. Signatures are still checked.
-pub const ENDPOINT_ENV: &str = "PERCH_UPDATE_ENDPOINT";
+pub const ENDPOINT_ENV: &str = "DEVLINGS_UPDATE_ENDPOINT";
+/// The same override under the app's name before v1.1, still read when `ENDPOINT_ENV` isn't set.
+pub const LEGACY_ENDPOINT_ENV: &str = "PERCH_UPDATE_ENDPOINT";
 /// Check this often while auto-update is on (after the launch check).
 pub const CHECK_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
 /// After a failed check or download, retry this soon, doubling per failure up to `CHECK_EVERY_MS`.
@@ -33,10 +35,10 @@ const BUNDLE_SUFFIX: &str = ".update";
 
 pub const ASK_RUNNING: &str = "Finish or stop the running ask first.";
 pub const NOT_READY: &str = "No update is ready to install yet.";
-pub const RESTARTING: &str = "Perch is restarting to install an update.";
+pub const RESTARTING: &str = "Devlings is restarting to install an update.";
 pub const CHECK_FAILED: &str = "Couldn't check for updates.";
 pub const DOWNLOAD_FAILED: &str = "Couldn't download the update.";
-pub const BAD_SIGNATURE: &str = "The update's signature didn't match, so Perch won't install it.";
+pub const BAD_SIGNATURE: &str = "The update's signature didn't match, so Devlings won't install it.";
 pub const DEV_BUILD: &str = "Updates are off in development builds.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
@@ -171,7 +173,19 @@ pub fn is_newer(found: &str, ready: &str) -> bool {
     }
 }
 
-/// The endpoints to use instead of tauri.conf.json's, from `PERCH_UPDATE_ENDPOINT`.
+/// The override's value: `ENDPOINT_ENV`, else `LEGACY_ENDPOINT_ENV`. A blank value counts as unset.
+pub fn pick_endpoint_var(new: Option<String>, legacy: Option<String>) -> Option<String> {
+    let set = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.trim().is_empty());
+    if set(&new) {
+        new
+    } else if set(&legacy) {
+        legacy
+    } else {
+        None
+    }
+}
+
+/// The endpoints to use instead of tauri.conf.json's, from `DEVLINGS_UPDATE_ENDPOINT` (or `PERCH_UPDATE_ENDPOINT`).
 pub fn endpoint_override(var: Option<&str>) -> Result<Option<Vec<Url>>, String> {
     match var.map(str::trim).filter(|v| !v.is_empty()) {
         None => Ok(None),
@@ -218,7 +232,7 @@ pub fn save_bundle(dir: &Path, version: &str, bytes: &[u8]) -> std::io::Result<P
     Ok(path)
 }
 
-/// Deletes Perch's update bundles in `dir`, except `keep`. Other files are left alone.
+/// Deletes Devlings' update bundles in `dir`, except `keep`. Other files are left alone.
 pub fn remove_bundles(dir: &Path, keep: Option<&Path>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for path in entries.flatten().map(|e| e.path()) {
@@ -239,7 +253,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn endpoint_var() -> Option<String> {
-    std::env::var(ENDPOINT_ENV).ok()
+    pick_endpoint_var(std::env::var(ENDPOINT_ENV).ok(), std::env::var(LEGACY_ENDPOINT_ENV).ok())
 }
 
 /// A downloaded, signature-verified update waiting on disk for a restart.
@@ -364,7 +378,7 @@ pub async fn check(app: &AppHandle, manual: bool) -> UpdateStatus {
     let ready_version = lock(&updates.ready).as_ref().map(|r| r.update.version.clone());
     match find(app).await {
         Ok(Some(update)) if ready_version.as_deref().is_none_or(|r| is_newer(&update.version, r)) => {
-            log::info!("update check: Perch {} is available", update.version);
+            log::info!("update check: Devlings {} is available", update.version);
             record_success(app);
             let notes = update.body.as_deref().map(|n| n.chars().take(NOTES_MAX_CHARS).collect());
             let found = advance(app, Step::Found { version: update.version.clone(), notes });
@@ -392,7 +406,7 @@ pub async fn check(app: &AppHandle, manual: bool) -> UpdateStatus {
 async fn find(app: &AppHandle) -> Result<Option<Update>, String> {
     let mut builder = app.updater_builder().timeout(CHECK_TIMEOUT);
     if let Some(endpoints) = endpoint_override(endpoint_var().as_deref())? {
-        log::info!("update check: using {ENDPOINT_ENV}={}", endpoints[0]);
+        log::info!("update check: using the endpoint override {}", endpoints[0]);
         builder = builder.endpoints(endpoints).map_err(|e| e.to_string())?;
     }
     let updater = builder.build().map_err(|e| e.to_string())?;
@@ -425,14 +439,14 @@ async fn download(app: &AppHandle, mut update: Update, manual: bool) {
         });
     match result {
         Ok((path, verified)) => {
-            log::info!("update: Perch {} downloaded and verified to {}", update.version, path.display());
+            log::info!("update: Devlings {} downloaded and verified to {}", update.version, path.display());
             keep_ready(app, update, path, verified);
         }
         Err((bad_signature, e)) => {
             if bad_signature {
-                log::error!("update: Perch {} failed signature verification: {e}", update.version);
+                log::error!("update: Devlings {} failed signature verification: {e}", update.version);
             } else {
-                log::warn!("update: downloading Perch {} failed: {e}", update.version);
+                log::warn!("update: downloading Devlings {} failed: {e}", update.version);
             }
             record_failure(app);
             advance(app, Step::DownloadFailed { manual, bad_signature });
@@ -456,11 +470,11 @@ fn keep_ready(app: &AppHandle, update: Update, path: PathBuf, verified: [u8; 32]
     advance(app, Step::Downloaded { version, notes });
 }
 
-/// Installs the downloaded update and restarts Perch. Refused while an Ask run is active.
+/// Installs the downloaded update and restarts Devlings. Refused while an Ask run is active.
 ///
 /// Windows: the plugin runs the NSIS installer with `/P /UPDATE /R` and exits this process;
-/// the installer relaunches Perch when it's done (`/R`). macOS/Linux: the bundle or AppImage
-/// is replaced in place, then Perch restarts itself.
+/// the installer relaunches Devlings when it's done (`/R`). macOS/Linux: the bundle or AppImage
+/// is replaced in place, then Devlings restarts itself.
 pub fn install(app: &AppHandle) -> Result<(), String> {
     let updates = app.state::<Updates>();
     // Claim the install before looking for Asks; `ask` checks the claim under the same lock it reserves with.
@@ -495,7 +509,7 @@ fn install_claimed(app: &AppHandle, updates: &Updates) -> Result<(), String> {
         advance(app, Step::DownloadFailed { manual: true, bad_signature: true });
         return Err(BAD_SIGNATURE.into());
     }
-    log::info!("update: installing Perch {} and restarting", ready.update.version);
+    log::info!("update: installing Devlings {} and restarting", ready.update.version);
     // On Windows the installer ends this process; answer held permission requests first.
     crate::state::shutdown(app);
     match ready.update.install(&bytes) {
@@ -504,7 +518,7 @@ fn install_claimed(app: &AppHandle, updates: &Updates) -> Result<(), String> {
             Ok(())
         }
         Err(e) => {
-            log::error!("update: installing Perch {} failed: {e}", ready.update.version);
+            log::error!("update: installing Devlings {} failed: {e}", ready.update.version);
             *lock(&updates.ready) = Some(ready);
             Err(format!("Couldn't install the update: {e}"))
         }
@@ -630,11 +644,25 @@ mod tests {
     }
 
     #[test]
+    fn the_endpoint_variable_has_a_new_name_and_keeps_the_old_one() {
+        assert_eq!(ENDPOINT_ENV, "DEVLINGS_UPDATE_ENDPOINT");
+        assert_eq!(LEGACY_ENDPOINT_ENV, "PERCH_UPDATE_ENDPOINT");
+        let (new, old) = ("https://example.com/new.json".to_string(), "https://example.com/old.json".to_string());
+        assert_eq!(pick_endpoint_var(None, None), None);
+        assert_eq!(pick_endpoint_var(Some(new.clone()), None), Some(new.clone()));
+        assert_eq!(pick_endpoint_var(None, Some(old.clone())), Some(old.clone()));
+        // The new name wins when both are set; a blank one counts as unset.
+        assert_eq!(pick_endpoint_var(Some(new.clone()), Some(old.clone())), Some(new));
+        assert_eq!(pick_endpoint_var(Some("  ".into()), Some(old.clone())), Some(old));
+        assert_eq!(pick_endpoint_var(Some("".into()), None), None);
+    }
+
+    #[test]
     fn endpoint_default_unless_the_env_var_is_set() {
         assert_eq!(endpoint_override(None), Ok(None));
         assert_eq!(endpoint_override(Some("")), Ok(None));
         assert_eq!(endpoint_override(Some("   ")), Ok(None));
-        let rc = "https://github.com/yeetstick/perch/releases/download/v1.0.0-rc.2/latest.json";
+        let rc = "https://github.com/ixklo/devlings/releases/download/v1.1.0-rc.1/latest.json";
         assert_eq!(endpoint_override(Some(rc)), Ok(Some(vec![Url::parse(rc).unwrap()])));
         assert_eq!(endpoint_override(Some(&format!("  {rc}\n"))), Ok(Some(vec![Url::parse(rc).unwrap()])));
         let err = endpoint_override(Some("not a url")).unwrap_err();
@@ -655,7 +683,7 @@ mod tests {
         let updater = &conf["plugins"]["updater"];
         assert_eq!(
             updater["endpoints"],
-            json!(["https://github.com/yeetstick/perch/releases/latest/download/latest.json"])
+            json!(["https://github.com/ixklo/devlings/releases/latest/download/latest.json"])
         );
         assert!(updater["pubkey"].as_str().is_some_and(|k| k.len() > 100));
         assert_eq!(updater["windows"]["installMode"], json!("passive"));

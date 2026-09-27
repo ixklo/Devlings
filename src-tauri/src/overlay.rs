@@ -173,7 +173,7 @@ pub fn poll_delay(cursor: (f64, f64), window: Area, scale: f64) -> Duration {
     Duration::from_millis(ms.round() as u64)
 }
 
-/// Whether a window counts as on screen: not hidden by Perch and not minimized. The cursor poll
+/// Whether a window counts as on screen: not hidden by Devlings and not minimized. The cursor poll
 /// runs, and a page renders, only while its window is on screen.
 pub fn on_screen(hidden: bool, minimized: bool) -> bool {
     !hidden && !minimized

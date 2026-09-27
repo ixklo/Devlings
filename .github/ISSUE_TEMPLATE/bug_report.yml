@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Perch isn't working right.
+description: Something in Devlings isn't working right.
 labels: [bug]
 body:
   - type: markdown
@@ -10,7 +10,7 @@ body:
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: In Perch, go to Settings → About → Copy diagnostics, then paste here. This includes your OS, Perch version, Claude Code version and recent (redacted) logs, and is the single most useful thing you can attach.
+      description: In Devlings, go to Settings → About → Copy diagnostics, then paste here. This includes your OS, Devlings version, Claude Code version and recent (redacted) logs, and is the single most useful thing you can attach.
       placeholder: Paste the output of "Copy diagnostics" here.
       render: text
     validations:
@@ -23,9 +23,9 @@ body:
     validations:
       required: false
   - type: input
-    id: perch-version
+    id: app-version
     attributes:
-      label: Perch version
+      label: Devlings version
       description: Settings → About. Skip this if it's already in the diagnostics above.
     validations:
       required: false

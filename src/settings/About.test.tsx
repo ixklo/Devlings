@@ -21,12 +21,12 @@ describe("updateLine", () => {
 
   it("describes every update state", () => {
     expect(line({ state: "idle" })).toBeNull();
-    expect(line({ state: "idle" }, true)).toBe("Perch is up to date.");
+    expect(line({ state: "idle" }, true)).toBe("Devlings is up to date.");
     expect(line({ state: "checking" })).toBe("Checking for updates…");
-    expect(line({ state: "available", version: "1.0.1" })).toBe("Perch 1.0.1 is available. Downloading…");
-    expect(line({ state: "downloading", version: "1.0.1" })).toBe("Downloading Perch 1.0.1…");
-    expect(line({ state: "downloading", version: "1.0.1", progress: 42 })).toBe("Downloading Perch 1.0.1… 42%");
-    expect(line({ state: "ready", version: "1.0.1" })).toBe("Perch 1.0.1 is ready. Restart to install.");
+    expect(line({ state: "available", version: "1.0.1" })).toBe("Devlings 1.0.1 is available. Downloading…");
+    expect(line({ state: "downloading", version: "1.0.1" })).toBe("Downloading Devlings 1.0.1…");
+    expect(line({ state: "downloading", version: "1.0.1", progress: 42 })).toBe("Downloading Devlings 1.0.1… 42%");
+    expect(line({ state: "ready", version: "1.0.1" })).toBe("Devlings 1.0.1 is ready. Restart to install.");
     expect(line({ state: "error", error: "Couldn't check for updates." })).toBe("Couldn't check for updates.");
     expect(line({ state: "error" })).toBe("Couldn't check for updates.");
     expect(line({ state: "disabled", error: "Updates are off in development builds." })).toBe(
@@ -38,7 +38,7 @@ describe("updateLine", () => {
 describe("Settings → About", () => {
   it("shows the version", async () => {
     const { about } = renderAbout();
-    expect(await within(about()).findByText("Perch v0.2.0")).toBeInTheDocument();
+    expect(await within(about()).findByText("Devlings v0.2.0")).toBeInTheDocument();
   });
 
   it("toggles automatic checks", async () => {
@@ -49,21 +49,21 @@ describe("Settings → About", () => {
     expect(calls).toContainEqual(["set_auto_update", { enabled: false }]);
   });
 
-  it("checks for updates and says when Perch is up to date", async () => {
+  it("checks for updates and says when Devlings is up to date", async () => {
     const { about, calls } = renderAbout(makeSnapshot(), { check_for_update: () => ({ state: "idle" }) });
     await userEvent.click(within(about()).getByRole("button", { name: "Check for updates" }));
     expect(calls).toContainEqual(["check_for_update", undefined]);
-    expect(await within(about()).findByText("Perch is up to date.")).toBeInTheDocument();
+    expect(await within(about()).findByText("Devlings is up to date.")).toBeInTheDocument();
   });
 
   it("stops saying up to date once the status moves on", async () => {
     const { about, rerender } = renderAbout(makeSnapshot(), { check_for_update: () => ({ state: "idle" }) });
     await userEvent.click(within(about()).getByRole("button", { name: "Check for updates" }));
-    expect(await within(about()).findByText("Perch is up to date.")).toBeInTheDocument();
+    expect(await within(about()).findByText("Devlings is up to date.")).toBeInTheDocument();
     // A later background check that fails quietly lands back on idle; that isn't "up to date".
     rerender(<Settings snap={makeSnapshot({ update: { state: "checking" } })} />);
     rerender(<Settings snap={makeSnapshot({ update: { state: "idle" } })} />);
-    expect(within(about()).queryByText("Perch is up to date.")).not.toBeInTheDocument();
+    expect(within(about()).queryByText("Devlings is up to date.")).not.toBeInTheDocument();
   });
 
   it("keeps up to date when the check's own snapshot arrives after its result", async () => {
@@ -75,7 +75,7 @@ describe("Settings → About", () => {
     rerender(<Settings snap={makeSnapshot({ update: { state: "checking" } })} />);
     await act(async () => finish({ state: "idle" }));
     rerender(<Settings snap={makeSnapshot({ update: { state: "idle" } })} />);
-    expect(within(about()).getByText("Perch is up to date.")).toBeInTheDocument();
+    expect(within(about()).getByText("Devlings is up to date.")).toBeInTheDocument();
   });
 
   it("says when it couldn't check", async () => {
@@ -93,9 +93,9 @@ describe("Settings → About", () => {
     expect(within(about()).getByText("Checking for updates…")).toBeInTheDocument();
     expect(within(about()).getByRole("button", { name: "Check for updates" })).toBeDisabled();
     rerender(<Settings snap={makeSnapshot({ update: { state: "downloading", version: "1.0.1", progress: 42 } })} />);
-    expect(within(about()).getByText("Downloading Perch 1.0.1… 42%")).toBeInTheDocument();
+    expect(within(about()).getByText("Downloading Devlings 1.0.1… 42%")).toBeInTheDocument();
     rerender(<Settings snap={makeSnapshot({ update: { state: "ready", version: "1.0.1" } })} />);
-    expect(within(about()).getByText("Perch 1.0.1 is ready. Restart to install.")).toBeInTheDocument();
+    expect(within(about()).getByText("Devlings 1.0.1 is ready. Restart to install.")).toBeInTheDocument();
     await userEvent.click(within(about()).getByRole("button", { name: "Restart to update" }));
     expect(calls).toContainEqual(["install_update", undefined]);
   });
@@ -120,11 +120,11 @@ describe("Settings → About", () => {
 
   it("copies diagnostics to the clipboard", async () => {
     const user = userEvent.setup();
-    const { about, calls } = renderAbout(makeSnapshot(), { get_diagnostics: () => "Perch 0.2.0\nOS: Windows" });
+    const { about, calls } = renderAbout(makeSnapshot(), { get_diagnostics: () => "Devlings 0.2.0\nOS: Windows" });
     await user.click(within(about()).getByRole("button", { name: "Copy diagnostics" }));
     expect(calls).toContainEqual(["get_diagnostics", undefined]);
     expect(await within(about()).findByRole("button", { name: "Copied" })).toBeInTheDocument();
-    await expect(navigator.clipboard.readText()).resolves.toBe("Perch 0.2.0\nOS: Windows");
+    await expect(navigator.clipboard.readText()).resolves.toBe("Devlings 0.2.0\nOS: Windows");
   });
 
   it("goes back to Copy diagnostics after a moment", async () => {
@@ -154,6 +154,6 @@ describe("Settings → About", () => {
     expect(calls).toContainEqual(["open_log_folder", undefined]);
     await userEvent.click(within(about()).getByRole("button", { name: /Third-party licenses/ }));
     expect(transport.openUrl).toHaveBeenCalledWith(LICENSES_URL);
-    expect(LICENSES_URL).toBe("https://github.com/yeetstick/perch/blob/main/THIRD_PARTY_NOTICES.md");
+    expect(LICENSES_URL).toBe("https://github.com/ixklo/devlings/blob/main/THIRD_PARTY_NOTICES.md");
   });
 });

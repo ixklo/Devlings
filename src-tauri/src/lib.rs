@@ -24,7 +24,7 @@ mod usage;
 
 pub fn run() {
     // Headless modes (the hook relay and the uninstaller's cleanup) come before anything else, so they stay fast
-    // and never reach a running Perch through the single-instance plugin.
+    // and never reach a running Devlings through the single-instance plugin.
     if let Some(code) = cli::run_headless() {
         std::process::exit(code);
     }
@@ -35,7 +35,7 @@ pub fn run() {
     let data_dir = dirs::data_dir()
         .expect("this OS provides a per-user data directory")
         .join(&context.config().identifier);
-    let app_state = state::AppState::load(data_dir).expect("Perch's data directory must be writable");
+    let app_state = state::AppState::load(data_dir).expect("Devlings' data directory must be writable");
     let log_level = store::diagnostics_level_filter(&locks::lock(&app_state.config).diagnostics_level);
 
     tauri::Builder::default()
@@ -114,9 +114,9 @@ pub fn run() {
             commands::open_log_folder,
         ])
         .build(context)
-        .expect("error while building Perch")
+        .expect("error while building Devlings")
         .run(|app, event| {
-            // Quitting answers every pending permission request, so no session keeps waiting on Perch.
+            // Quitting answers every pending permission request, so no session keeps waiting on Devlings.
             if let tauri::RunEvent::Exit = event {
                 state::shutdown(app);
             }

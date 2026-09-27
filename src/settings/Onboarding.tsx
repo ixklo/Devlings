@@ -10,7 +10,7 @@ import { PetPicker } from "./PetPicker";
 import { SetupChecks } from "./SetupChecks";
 import { useAction } from "./useAction";
 
-/** Three steps at most: what Perch watches, asking from the pet, and permission prompts. */
+/** Three steps at most: what Devlings watches, asking from the pet, and permission prompts. */
 export const STEPS = ["Watch", "Ask", "Permission prompts"] as const;
 
 /** The README's Cost section: how Asks are counted against a plan. */

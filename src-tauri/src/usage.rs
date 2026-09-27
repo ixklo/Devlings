@@ -1,4 +1,4 @@
-//! Plan usage from the `rate_limit_event`s an Ask run already prints (v1.0 S4). Read-only information: Perch makes no
+//! Plan usage from the `rate_limit_event`s an Ask run already prints (v1.0 S4). Read-only information: Devlings makes no
 //! extra requests for it, and the money guard's overage kill doesn't depend on it.
 
 use serde::Serialize;
@@ -19,7 +19,7 @@ pub struct UsageInfo {
     /// Which limit: `five_hour`, `seven_day`, `seven_day_opus`, …
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
-    /// When Perch saw it, epoch ms.
+    /// When Devlings saw it, epoch ms.
     pub seen_at: i64,
 }
 
@@ -133,7 +133,7 @@ mod tests {
         let odd = json!({"status": "allowed", "brandNew": {"x": 1}, "rateLimitType": "five_hour", "resetsAt": "soon",
             "utilization": "lots", "unifiedWindows": {"five_hour": {"utilization": [1], "resetsAt": null}}});
         assert_eq!(usage(odd), Some(info("allowed", None, None, Some("five_hour"))));
-        // A status Perch doesn't know yet still counts; the UI shows it generically.
+        // A status Devlings doesn't know yet still counts; the UI shows it generically.
         assert_eq!(usage(json!({"status": "allowed_soon"})), Some(info("allowed_soon", None, None, None)));
         // Without a window name there's no telling which window to read.
         let no_kind = json!({"status": "allowed", "unifiedWindows": {"five_hour": {"utilization": 0.2}}});
