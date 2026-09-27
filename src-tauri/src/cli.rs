@@ -106,9 +106,7 @@ fn remove_autostart() {
     #[cfg(windows)]
     {
         use std::process::Stdio;
-        let reg = std::env::var_os("SystemRoot")
-            .map(|root| PathBuf::from(root).join("System32").join("reg.exe"))
-            .unwrap_or_else(|| PathBuf::from("reg.exe"));
+        let reg = crate::shell::reg_exe(std::env::var_os("SystemRoot").as_deref());
         for key in [
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",

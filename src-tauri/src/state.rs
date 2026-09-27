@@ -17,8 +17,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::{
+    approvals::{self, PendingApproval, Registry, Resolved, Responder, WatchPolicy},
     events::{Kind, PetEvent, Source},
-    hook_server::{HookServer, EMPTY_ANSWER},
+    hook_server::HookServer,
     hooks_installer::{self, HookStatus, HookTarget, Migration, RelayExe},
     locator::{self, Located},
     locks::lock,
@@ -26,14 +27,14 @@ use crate::{
     normalize::{self, StreamItem},
     overlay::HitRect,
     pets::{self, Pet},
-    runner::{self, KillReason},
+    runner::{self, KillReason, StdinWriter},
     shell,
     store::{self, Config, ProjectEntry, Projects},
     threads::{self, PetState, ThreadInfo, ThreadStatus, Threads},
 };
 
 /// What the bubbles show; the ticker compares it to catch changes caused only by time passing.
-type ViewKey = (PetState, Vec<String>);
+type ViewKey = (PetState, Vec<String>, Vec<String>);
 
 fn temp_dir() -> String {
     std::env::temp_dir().to_string_lossy().to_string()
@@ -57,6 +58,8 @@ pub struct AppState {
     pub running: Mutex<HashMap<String, u32>>,
     pub stop_requested: Mutex<HashSet<String>>,
     pub ask_sids: Mutex<HashMap<String, String>>,
+    /// Permission requests waiting for an answer (design v1.0 D3-D5).
+    pub approvals: Mutex<Registry>,
     pub last_view: Mutex<Option<ViewKey>>,
     pub pets: Mutex<Vec<Pet>>,
     /// Interactive rects of the pet window; None until the frontend first reports them.
@@ -81,8 +84,11 @@ impl AppState {
         std::fs::create_dir_all(&data_dir)?;
         let mut projects: Projects = store::load(&data_dir.join("projects.json"));
         projects.retain_outside(&temp_dir());
+        let config = store::load::<Config>(&data_dir.join("config.json")).normalized();
+        let mut approvals = Registry::default();
+        approvals.set_watching(config.watch_approvals);
         Ok(Self {
-            config: Mutex::new(store::load::<Config>(&data_dir.join("config.json")).normalized()),
+            config: Mutex::new(config),
             projects: Mutex::new(projects),
             data_dir,
             threads: Mutex::new(Threads::default()),
@@ -95,6 +101,7 @@ impl AppState {
             running: Mutex::new(HashMap::new()),
             stop_requested: Mutex::new(HashSet::new()),
             ask_sids: Mutex::new(HashMap::new()),
+            approvals: Mutex::new(approvals),
             last_view: Mutex::new(None),
             pets: Mutex::new(Vec::new()),
             hit_regions: Mutex::new(None),
@@ -140,6 +147,8 @@ pub struct Snapshot {
     pub running: Vec<String>,
     pub setup: SetupStatus,
     pub update: crate::updater::UpdateStatus,
+    /// Permission requests the user can answer from the pet, oldest first.
+    pub approvals: Vec<PendingApproval>,
 }
 
 fn setup_status(s: &AppState) -> SetupStatus {
@@ -165,15 +174,20 @@ fn setup_status(s: &AppState) -> SetupStatus {
     }
 }
 
-fn view_key(threads: &[ThreadInfo], pet_state: PetState) -> ViewKey {
-    (pet_state, threads.iter().map(|t| t.session_id.clone()).collect())
+fn view_key(threads: &[ThreadInfo], pet_state: PetState, approvals: &[PendingApproval]) -> ViewKey {
+    (
+        pet_state,
+        threads.iter().map(|t| t.session_id.clone()).collect(),
+        approvals.iter().map(|a| a.id.clone()).collect(),
+    )
 }
 
 pub fn snapshot(app: &AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
     let setup = setup_status(&s);
     let threads = lock(&s.threads).visible(now_ms());
-    let pet_state = threads::pet_state(&threads, setup.needs_setup);
+    let approvals = lock(&s.approvals).pending();
+    let pet_state = threads::with_approvals(threads::pet_state(&threads, setup.needs_setup), !approvals.is_empty());
     let projects = lock(&s.projects).sorted();
     let running = lock(&s.running).keys().cloned().collect();
     let mut config = lock(&s.config).clone();
@@ -181,7 +195,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     if let Some(pet) = pets::resolve(&lock(&s.pets), &config.pet_id) {
         config.pet_id = pet.info.id.clone();
     }
-    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app) }
+    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app), approvals }
 }
 
 /// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
@@ -212,13 +226,17 @@ pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
 
 pub fn emit_snapshot(app: &AppHandle) {
     let snap = snapshot(app);
-    *lock(&app.state::<AppState>().last_view) = Some(view_key(&snap.threads, snap.pet_state));
+    *lock(&app.state::<AppState>().last_view) = Some(view_key(&snap.threads, snap.pet_state, &snap.approvals));
     let _ = app.emit("snapshot", &snap);
     shell::update_tray_tooltip(app, &snap);
 }
 
 pub fn handle_event(app: &AppHandle, ev: PetEvent) {
     let s = app.state::<AppState>();
+    // A session with a request still waiting stays in "needs input" through its other activity (D5).
+    let waiting = lock(&s.approvals).waiting(&ev.session_id);
+    let status = lock(&s.threads).get(&ev.session_id).map(|t| t.status);
+    let ev = approvals::keep_needs_input(ev, status, waiting);
     let applied = lock(&s.threads).apply(&ev);
     let _ = app.emit("pet-event", &ev);
     if let Some(status) = applied.alert {
@@ -278,13 +296,58 @@ pub fn on_hook_body(app: &AppHandle, body: Value) {
         }
         return;
     }
-    let Some(ev) = normalize::from_hook(&body, now_ms()) else { return };
-    // Sessions in scratch folders (e.g. other agents' temp dirs) still show in Activity but don't become projects.
-    let is_project = !ev.project.is_empty() && !store::is_under(&ev.project, &temp_dir());
-    if is_project && lock(&s.projects).touch(&ev.project, ev.at) {
-        s.save_projects();
+    let now = now_ms();
+    // A tool that ran, a denial, a new prompt or the end of a turn resolves waiting requests (design v1.0 D5).
+    let cleared = approvals::apply_hook_event(&mut lock(&s.approvals), &body);
+    if let Some(ev) = normalize::from_hook(&body, now) {
+        // Sessions in scratch folders (e.g. other agents' temp dirs) still show in Activity but don't become projects.
+        let is_project = !ev.project.is_empty() && !store::is_under(&ev.project, &temp_dir());
+        if is_project && lock(&s.projects).touch(&ev.project, ev.at) {
+            s.save_projects();
+        }
+        handle_event(app, ev);
     }
-    handle_event(app, ev);
+    let status = lock(&s.threads).get(&sid).map(|t| t.status);
+    let resume = approvals::resume_after(&lock(&s.approvals), status, &body, now);
+    match resume {
+        Some(ev) => handle_event(app, ev),
+        None if cleared > 0 => emit_snapshot(app),
+        None => {}
+    }
+}
+
+/// A PermissionRequest hook, on its worker: the answer to send back (design v1.0 D3). May block while held.
+fn on_permission_body(app: &AppHandle, body: Value) -> String {
+    let s = app.state::<AppState>();
+    let sid = body.get("session_id").and_then(Value::as_str).unwrap_or("");
+    let own_ask = lock(&s.ask_sids).contains_key(sid);
+    let hold = Duration::from_secs(lock(&s.config).approval_hold_secs);
+    let policy = WatchPolicy { hold, own_ask };
+    approvals::on_watch_request(&s.approvals, &body, policy, now_ms(), &|| emit_snapshot(app))
+}
+
+/// Puts threads back to work once none of their session's requests wait any more, then publishes.
+pub fn after_resolved(app: &AppHandle, resolved: Vec<Resolved>) {
+    let s = app.state::<AppState>();
+    for r in resolved {
+        let waiting = lock(&s.approvals).waiting(&r.session_id);
+        let needs_input = lock(&s.threads).get(&r.session_id).map(|t| t.status) == Some(ThreadStatus::NeedsInput);
+        if !waiting && needs_input {
+            handle_event(app, r.event(now_ms()));
+        }
+    }
+    emit_snapshot(app);
+}
+
+/// Perch is quitting: nothing may keep waiting on it. Held hooks get "no decision" and Ask requests are denied.
+pub fn shutdown(app: &AppHandle) {
+    let Some(s) = app.try_state::<AppState>() else { return };
+    let released = lock(&s.approvals).release_all(approvals::QUIT_MESSAGE);
+    if released > 0 {
+        log::info!("Answered {released} pending permission request(s) before quitting");
+        // Let the hook workers and stdin writers send those answers before the process ends.
+        std::thread::sleep(Duration::from_millis(300));
+    }
 }
 
 pub fn start_hook_server(app: &AppHandle) {
@@ -300,8 +363,9 @@ pub fn start_hook_server(app: &AppHandle) {
     let handle = app.clone();
     // Already answered; runs on the hook server's single processing thread, in arrival order.
     let on_event = move |body: Value| on_hook_body(&handle, body);
-    // Runs on the request's worker and its answer is the response. No decision yet: the approvals feature holds here.
-    let on_permission = |_body: Value| EMPTY_ANSWER.to_string();
+    // Runs on the request's worker and its answer is the response; a watched request may be held here.
+    let perm = app.clone();
+    let on_permission = move |body: Value| on_permission_body(&perm, body);
     match HookServer::start(port, token, on_event, on_permission) {
         Ok(server) => {
             let bound_port = server.port;
@@ -460,12 +524,23 @@ pub fn boot(app: AppHandle) {
 fn tick(app: &AppHandle) {
     let s = app.state::<AppState>();
     let now = now_ms();
+    let overdue = {
+        let mut a = lock(&s.approvals);
+        a.prune(now);
+        a.deny_overdue_asks(now)
+    };
+    if !overdue.is_empty() {
+        log::info!("Denied {} Ask permission request(s) nobody answered", overdue.len());
+        after_resolved(app, overdue);
+    }
     let threads = {
         let mut t = lock(&s.threads);
         t.prune(now);
         t.visible(now)
     };
-    let view = view_key(&threads, threads::pet_state(&threads, setup_status(&s).needs_setup));
+    let approvals = lock(&s.approvals).pending();
+    let pet_state = threads::with_approvals(threads::pet_state(&threads, setup_status(&s).needs_setup), !approvals.is_empty());
+    let view = view_key(&threads, pet_state, &approvals);
     let changed = lock(&s.last_view).as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
@@ -493,7 +568,7 @@ fn take_stop_request(s: &AppState, project: &str) -> bool {
     hit.is_some()
 }
 
-pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
+pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWriter) {
     let s = app.state::<AppState>();
     let pid = child.id();
     let stderr_thread = child.stderr.take().map(|mut err| {
@@ -514,7 +589,7 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
     let mut session_id = format!("ask:{project}");
     let mut finished = false;
 
-    let kill = runner::pump(BufReader::new(stdout), &project, now_ms, |item| match item {
+    let kill = runner::pump(BufReader::new(stdout), &project, now_ms, &stdin, |item| match item {
         StreamItem::Init { session_id: sid, .. } => {
             session_id = sid.clone();
             lock(&s.ask_sids).insert(sid.clone(), project.clone());
@@ -540,6 +615,29 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
             let text = normalize::resets_text(resets_at, now_ms());
             handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Plan limit reached", Some(text)));
         }
+        StreamItem::CanUseTool { request_id, request } => {
+            // Claude Code asks before running a tool (design v1.0 D4); held until answered in Perch.
+            let req = approvals::Request::from_can_use_tool(&session_id, &project, &request);
+            if let Some(dialog) = approvals::dialog_kind(&req.tool_name) {
+                // A question or a plan is never a plain Allow: turn it down with a message Claude can act on.
+                log::info!("Ask in {project}: {} answered with a note", approvals::log_safe(&req.tool_name));
+                stdin.send(approvals::host_deny(&request_id, dialog.ask_deny_message()));
+                handle_event(&app, ask_event(&session_id, &project, Kind::Blocked, dialog.chat_note(), None));
+                return;
+            }
+            log::info!("Ask in {project} asks to use {}", approvals::log_safe(&req.tool_name));
+            let responder = Responder::Ask { stdin: stdin.clone(), request_id };
+            lock(&s.approvals).add(req, Source::Ask, Some(responder), now_ms(), None);
+            handle_event(&app, ask_event(&session_id, &project, Kind::NeedsYou, normalize::NEEDS_APPROVAL, None));
+        }
+        StreamItem::ControlCancel { request_id } => {
+            let withdrawn = lock(&s.approvals).cancel_ask(&project, &request_id);
+            if let Some(r) = withdrawn {
+                after_resolved(&app, vec![r]);
+            }
+        }
+        // The pump refuses these itself.
+        StreamItem::ControlRequest { .. } => {}
         StreamItem::Overage { .. } => {}
     });
 
@@ -560,6 +658,8 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
         handle_event(&app, ask_event(&session_id, &project, Kind::Failed, label, Some(text)));
     }
 
+    // Nothing can answer this run any more; a closed stdin lets Claude Code exit on its own.
+    stdin.close();
     let status = child.wait();
     let stderr_text = stderr_thread.and_then(|h| h.join().ok()).unwrap_or_default();
     match &status {
@@ -580,6 +680,8 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
         log::warn!("Ask in {project} ended without a result: {text}");
         handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Something went wrong", Some(text)));
     }
+    // Nothing can answer this run's requests any more.
+    lock(&s.approvals).drop_ask_run(&project);
     lock(&s.running).retain(|p, _| !store::same_path(p, &project));
     emit_snapshot(&app);
 }
