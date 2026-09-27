@@ -154,7 +154,6 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     if prompt.trim().is_empty() {
         return Err("Type something first.".into());
     }
-    crate::updater::ensure_not_installing(&app)?;
     if !s.config.lock().unwrap().credits_notice_seen {
         return Err("credits_notice".into());
     }
@@ -182,8 +181,14 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     };
     s.save_projects();
     let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
-    let child = runner::spawn(&req).map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
-    s.running.lock().unwrap().insert(project.clone(), child.id());
+    // Under the running lock, so an update install can't begin between this check and the insert.
+    let child = {
+        let mut running = s.running.lock().unwrap();
+        crate::updater::ensure_not_installing(&app)?;
+        let child = runner::spawn(&req).map_err(|e| format!("Couldn't start Claude Code: {e}"))?;
+        running.insert(project.clone(), child.id());
+        child
+    };
     state::emit_snapshot(&app);
     let handle = app.clone();
     std::thread::spawn(move || state::run_ask(handle, project, child));
