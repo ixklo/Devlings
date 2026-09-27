@@ -211,12 +211,12 @@ pub fn find_on_path(name: &str, path_env: Option<&OsStr>) -> Option<PathBuf> {
 
 /// Windows: VS Code's CLI in the two common per-user/per-machine install locations. Pure
 /// (injected env values) so it's testable on every OS, even though only Windows calls it for real.
+/// Built with `\`-joined strings rather than `Path::join`, since `PathBuf` only treats `\` as a
+/// separator when actually compiled for Windows; this way the result (and CI's non-Windows test
+/// coverage of it) doesn't depend on the host running the build.
 pub fn windows_known_locations(local_appdata: Option<&str>, program_files: Option<&str>, program_files_x86: Option<&str>) -> Vec<PathBuf> {
-    [local_appdata.map(|d| Path::new(d).join("Programs")), program_files.map(PathBuf::from), program_files_x86.map(PathBuf::from)]
-        .into_iter()
-        .flatten()
-        .map(|dir| dir.join("Microsoft VS Code").join("bin").join("code.cmd"))
-        .collect()
+    let bases = [local_appdata.map(|d| format!("{d}\\Programs")), program_files.map(str::to_string), program_files_x86.map(str::to_string)];
+    bases.into_iter().flatten().map(|dir| PathBuf::from(format!("{dir}\\Microsoft VS Code\\bin\\code.cmd"))).collect()
 }
 
 /// macOS: the CLI inside the app bundle, system-wide and per-user.
