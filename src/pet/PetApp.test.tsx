@@ -95,7 +95,7 @@ describe("PetApp notification clicks (v1.0 S1)", () => {
     const ask = makeThread({ sessionId: "a1", source: "ask", project: "C:\\code\\app", projectName: "app", status: "ready" });
     const { emit } = await setupWith([ask]);
     act(() => emit("pet-open", { view: "thread", sessionId: "a1", project: "C:\\code\\app", source: "ask" }));
-    expect(await screen.findByRole("region", { name: "Conversation in app" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /^Conversation in app(:|$)/ })).toBeInTheDocument();
   });
 
   it("marks a Watch thread seen and opens its project, like clicking its card", async () => {
@@ -118,9 +118,9 @@ describe("PetApp notification clicks (v1.0 S1)", () => {
     const two = makeThread({ sessionId: "a2", source: "ask", project: "C:\\code\\two", projectName: "two", status: "blocked" });
     const { emit } = await setupWith([one, two]);
     act(() => emit("pet-open", { view: "thread", sessionId: "a2", project: "C:\\code\\two", source: "ask" }));
-    expect(await screen.findByRole("region", { name: "Conversation in two" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /^Conversation in two(:|$)/ })).toBeInTheDocument();
     act(() => emit("pet-open", { view: "thread", sessionId: "a1", project: "C:\\code\\one", source: "ask" }));
-    expect(await screen.findByRole("region", { name: "Conversation in one" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Conversation in two" })).toBeNull();
+    expect(await screen.findByRole("region", { name: /^Conversation in one(:|$)/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /^Conversation in two(:|$)/ })).toBeNull();
   });
 });
