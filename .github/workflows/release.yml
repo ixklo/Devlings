@@ -77,6 +77,9 @@ jobs:
           - platform: ubuntu-22.04
             args: ""
     runs-on: ${{ matrix.platform }}
+    # tauri-action uploads the installers and updater bundles to the draft.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Linux dependencies
@@ -129,7 +132,7 @@ jobs:
   # signature, for instance, blocks this and the release stays an
   # incomplete draft rather than getting published).
   finalize:
-    needs: build
+    needs: [create-release, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -147,11 +150,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release download "$TAG" --repo "$REPO" --dir release-assets --skip-existing
-      - name: Fetch asset URLs
+      # The release is still a draft: GitHub's by-tag API never returns drafts, and a draft's download URLs
+      # point at a temporary "untagged-…" address. So list the assets by release id and build the URLs they
+      # will have once the release is published under its tag.
+      - name: Asset URLs as they will be once published
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         run: |
-          gh api "repos/$REPO/releases/tags/$TAG" --jq '{assets: [.assets[] | {name, url: .browser_download_url}]}' > release-assets.json
+          set -e
+          gh api "repos/$REPO/releases/$RELEASE_ID/assets?per_page=100" > assets-raw.json
+          jq --arg base "https://github.com/$REPO/releases/download/$TAG/" \
+            '{assets: [.[] | {name, url: ($base + (.name | @uri))}]}' assets-raw.json > release-assets.json
+          cat release-assets.json
       - name: Build latest.json
         run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json
       - name: Write SHA256SUMS.txt
