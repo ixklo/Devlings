@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
+    diagnostics,
     hooks_installer::{self, HookTarget},
     locks::lock,
     money_guard::AuthVerdict,
@@ -361,6 +362,19 @@ pub fn drag_pet_by(app: AppHandle, dx: f64, dy: f64) {
 #[tauri::command]
 pub fn show_pet_menu(window: Window) -> CmdResult<()> {
     shell::show_pet_menu(&window).map_err(|e| e.to_string())
+}
+
+/// Redacted diagnostics for bug reports: versions, how Claude Code was found, hook status, and the log tail.
+#[tauri::command]
+pub async fn get_diagnostics(app: AppHandle) -> String {
+    diagnostics::collect(&app)
+}
+
+#[tauri::command]
+pub async fn open_log_folder(app: AppHandle) -> CmdResult<()> {
+    let dir = diagnostics::log_dir(&app);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    shell::open_folder(&app, &dir)
 }
 
 #[tauri::command]

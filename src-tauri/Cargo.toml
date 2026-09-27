@@ -27,6 +27,7 @@ tiny_http = "0.12"
 rand = "0.8"
 dirs = "5"
 log = "0.4"
+tauri-plugin-log = "2"
 
 [dev-dependencies]
 tempfile = "3"

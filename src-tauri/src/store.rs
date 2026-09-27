@@ -7,6 +7,8 @@ pub const DEFAULT_PET_ID: &str = "perch";
 pub const DEFAULT_PET_SCALE: f64 = 0.6;
 pub const MIN_PET_SCALE: f64 = 0.4;
 pub const MAX_PET_SCALE: f64 = 1.0;
+pub const DEFAULT_DIAGNOSTICS_LEVEL: &str = "info";
+pub const DIAGNOSTICS_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -24,6 +26,8 @@ pub struct Config {
     pub pet_id: String,
     pub pet_scale: f64,
     pub threads_collapsed: bool,
+    /// Log level: "error", "warn", "info", "debug" or "trace".
+    pub diagnostics_level: String,
 }
 
 impl Config {
@@ -33,8 +37,15 @@ impl Config {
         if self.pet_id.trim().is_empty() {
             self.pet_id = DEFAULT_PET_ID.to_string();
         }
+        self.diagnostics_level = normalize_diagnostics_level(&self.diagnostics_level);
         self
     }
+}
+
+/// A known log level in lower case, else the default.
+pub fn normalize_diagnostics_level(level: &str) -> String {
+    let level = level.trim().to_ascii_lowercase();
+    if DIAGNOSTICS_LEVELS.contains(&level.as_str()) { level } else { DEFAULT_DIAGNOSTICS_LEVEL.to_string() }
 }
 
 pub fn clamp_pet_scale(scale: f64) -> f64 {
@@ -57,6 +68,7 @@ impl Default for Config {
             pet_id: DEFAULT_PET_ID.to_string(),
             pet_scale: DEFAULT_PET_SCALE,
             threads_collapsed: false,
+            diagnostics_level: DEFAULT_DIAGNOSTICS_LEVEL.to_string(),
         }
     }
 }
@@ -218,6 +230,24 @@ mod tests {
         std::fs::write(&p, r#"{"petName":"Bo","petScale":3.0,"petId":" "}"#).unwrap();
         let c = load::<Config>(&p).normalized();
         assert_eq!((c.pet_scale, c.pet_id.as_str(), c.pet_name.as_str()), (1.0, "perch", "Bo"));
+    }
+
+    #[test]
+    fn diagnostics_level_defaults_and_repairs() {
+        let c = Config::default();
+        assert_eq!(c.diagnostics_level, "info");
+        assert_eq!(serde_json::to_value(&c).unwrap()["diagnosticsLevel"], json!("info"));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, r#"{"diagnosticsLevel":" DEBUG "}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "debug");
+        std::fs::write(&p, r#"{"diagnosticsLevel":"loud"}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
+        std::fs::write(&p, r#"{"petName":"Bo"}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
+        for level in DIAGNOSTICS_LEVELS {
+            assert_eq!(normalize_diagnostics_level(level), level);
+        }
     }
 
     #[test]
