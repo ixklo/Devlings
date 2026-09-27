@@ -22,7 +22,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 ### Changed
 
 - Asks now answer permission prompts in Perch instead of denying every tool that needs approval.
-
+- Perch does much less work while it sits idle. The idle animation plays, then rests for a few seconds; nothing animates or polls while the pet or the Settings window is hidden or minimized; the pointer check slows down when the pointer is far from the pet; and the "needs input" dot pulses three times, then stays lit.
 - `npm test` no longer passes with zero tests found (`vitest`'s `--passWithNoTests` is gone), so a worker-startup failure fails CI instead of silently reporting success.
 
 ### Fixed

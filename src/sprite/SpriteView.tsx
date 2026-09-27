@@ -1,6 +1,6 @@
-import { useEffect, useState, type HTMLAttributes } from "react";
+import { useEffect, useRef, useState, type HTMLAttributes } from "react";
 import { api } from "../shared/api";
-import { cellStyle, ROW_SPECS } from "./atlas";
+import { cellBox } from "./atlas";
 import type { Clip } from "./petAnimation";
 import { placeholderAtlas } from "./placeholderAtlas";
 import { useSpriteClip } from "./useSpriteClip";
@@ -12,17 +12,21 @@ interface SpriteViewProps extends HTMLAttributes<HTMLDivElement> {
   onClipDone?: () => void;
 }
 
-/** One animated cell of a pet atlas, drawn as a pixelated CSS background. */
+/**
+ * One animated cell of a pet atlas, drawn as a pixelated CSS background. React renders the cell's
+ * size and sheet; `useSpriteClip` moves `background-position` from frame to frame on its own,
+ * so an animating pet never re-renders.
+ */
 export function SpriteView({ src, scale, clip, onClipDone, className, style, ...rest }: SpriteViewProps) {
-  const frame = useSpriteClip(clip, onClipDone);
-  const cell = cellStyle(ROW_SPECS[clip.name].row, frame, scale);
+  const ref = useRef<HTMLDivElement>(null);
+  useSpriteClip(ref, clip, scale, onClipDone);
   return (
     <div
       {...rest}
+      ref={ref}
       className={`sprite${className ? ` ${className}` : ""}`}
       data-row={clip.name}
-      data-frame={frame}
-      style={{ ...cell, backgroundImage: src ? `url("${src}")` : undefined, ...style }}
+      style={{ ...cellBox(scale), backgroundImage: src ? `url("${src}")` : undefined, ...style }}
     />
   );
 }
@@ -95,9 +99,9 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** The idle loop, used by pet pickers and avatars. */
+/** The idle loop (resting between plays), used by pet pickers and avatars. */
 export function idleClip(reducedMotion: boolean): Clip {
   return reducedMotion
     ? { name: "idle", loop: false, still: true, key: "still-idle" }
-    : { name: "idle", loop: true, still: false, key: "idle" };
+    : { name: "idle", loop: true, still: false, rest: true, key: "idle" };
 }

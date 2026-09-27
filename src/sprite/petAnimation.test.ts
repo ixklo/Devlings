@@ -27,6 +27,16 @@ describe("resolveClip", () => {
     expect(resolveClip("running", initialAnim, false)).toMatchObject({ name: "running", loop: true, still: false });
   });
 
+  it("rests between plays only in the idle row", () => {
+    expect(resolveClip("idle", initialAnim, false)).toMatchObject({ name: "idle", loop: true, rest: true });
+    const active: PetState[] = ["running", "needs_input", "blocked", "ready", "setup"];
+    for (const state of active) expect(resolveClip(state, initialAnim, false).rest).toBe(false);
+    // Overrides and the reduced-motion still frame never rest.
+    expect(resolveClip("idle", run([{ type: "hover", now: 10_000 }]), false).rest).toBeFalsy();
+    expect(resolveClip("idle", run([{ type: "drag", dir: "left" }]), false).rest).toBeFalsy();
+    expect(resolveClip("idle", initialAnim, true).rest).toBeFalsy();
+  });
+
   it("waves once on hover, then returns to the state row", () => {
     const waving = run([{ type: "hover", now: 10_000 }]);
     expect(resolveClip("idle", waving, false)).toMatchObject({ name: "waving", loop: false });

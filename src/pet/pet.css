@@ -636,6 +636,10 @@ body[data-window="pet"] {
   display: block;
 }
 
+/* Infinite animations here (this spinner, the typing dots, the loading skeleton) exist only while
+   their element does: a running card, a running chat, a chat that's loading. All animate transform
+   or opacity only, so the compositor runs them without layout or paint; reduced motion stops them
+   (styles.css), and a hidden window hides its page, which stops them too (design D17). */
 .status-running svg {
   animation: spin 0.9s linear infinite;
 }
@@ -665,7 +669,9 @@ body[data-window="pet"] {
   inset: 0;
   border-radius: 50%;
   background: var(--wait);
-  animation: pulse 1.6s var(--ease-out) infinite;
+  /* Decorative: three pulses when the card starts needing input, then a plain dot. (The pet's own
+     waiting animation keeps asking.) Ends on the base style, which matches the dot underneath. */
+  animation: pulse 1.6s var(--ease-out) 3;
 }
 
 .status-idle .status-dot {
