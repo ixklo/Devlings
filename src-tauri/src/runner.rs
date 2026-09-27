@@ -498,8 +498,14 @@ mod tests {
             r#"{"type":"system","subtype":"init","session_id":"s","apiKeySource":"none"}"#, "\n",
             r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"a.rs"}}]},"session_id":"s"}"#, "\n",
         );
-        let (_, _, fake, _stdin) = run(input);
-        assert!(!fake.is_closed());
+        // While output is still coming and no result has arrived, stdin stays open (checked mid-stream: once the
+        // pump returns it closes stdin on every exit, so checking afterwards would race the writer thread).
+        let (stdin, fake, _join) = fake_stdin::writer();
+        let mut open_mid_stream = vec![];
+        pump(Cursor::new(input), "C:\\proj", || 1, &stdin, |_| open_mid_stream.push(!fake.is_closed()));
+        assert!(!open_mid_stream.is_empty() && open_mid_stream.iter().all(|open| *open));
+        // Output ending without a result still closes it, so Claude Code can't wait on stdin forever.
+        assert!(fake.wait_closed());
         let failed = concat!(r#"{"type":"result","is_error":true,"result":"boom","session_id":"s"}"#, "\n");
         let (_, _, fake, _stdin) = run(failed);
         assert!(fake.wait_closed());
