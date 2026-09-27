@@ -142,6 +142,7 @@ function healthySetup(): SetupStatus {
     hookServerError: null,
     setupHint: null,
     needsSetup: false,
+    systemNotificationsOff: false,
   };
 }
 

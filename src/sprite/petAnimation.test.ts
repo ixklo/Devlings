@@ -5,10 +5,14 @@ import {
   animReducer,
   becameReady,
   dragDirection,
+  FAILED_REST,
+  IDLE_REST,
   initialAnim,
   resolveClip,
+  REVIEW_REST,
   rowForState,
   WAVE_COOLDOWN_MS,
+  WORKING_REST,
   type AnimAction,
   type AnimState,
 } from "./petAnimation";
@@ -27,10 +31,16 @@ describe("resolveClip", () => {
     expect(resolveClip("running", initialAnim, false)).toMatchObject({ name: "running", loop: true, still: false });
   });
 
-  it("rests between plays only in the idle row", () => {
-    expect(resolveClip("idle", initialAnim, false)).toMatchObject({ name: "idle", loop: true, rest: true });
-    const active: PetState[] = ["running", "needs_input", "blocked", "ready", "setup"];
-    for (const state of active) expect(resolveClip(state, initialAnim, false).rest).toBe(false);
+  it("idle rests from the start; working, failed and done settle after a while; waiting never rests", () => {
+    expect(resolveClip("idle", initialAnim, false)).toMatchObject({ name: "idle", loop: true, rest: IDLE_REST });
+    expect(IDLE_REST.afterMs).toBe(0);
+    expect(resolveClip("running", initialAnim, false).rest).toBe(WORKING_REST);
+    expect(resolveClip("blocked", initialAnim, false).rest).toBe(FAILED_REST);
+    expect(resolveClip("ready", initialAnim, false).rest).toBe(REVIEW_REST);
+    for (const policy of [WORKING_REST, FAILED_REST, REVIEW_REST]) expect(policy.afterMs).toBeGreaterThan(0);
+    // "Needs you" keeps moving: it's the one state meant to keep catching the eye.
+    const waiting: PetState[] = ["needs_input", "setup"];
+    for (const state of waiting) expect(resolveClip(state, initialAnim, false).rest).toBeUndefined();
     // Overrides and the reduced-motion still frame never rest.
     expect(resolveClip("idle", run([{ type: "hover", now: 10_000 }]), false).rest).toBeFalsy();
     expect(resolveClip("idle", run([{ type: "drag", dir: "left" }]), false).rest).toBeFalsy();

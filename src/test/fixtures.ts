@@ -35,6 +35,7 @@ export function makeSetup(over: Partial<SetupStatus> = {}): SetupStatus {
     hookServerError: null,
     setupHint: null,
     needsSetup: false,
+    systemNotificationsOff: false,
     ...over,
   };
 }

@@ -99,7 +99,7 @@ describe("PetSprite", () => {
     expect(onHover).toHaveBeenCalled();
   });
 
-  it("draws nothing over the pet's art (the hidden-threads count lives in the cards' place)", () => {
+  it("draws nothing over the pet's art (the hidden-threads count is on the Show threads button)", () => {
     const { pet } = setup();
     expect(pet.children).toHaveLength(1);
     expect(pet.firstElementChild).toHaveClass("sprite");

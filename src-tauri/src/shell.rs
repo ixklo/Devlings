@@ -171,6 +171,9 @@ pub fn open_settings(app: &AppHandle, view: SettingsView) -> tauri::Result<()> {
         settings.unminimize()?;
     }
     settings.set_focus()?;
+    // Windows' notification switch can change any time; Settings shows it fresh (off the main thread).
+    let handle = app.clone();
+    std::thread::spawn(move || crate::state::refresh_system_notifications(&handle));
     app.emit_to(SETTINGS, "settings-view", view)
 }
 

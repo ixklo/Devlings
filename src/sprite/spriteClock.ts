@@ -2,17 +2,18 @@ import { frameAt } from "./atlas";
 
 // The idle row "breathes": it plays once, then the pet holds still on frame 0 for a few seconds
 // before playing it again. A sprite sitting idle on the desktop for hours then wakes the page
-// about once a second instead of on every frame. Active rows (working, waiting, review, failed,
-// the drag run and the one-shots) keep playing back to back, as the atlas table says.
+// about once a second instead of on every frame. Working, failed and review do the same once they
+// have lasted a while (`RestPolicy` in petAnimation.ts); waiting, the drag run and the one-shots
+// keep playing back to back.
 
 /** Shortest and longest rest between two plays of the idle row, in ms. */
 export const REST_MIN_MS = 4000;
 export const REST_MAX_MS = 8000;
 
-/** The rest after one play of the idle row, from a draw in [0, 1): 4 to 8 s, so it never looks mechanical. */
-export function restLength(random: number): number {
+/** The rest after one play, from a draw in [0, 1): 4 to 8 s by default, so it never looks mechanical. */
+export function restLength(random: number, minMs = REST_MIN_MS, maxMs = REST_MAX_MS): number {
   const r = Number.isFinite(random) ? Math.min(Math.max(random, 0), 1) : 0.5;
-  return Math.round(REST_MIN_MS + r * (REST_MAX_MS - REST_MIN_MS));
+  return Math.round(minMs + r * (maxMs - minMs));
 }
 
 export interface RestingFrame {

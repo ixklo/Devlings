@@ -1,6 +1,6 @@
 [package]
 name = "perch"
-version = "1.1.0"
+version = "1.2.0"
 description = "Desktop pets for Claude Code"
 edition = "2021"
 license = "MIT"
@@ -36,6 +36,9 @@ tauri-plugin-log = "2"
 # Windows toasts (S1): used directly so a click reaches Devlings' process. Same version notify-rust already pulls in.
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.7.3"
+# The same windows crate tauri-winrt-notification uses: whether Windows will show our notifications, and the
+# time since the last input (the welcome-back wave).
+windows = { version = "0.61", features = ["UI_Notifications", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 tempfile = "3"

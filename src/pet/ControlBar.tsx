@@ -1,11 +1,16 @@
 import type { KeyboardEvent } from "react";
 import { IconBell, IconBellFilled, IconChevronDown, IconChevronUp, IconPencil } from "../shared/icons";
+import { showThreadsLabel, type HiddenCount } from "./hiddenCount";
 
 interface Props {
   visible: boolean;
   composerOpen: boolean;
   notifications: boolean;
+  /** The system won't show them anyway (Windows' own switch is off). */
+  systemNotificationsOff?: boolean;
   collapsed: boolean;
+  /** What collapsing hides; shown on the chevron while collapsed. */
+  hidden?: HiddenCount | null;
   onCompose: () => void;
   onToggleNotifications: () => void;
   onToggleCollapsed: () => void;
@@ -25,16 +30,21 @@ function onToolbarKey(e: KeyboardEvent<HTMLDivElement>) {
   buttons[next]?.focus();
 }
 
-/** The pill under the pet: composer, notifications, collapse. */
+/** The pill under the pet: composer, notifications, collapse (which shows what collapsing hides). */
 export function ControlBar({
   visible,
   composerOpen,
   notifications,
+  systemNotificationsOff = false,
   collapsed,
+  hidden = null,
   onCompose,
   onToggleNotifications,
   onToggleCollapsed,
 }: Props) {
+  // Collapsed with something hidden, the chevron carries the count ("2 ⌃"), growing sideways, never taller.
+  const count = collapsed ? hidden : null;
+  const chevronLabel = count ? showThreadsLabel(count) : collapsed ? "Show threads" : "Hide threads";
   return (
     <div
       className={`control-bar${visible ? " is-visible" : ""}`}
@@ -58,19 +68,22 @@ export function ControlBar({
         className={`icon-btn${notifications ? " is-on" : ""}`}
         aria-label="Notifications"
         aria-pressed={notifications}
-        title={notifications ? "Notifications on" : "Notifications off"}
+        title={
+          !notifications ? "Notifications off" : systemNotificationsOff ? "Notifications on, but Windows has them turned off" : "Notifications on"
+        }
         onClick={onToggleNotifications}
       >
         {notifications ? <IconBellFilled size={15} /> : <IconBell size={15} />}
       </button>
       <button
         type="button"
-        className="icon-btn"
-        aria-label={collapsed ? "Show threads" : "Hide threads"}
+        className={count ? `icon-btn has-count is-${count.tone}` : "icon-btn"}
+        aria-label={chevronLabel}
         aria-expanded={!collapsed}
-        title={collapsed ? "Show threads" : "Hide threads"}
+        title={chevronLabel}
         onClick={onToggleCollapsed}
       >
+        {count && <span className="icon-btn-count">{count.count}</span>}
         {collapsed ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
       </button>
     </div>

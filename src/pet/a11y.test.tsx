@@ -55,22 +55,31 @@ describe("pet window keyboard", () => {
     expect(screen.getByRole("button", { name: "Hide threads" })).toHaveFocus();
   });
 
-  it("tabs from the hidden-threads pill to the pet, and Enter on it shows the threads with focus on the pet", async () => {
+  it("puts the hidden-threads count on Show threads, with no Tab stop before the pet, and keeps focus there as the threads show", async () => {
     const threads = [makeThread({ status: "needs_input" }), makeThread({ status: "running" })];
-    const { pet, calls } = await setup(makeSnapshot({ threads, config: makeConfig({ threadsCollapsed: true }) }));
-    await userEvent.tab();
-    const pill = screen.getByRole("button", { name: "2 threads hidden, 1 needs you. Show threads." });
-    expect(pill).toHaveFocus();
-    expect(pill).toHaveAttribute("aria-expanded", "false");
-    expect(pill).toHaveClass("more-pill");
+    const collapsed = makeSnapshot({ threads, config: makeConfig({ threadsCollapsed: true }) });
+    const { pet, calls, emit } = await setup(collapsed);
     await userEvent.tab();
     expect(pet).toHaveFocus();
     await userEvent.tab();
     expect(screen.getByRole("button", { name: "New message" })).toHaveFocus();
-    pill.focus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Notifications" })).toHaveFocus();
+    await userEvent.tab();
+    const chevron = screen.getByRole("button", { name: "Show threads, 2 hidden, 1 needs you" });
+    expect(chevron).toHaveFocus();
+    expect(chevron).toHaveAttribute("title", "Show threads, 2 hidden, 1 needs you");
+    expect(chevron).toHaveAttribute("aria-expanded", "false");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(screen.getByRole("button", { name: "New message" })).toHaveFocus();
+    await userEvent.keyboard("{End}");
+    expect(chevron).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     expect(calls).toContainEqual(["set_threads_collapsed", { collapsed: false }]);
-    expect(pet).toHaveFocus();
+    act(() => emit("snapshot", { ...collapsed, config: makeConfig({ threadsCollapsed: false }) }));
+    expect(chevron).toHaveFocus();
+    expect(chevron).toHaveAccessibleName("Hide threads");
+    expect(chevron).toHaveAttribute("aria-expanded", "true");
   });
 
   it("names every control bar button and exposes its state", async () => {

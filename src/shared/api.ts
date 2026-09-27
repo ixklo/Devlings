@@ -120,6 +120,8 @@ export const api = {
   onPetEvent: (cb: (e: PetEvent) => void) => transport.listen<PetEvent>("pet-event", cb),
   onPetOpen: (cb: (o: PetOpen) => void) => transport.listen<PetOpen>("pet-open", cb),
   onPetPointer: (cb: (id: string | null) => void) => transport.listen<string | null>("pet-pointer", cb),
+  /** The user is back at the computer after a while away (design v1.2): the pet waves once. */
+  onPetWelcome: (cb: () => void) => transport.listen<null>("pet-welcome", () => cb()),
   onPetPlacement: (cb: (p: Placement) => void) => transport.listen<Placement>("pet-placement", cb),
   onSettingsView: (cb: (v: SettingsView) => void) => transport.listen<SettingsView>("settings-view", cb),
 

@@ -25,8 +25,9 @@ use crate::{
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
     notify,
-    overlay::HitRect,
+    overlay::{self, HitRect},
     pets::{self, Pet},
+    presence::{self, Presence},
     runner::{self, KillReason, StdinWriter},
     shell,
     store::{self, Config, ProjectEntry, Projects},
@@ -83,6 +84,11 @@ pub struct AppState {
     pub pet_geometry_gen: AtomicU64,
     /// The latest plan usage an Ask run reported (v1.0 S4). Memory only: a restart shows nothing until the next Ask.
     pub usage: Mutex<Option<UsageInfo>>,
+    /// The system says it won't show Devlings' notifications (Windows: notifications off for all apps or for this
+    /// one). Re-read at launch, on a setup recheck, when Settings opens and when notifications are switched on.
+    pub system_notifications_off: AtomicBool,
+    /// Whether the user has been away from the computer, for the welcome-back wave (design v1.2).
+    pub presence: Mutex<Presence>,
 }
 
 impl AppState {
@@ -119,6 +125,8 @@ impl AppState {
             settings_minimized: AtomicBool::new(false),
             pet_geometry_gen: AtomicU64::new(0),
             usage: Mutex::new(None),
+            system_notifications_off: AtomicBool::new(false),
+            presence: Mutex::new(Presence::default()),
         })
     }
 
@@ -143,6 +151,8 @@ pub struct SetupStatus {
     /// Something the user should do that doesn't block setup, e.g. "Move Devlings to Applications…".
     pub setup_hint: Option<String>,
     pub needs_setup: bool,
+    /// The system won't show Devlings' notifications, whatever the Notifications switch says.
+    pub system_notifications_off: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -181,6 +191,19 @@ fn setup_status(s: &AppState) -> SetupStatus {
         hook_server_error,
         setup_hint: hooks_installer::relay_exe().ok().and_then(|r| r.setup_hint()),
         needs_setup,
+        system_notifications_off: s.system_notifications_off.load(Ordering::SeqCst),
+    }
+}
+
+/// Asks the system whether it will show Devlings' notifications, and publishes a change. Unknown counts as allowed.
+pub fn refresh_system_notifications(app: &AppHandle) {
+    let off = notify::system_allows(app) == Some(false);
+    let before = app.state::<AppState>().system_notifications_off.swap(off, Ordering::SeqCst);
+    if before != off {
+        if off {
+            log::info!("The system has notifications turned off for Devlings; Settings says so");
+        }
+        emit_snapshot(app);
     }
 }
 
@@ -477,6 +500,7 @@ pub fn recheck_setup(app: &AppHandle) {
     *lock(&s.claude) = outcome.located;
     *lock(&s.auth) = outcome.auth;
     refresh_hooks_installed(app);
+    refresh_system_notifications(app);
 }
 
 /// Re-locates Claude Code if the remembered path no longer runs (design gap G3.5): checked before
@@ -562,6 +586,9 @@ fn tick(app: &AppHandle) {
     let changed = lock(&s.last_view).as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
+    }
+    if presence::idle_ms().is_some_and(|idle| lock(&s.presence).sample(idle)) {
+        let _ = app.emit_to(overlay::PET, "pet-welcome", ());
     }
 }
 
@@ -764,6 +791,7 @@ mod tests {
                 hook_server_error: None,
                 setup_hint: None,
                 needs_setup: false,
+                system_notifications_off: false,
             },
             update: Default::default(),
             approvals: vec![],

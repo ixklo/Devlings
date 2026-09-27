@@ -4,6 +4,20 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-27
+
+Calmer on the desktop, a hello when you come back, and the hidden-threads count moves onto the Show threads button.
+
+### Added
+
+- **A wave when you come back.** After 10 minutes away from the computer (a locked screen counts), the pet waves once when you're back. Windows only for now; nothing happens if the system asks for reduced motion.
+- **Settings says when Windows has notifications turned off.** If they're off for all apps or for Devlings, the Notifications switch explains that none will appear and where to turn them on, and the bell's tooltip says so too.
+
+### Changed
+
+- **Calmer long states.** After a minute of work the pet pauses briefly between typing loops; after a failure the storm cloud settles after a few seconds and only stirs now and then; "done" settles after 20 seconds. "Needs you" keeps moving until you answer.
+- The hidden-threads count sits on the **Show threads** button under the pet instead of in a pill above it, so the pet doesn't get taller.
+
 ## [1.1.0] - 2026-09-27
 
 Perch is now Devlings, with six new pets and a calmer way to see hidden threads.
@@ -107,7 +121,8 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/ixklo/devlings/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ixklo/devlings/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ixklo/devlings/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ixklo/devlings/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/ixklo/devlings/compare/v0.1.0...v0.2.0
