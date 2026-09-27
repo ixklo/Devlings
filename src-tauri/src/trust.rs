@@ -138,6 +138,11 @@ pub fn claude_trusts(folder: &Path, repo_root: Option<&Path>, claude_json: &Path
 }
 
 fn claude_trusts_capped(folder: &Path, repo_root: Option<&Path>, claude_json: &Path, cap: u64) -> bool {
+    // Matching is textual, so a `..` could make a folder look like it's under a trusted one when it isn't.
+    // Such a path never counts as trusted; the Ask just runs with the untrusted-folder protections.
+    if folder.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return false;
+    }
     let Ok(Some(bytes)) = read_capped(claude_json, cap) else { return false };
     let Ok(parsed) = serde_json::from_slice::<ClaudeJson>(strip_bom(&bytes)) else { return false };
     let folder = norm_path(&folder.to_string_lossy());
@@ -456,6 +461,16 @@ mod tests {
         assert!(!claude_trusts(Path::new("/home"), None, &cj), "a parent of the trusted key isn't trusted");
         let cj = claude_json(dir.path(), trusted(&[("/", true)]));
         assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj), "the root trusts everything under it");
+    }
+
+    #[test]
+    fn a_path_that_climbs_with_dotdot_is_never_trusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let cj = claude_json(dir.path(), trusted(&[("/home/me", true)]));
+        // Textually under /home/me, but really /tmp/evil.
+        assert!(!claude_trusts(Path::new("/home/me/../../tmp/evil"), None, &cj));
+        assert!(!claude_trusts(Path::new("/home/me/proj/.."), None, &cj));
+        assert!(claude_trusts(Path::new("/home/me/./proj"), None, &cj), "a . component doesn't climb");
     }
 
     #[test]
