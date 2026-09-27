@@ -60,6 +60,11 @@
     ],
     "resources": {
       "pets/": "pets/"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/installer.nsh"
+      }
     }
   }
 }
