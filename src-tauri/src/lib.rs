@@ -109,6 +109,7 @@ pub fn run() {
             commands::drag_pet_by,
             commands::show_pet_menu,
             commands::save_pet_position,
+            commands::get_pet_placement,
             commands::get_diagnostics,
             commands::open_log_folder,
         ])

@@ -354,6 +354,7 @@ fn apply_sprite_position(app: &AppHandle, pet: &WebviewWindow, target: (i32, i32
     let (window_pos, placement) = place_sprite(clamped, area, scale, outer_size(pet), pet_scale, previously_below);
     set_pos(pet, window_pos);
     s.cards_below.store(placement.cards_below, Ordering::SeqCst);
+    *lock(&s.placement) = Some(placement);
     let _ = app.emit_to(PET, "pet-placement", &placement);
     Some(clamped)
 }

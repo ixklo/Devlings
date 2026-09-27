@@ -462,6 +462,8 @@ class MockBackend {
     switch (cmd) {
       case "get_snapshot":
         return this.snapshot();
+      case "get_pet_placement":
+        return null;
       case "recheck_setup":
         this.setup = healthySetup();
         return this.publish();
