@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../shared/api";
 import { IconCheck, IconRefresh } from "../shared/icons";
 import type { PetInfo } from "../shared/types";
@@ -61,9 +61,17 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
-/** Grid of installed pets, each playing its idle animation. */
+/**
+ * Grid of installed pets, each playing its idle animation. It scrolls once there are more pets than
+ * fit (nine are built in), and brings the chosen one into view when it loads.
+ */
 export function PetPicker({ selectedId, onSelect }: Props) {
   const { pets, error, reload } = usePets();
+  const grid = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Only when the list arrives: afterwards, focus (arrow keys, Tab) scrolls the grid by itself.
+    grid.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView?.({ block: "nearest" });
+  }, [pets]);
   if (error) {
     return (
       <div className="pet-grid-error" role="alert">
@@ -76,7 +84,7 @@ export function PetPicker({ selectedId, onSelect }: Props) {
     );
   }
   return (
-    <div className="pet-grid" role="radiogroup" aria-label="Pet" aria-busy={!pets} onKeyDown={onRadioGroupKey}>
+    <div ref={grid} className="pet-grid" role="radiogroup" aria-label="Pet" aria-busy={!pets} onKeyDown={onRadioGroupKey}>
       {pets
         ? pets.map((p, i) => (
             <PetThumb

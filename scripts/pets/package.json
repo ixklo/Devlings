@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
-    "validate": "node validate.mjs"
+    "validate": "node validate.mjs",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "pngjs": "^7.0.0"

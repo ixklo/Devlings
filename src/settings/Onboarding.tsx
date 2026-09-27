@@ -24,8 +24,14 @@ export const COST_URL = `${REPO_URL}#cost`;
 export function Onboarding({ snap, onDone }: { snap: Snapshot; onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState(snap.config.petName);
+  // Until you type in it, the Name box follows the saved name, which picking a pet can change
+  // (a default name follows the pet; a name you chose stays).
+  const [typed, setTyped] = useState(false);
   const action = useAction();
   const pet = snap.config.petName;
+  useEffect(() => {
+    if (!typed) setName(pet);
+  }, [pet, typed]);
   const hooks = snap.setup.hooksInstalled;
   const total = STEPS.length;
   // Step 1's text follows the name as it's typed.
@@ -94,7 +100,10 @@ export function Onboarding({ snap, onDone }: { snap: Snapshot; onDone: () => voi
                 value={name}
                 maxLength={NAME_MAX}
                 spellCheck={false}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setTyped(true);
+                  setName(e.target.value);
+                }}
                 onKeyDown={(e) => e.key === "Enter" && void action.run(saveName)}
               />
             </label>

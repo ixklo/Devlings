@@ -1,0 +1,6 @@
+{
+  "id": "robot",
+  "displayName": "Bolt",
+  "description": "A little steel robot with a blue visor and an antenna that blinks while it works.",
+  "spritesheetPath": "spritesheet.png"
+}

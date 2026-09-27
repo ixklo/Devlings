@@ -181,6 +181,25 @@ pub fn close_settings(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// One entry of the pet menu's "Change pet" submenu.
+#[derive(Debug)]
+pub struct PetMenuItem {
+    pub id: String,
+    pub label: String,
+    pub checked: bool,
+}
+
+/// "Change pet": every installed pet in picker order (bundled ones first), the current one checked.
+pub fn pet_menu_items(all: &[pets::Pet], current: Option<&str>) -> Vec<PetMenuItem> {
+    all.iter()
+        .map(|p| PetMenuItem {
+            id: format!("{PET_ITEM_PREFIX}{}", p.info.id),
+            label: p.info.display_name.clone(),
+            checked: current == Some(p.info.id.as_str()),
+        })
+        .collect()
+}
+
 pub fn show_pet_menu(win: &Window) -> tauri::Result<()> {
     let app = win.app_handle();
     let all = state::refresh_pets(app);
@@ -190,10 +209,8 @@ pub fn show_pet_menu(win: &Window) -> tauri::Result<()> {
     if all.is_empty() {
         change.append(&MenuItem::with_id(app, "no-pets", "No pets found", false, None::<&str>)?)?;
     }
-    for p in &all {
-        let checked = current.as_deref() == Some(p.info.id.as_str());
-        let id = format!("{PET_ITEM_PREFIX}{}", p.info.id);
-        change.append(&CheckMenuItem::with_id(app, id, &p.info.display_name, true, checked, None::<&str>)?)?;
+    for item in pet_menu_items(&all, current.as_deref()) {
+        change.append(&CheckMenuItem::with_id(app, item.id, &item.label, true, item.checked, None::<&str>)?)?;
     }
     let menu = Menu::with_items(
         app,
@@ -448,6 +465,22 @@ pub fn open_folder(app: &AppHandle, dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn change_pet_lists_every_bundled_pet() {
+        let all = pets::discover(&[(pets::PetSource::Bundled, PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/pets")))]);
+        let items = pet_menu_items(&all, Some("fox"));
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Perch", "Ember", "Plum", "Pip", "Miso", "Nori", "Bean", "Bolt", "Wisp"]);
+        let checked: Vec<&str> = items.iter().filter(|i| i.checked).map(|i| i.id.as_str()).collect();
+        assert_eq!(checked, ["pet:fox"]);
+        // Every item leads back to its pet through on_menu_event's prefix.
+        for item in &items {
+            let id = item.id.strip_prefix(PET_ITEM_PREFIX).unwrap_or_default();
+            assert!(all.iter().any(|p| p.info.id == id), "{}", item.id);
+        }
+        assert!(pet_menu_items(&all, None).iter().all(|i| !i.checked));
+    }
 
     #[test]
     fn reg_runs_from_the_system_folder() {

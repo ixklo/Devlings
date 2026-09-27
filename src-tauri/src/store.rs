@@ -261,6 +261,15 @@ pub fn validate_pet_name(raw: &str) -> Result<String, String> {
     }
 }
 
+/// The name to switch to when the user picks another pet, or `None` to keep the current one.
+/// A name the user chose stays. A name that is still a default (the old pet's own name, or the
+/// "Perch" every install starts with) becomes the new pet's name.
+pub fn name_after_pet_change(current: &str, old_pet_name: Option<&str>, new_pet_name: &str) -> Option<String> {
+    let is_default = current == DEFAULT_PET_NAME || old_pet_name == Some(current);
+    let next = validate_pet_name(new_pet_name).ok()?;
+    (is_default && next != current).then_some(next)
+}
+
 pub fn load<T: DeserializeOwned + Default>(path: &Path) -> T {
     fs::read_to_string(path)
         .ok()
@@ -435,6 +444,22 @@ mod tests {
         std::fs::write(&p, r#"{"petName":"Bo"}"#).unwrap();
         let c: Config = load(&p);
         assert_eq!((c.pet_name.as_str(), c.notifications), ("Bo", true));
+    }
+
+    #[test]
+    fn a_default_name_follows_the_pet_and_a_chosen_one_stays() {
+        // Still the old pet's own name: the new pet's name replaces it.
+        assert_eq!(name_after_pet_change("Ember", Some("Ember"), "Pip"), Some("Pip".to_string()));
+        // Every install starts out as "Perch", whichever pet was picked.
+        assert_eq!(name_after_pet_change("Perch", Some("Plum"), "Miso"), Some("Miso".to_string()));
+        assert_eq!(name_after_pet_change("Perch", None, "Miso"), Some("Miso".to_string()));
+        // A name the user chose stays, even one that matches another pet.
+        assert_eq!(name_after_pet_change("Mochi", Some("Perch"), "Pip"), None);
+        assert_eq!(name_after_pet_change("Plum", Some("Pip"), "Wisp"), None);
+        // Nothing to change, or a display name that isn't a valid pet name.
+        assert_eq!(name_after_pet_change("Pip", Some("Pip"), "Pip"), None);
+        assert_eq!(name_after_pet_change("Pip", Some("Pip"), &"x".repeat(25)), None);
+        assert_eq!(name_after_pet_change("Pip", Some("Pip"), " Bolt "), Some("Bolt".to_string()));
     }
 
     #[test]

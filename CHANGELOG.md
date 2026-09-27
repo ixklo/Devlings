@@ -4,6 +4,15 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+
+- **Six new pets:** Pip the fox (its tail swishes while it works), Miso the cat (smug when reviewing, then a big stretch), Nori the axolotl (frills flutter while it waits), Bean the capybara (an orange on its head at idle), Bolt the robot (its antenna blinks while it works) and Wisp the ghost (floats, and fades a little when idle). Nine pets are now built in; Perch stays the default.
+
+### Changed
+
+- The pet pickers in onboarding and Settings scroll, and the right-click **Change pet** menu lists every built-in pet, birds first.
+- Switching pets keeps a name you chose; if you never renamed your pet, the new pet brings its own name.
+
 ## [1.0.0] - 2026-09-27
 
 The first stable release: Perch updates itself, answers Claude Code's permission prompts, protects you in folders you haven't trusted, and uninstalls cleanly.

@@ -1,10 +1,9 @@
-// Hand-authored pixel maps. One character = one art pixel (4x4 screen px).
-// Roles are defined in palettes.mjs. Maps hold fill colours; outlines are
-// added automatically per group (engine.outline). Line roles such as 'e',
-// '9' or '8' are used for interior detail and never grow an outline.
-import { sprite, flipX, recolor } from './engine.mjs';
-
-export const flipY = (s) => ({ w: s.w, h: s.h, rows: [...s.rows].reverse() });
+// The bird (Perch, Ember, Plum): hand-authored pixel maps. One character =
+// one art pixel (4x4 screen px). Roles are defined in lib/palettes.mjs. Maps
+// hold fill colours; outlines are added automatically per group
+// (engine.outline). Line roles such as 'e', '9' or '8' are used for interior
+// detail and never grow an outline.
+import { sprite, flipX, flipY, recolor, eyePair } from '../../lib/engine.mjs';
 
 // ================================================================ FRONT VIEW
 // One round head-body blob with a cream belly. Light from the top-left:
@@ -92,19 +91,7 @@ const EYE_SHAPES = {
     .ttt.`,
 };
 /** Each eye comes as a left/right pair: shapes mirror, highlights stay top-left. */
-export const EYES = {};
-for (const [name, src] of Object.entries(EYE_SHAPES)) {
-  const l = sprite(src);
-  const m = flipX(l);
-  const rows = m.rows.map((row, y) => {
-    const out = [...row].map((ch) => (ch === 'W' ? 'e' : ch));
-    [...l.rows[y]].forEach((ch, x) => {
-      if (ch === 'W') out[x] = 'W';
-    });
-    return out.join('');
-  });
-  EYES[name] = { l, r: { w: l.w, h: l.h, rows } };
-}
+export const EYES = Object.fromEntries(Object.entries(EYE_SHAPES).map(([name, src]) => [name, eyePair(src)]));
 
 export const BEAK = sprite(`
   yyaa
@@ -341,105 +328,3 @@ export const SIDE_FEET = {
     aa..aa..
   `),
 };
-
-// ================================================================ PROPS
-// Laptop seen from behind (its screen faces the bird). The keyboard is
-// hidden behind the lid; wing tips reach over the top edge to type.
-export const LAPTOP = sprite(`
-  .LLLLLLLLLLLLLLL.
-  LLMMMMMMMMMMMMMMN
-  LMMMMMMMMMMMMMMMN
-  LMMMMMMMMMMMMMMMN
-  LMMMMMMMggMMMMMMN
-  LMMMMMMgGGgMMMMMN
-  LMMMMMMMGgMMMMMMN
-  LMMMMMMMMMMMMMMMN
-  LMMMMMMMMMMMMMMMN
-  NNNNNNNNNNNNNNNNN
-`);
-// light spilling over the top edge of the lid from the screen
-export const SCREEN_GLOW = sprite(`
-  .lllllllllllllll.
-`);
-
-// Thought puff with 0..3 dots.
-const PUFF = `
-  ...FFFF..FFF...
-  .FFFFFFFFFFFFF.
-  FFFFFFFFFFFFFFF
-  FFFFFFFFFFFFFFF
-  FFFFFFFFFFFFFFF
-  .FFFFFFFFFFFFF.
-  ..fFFFFfFFFFf..
-  ...............
-  F..............
-`;
-export const PUFFS = [0, 1, 2, 3].map((n) => {
-  const s = sprite(PUFF);
-  const rows = s.rows.map((r) => [...r]);
-  for (let i = 0; i < n; i++) {
-    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) rows[3 + dy][3 + i * 4 + dx] = '8';
-  }
-  return { ...s, rows: rows.map((r) => r.join('')) };
-});
-
-// Speech bubble with a question mark (waiting on the user).
-export const ASK = sprite(`
-  ..WWWWWWWW..
-  .WWW8888WWW.
-  WWW88WW88WWW
-  WWWWWWW88WWW
-  WWWWWW88WWWW
-  WWWWW88WWWWW
-  WWWWW88WWWWW
-  WWWWWWWWWWWW
-  .WWWW88WWWW.
-  ..WWW88WWW..
-  ...W........
-  ..W.........
-`);
-
-// Small storm cloud (failed).
-export const CLOUD = sprite(`
-  ......555.........
-  ....5556665..555..
-  ...566666665566665
-  ..5666666666666666
-  .56666666666666667
-  566666666666666677
-  .6777766667776777.
-  ..77777777777777..
-`);
-export const DROP = sprite(`
-  z
-  z
-`);
-
-// Magnifying glass: metal rim, glass with a glint, wooden handle.
-export const LENS = sprite(`
-  ...MMMM...
-  ..MllllM..
-  .MlWllllN.
-  MlWlllllln
-  Mllllllll9
-  Mllllllll9
-  MlllllllN9
-  .NllllllN.
-  ..NNlNNN..
-  ...9999...
-`);
-export const HANDLE = sprite(`
-  23..
-  223.
-  .223
-  ..22
-`);
-export const BIG_EYE = sprite(`
-  .eeee.
-  eWWeee
-  eWWeee
-  eeeeee
-  eeeeee
-  eeeeee
-  .eeee.
-`);

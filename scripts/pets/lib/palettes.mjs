@@ -50,71 +50,9 @@ const SHARED = {
   t: '#9fdcff',
 };
 
-export const PETS = {
-  perch: {
-    displayName: 'Perch',
-    description: 'A round little teal songbird who keeps an eye on your Claude Code sessions.',
-    colors: {
-      o: '#15383c',
-      h: '#72d8c6',
-      b: '#3aa39a',
-      s: '#28767a',
-      d: '#1d5559',
-      w: '#fffdf3',
-      c: '#f5e5c3',
-      q: '#d8bc8e',
-      y: '#ffd27a',
-      a: '#f39a36',
-      r: '#c2612a',
-      O: '#5c2a12',
-      e: '#18222d',
-      p: '#f4958a',
-    },
-  },
-  ember: {
-    displayName: 'Ember',
-    description: 'A fiery little songbird with a warm glow and a short fuse for failing tests.',
-    colors: {
-      o: '#3e1512',
-      h: '#ffa25e',
-      b: '#e6552e',
-      s: '#b13526',
-      d: '#7e2320',
-      w: '#fffbe3',
-      c: '#ffe9a6',
-      q: '#e9c26b',
-      y: '#fff0a0',
-      a: '#ffc93c',
-      r: '#c98a1e',
-      O: '#5a3408',
-      e: '#26100f',
-      p: '#ffb08a',
-    },
-  },
-  plum: {
-    displayName: 'Plum',
-    description: 'A calm violet songbird who reads every diff twice before you do.',
-    colors: {
-      o: '#271541',
-      h: '#c8a0f2',
-      b: '#9362d1',
-      s: '#6a42a3',
-      d: '#4b2c7a',
-      w: '#fdf9ff',
-      c: '#eadcff',
-      q: '#bfa6e3',
-      y: '#ffd27a',
-      a: '#f39a36',
-      r: '#c2612a',
-      O: '#5c2a12',
-      e: '#1e1430',
-      p: '#f59ab8',
-    },
-  },
-};
-
-export function paletteFor(id) {
-  return { ...SHARED, ...PETS[id].colors };
+/** The full palette of one pet: the shared roles plus its own colours. */
+export function paletteFor(pet) {
+  return { ...SHARED, ...pet.colors };
 }
 
 // Which outline colour each fill role gets when auto-outlined.

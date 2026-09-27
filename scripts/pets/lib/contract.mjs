@@ -15,4 +15,5 @@ export const ATLAS_ROWS = [
 // locomotion and jumping).
 export const BASELINE_ROWS = ['idle', 'waiting', 'running', 'review', 'failed'];
 
-export const PET_IDS = ['perch', 'ember', 'plum'];
+// Bundled pets, in the order they're built. Perch (the teal bird) is the default.
+export const PET_IDS = ['perch', 'ember', 'plum', 'fox', 'cat', 'axolotl', 'capybara', 'robot', 'ghost'];

@@ -50,6 +50,34 @@ describe("Onboarding", () => {
     expect(await screen.findByText("Step 2 of 3 · Ask")).toBeInTheDocument();
   });
 
+  it("step 1: the Name box follows the pet's own name until you type in it", async () => {
+    const { calls } = fakeTransport({ list_pets: () => [] });
+    const snap = firstRun({ config: makeConfig({ onboarded: false, approvalsIntroSeen: false, petName: "Perch" }) });
+    const { rerender } = render(<Onboarding snap={snap} onDone={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    expect(box).toHaveValue("Perch");
+    // Picking the fox gave it the fox's name (a default name follows the pet).
+    rerender(<Onboarding snap={{ ...snap, config: { ...snap.config, petId: "fox", petName: "Pip" } }} onDone={vi.fn()} />);
+    expect(box).toHaveValue("Pip");
+    expect(screen.getByText(/Pip shows every Claude Code session/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(await screen.findByText("Step 2 of 3 · Ask")).toBeInTheDocument();
+    expect(calls.filter(([c]) => c === "set_pet_name")).toEqual([]);
+  });
+
+  it("step 1: a name you typed stays when you pick another pet", async () => {
+    const { calls } = fakeTransport({ list_pets: () => [] });
+    const snap = firstRun({ config: makeConfig({ onboarded: false, approvalsIntroSeen: false, petName: "Perch" }) });
+    const { rerender } = render(<Onboarding snap={snap} onDone={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Name" });
+    await userEvent.clear(box);
+    await userEvent.type(box, "Biscuit");
+    rerender(<Onboarding snap={{ ...snap, config: { ...snap.config, petId: "cat", petName: "Miso" } }} onDone={vi.fn()} />);
+    expect(box).toHaveValue("Biscuit");
+    await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(calls).toContainEqual(["set_pet_name", { name: "Biscuit" }]);
+  });
+
   it("step 1: Skip declines the hooks and still moves on", async () => {
     const { commands } = start();
     await userEvent.click(screen.getByRole("button", { name: "Skip" }));
