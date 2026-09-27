@@ -1,0 +1,45 @@
+name: Pages
+# Publishes the website in site/ to GitHub Pages (https://yeetstick.github.io/perch/).
+# Images come from docs/ at build time, so the README and the site share one copy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/screenshots/**"
+      - "docs/social-preview.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v6
+      - name: Assemble the site
+        run: |
+          set -e
+          mkdir -p _site/img
+          cp -R site/. _site/
+          cp docs/screenshots/* docs/social-preview.png _site/img/
+          ls -R _site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

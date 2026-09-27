@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perch: a desktop pet for Claude Code</title>
+<meta name="description" content="Perch is a free, open-source pixel-art desktop pet for Claude Code. See every Claude Code session at a glance, answer permission prompts and ask from the pet. Windows, macOS and Linux.">
+<link rel="canonical" href="https://yeetstick.github.io/perch/">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171c" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Perch">
+<meta property="og:title" content="Perch: a desktop pet for Claude Code">
+<meta property="og:description" content="A pixel-art pet that floats on your desktop and keeps you posted on Claude Code. Free and open source.">
+<meta property="og:url" content="https://yeetstick.github.io/perch/">
+<meta property="og:image" content="https://yeetstick.github.io/perch/img/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Perch, a teal pixel-art bird on a branch, next to the words: Perch, a desktop pet for Claude Code">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Perch: a desktop pet for Claude Code">
+<meta name="twitter:description" content="A pixel-art pet that floats on your desktop and keeps you posted on Claude Code. Free and open source.">
+<meta name="twitter:image" content="https://yeetstick.github.io/perch/img/social-preview.png">
+<meta name="twitter:image:alt" content="Perch, a teal pixel-art bird on a branch, next to the words: Perch, a desktop pet for Claude Code">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Perch",
+  "description": "A free, open-source pixel-art desktop pet for Claude Code: see every Claude Code session, answer permission prompts and ask from the pet.",
+  "url": "https://yeetstick.github.io/perch/",
+  "image": "https://yeetstick.github.io/perch/img/social-preview.png",
+  "operatingSystem": "Windows 11, macOS, Linux",
+  "applicationCategory": "DeveloperApplication",
+  "softwareVersion": "1.0.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "downloadUrl": "https://github.com/yeetstick/perch/releases/latest",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --ink: #1f2430; --muted: #566072; --line: #dde1e7;
+  --accent: #1f7a72; --on-accent: #ffffff; --accent-soft: #e2f2f0;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171c; --surface: #1c2027; --ink: #e8eaee; --muted: #a3abb8; --line: #2e343e;
+    --accent: #5cc7bc; --on-accent: #0d1f1d; --accent-soft: #1b2e2d; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.6;
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+img { max-width: 100%; height: auto; display: block; }
+.pixel { image-rendering: pixelated; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; }
+.skip:focus { left: 8px; }
+header.hero { text-align: center; padding: 48px 0 32px; }
+.hero picture img { margin: 0 auto; }
+h1 { font-size: clamp(2.4rem, 6vw, 3.4rem); line-height: 1.1; margin: 20px 0 8px; letter-spacing: -0.02em; }
+.tagline { font-size: 1.2rem; color: var(--muted); max-width: 36em; margin: 0 auto 28px; }
+.downloads { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 0 0 14px; padding: 0; list-style: none; }
+.btn { display: inline-block; padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); text-decoration: none; font-weight: 600; }
+.btn small { font-weight: 400; color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary small { color: inherit; opacity: .85; }
+.btn:hover { border-color: var(--accent); }
+.meta { color: var(--muted); font-size: .95rem; margin: 0; }
+section { padding: 36px 0; border-top: 1px solid var(--line); }
+h2 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 18px; }
+h3 { font-size: 1.15rem; margin: 0 0 6px; }
+.feature { display: grid; gap: 24px; align-items: center; margin: 0 0 36px; }
+.feature img { border-radius: 14px; border: 1px solid var(--line); }
+.cards { display: grid; gap: 18px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+.card p, .feature p { margin: 0; }
+.pets img { margin: 0 auto 14px; border-radius: 14px; }
+.pets p { text-align: center; max-width: 38em; margin: 0 auto; }
+ol.how { padding-left: 1.3em; margin: 0; }
+ol.how li { margin: 0 0 10px; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; margin: 0 0 10px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin: 10px 0 4px; }
+footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: .95rem; text-align: center; }
+footer p { margin: 4px 0; }
+@media (min-width: 760px) {
+  .feature { grid-template-columns: 1fr 1fr; gap: 40px; }
+  .feature.flip > :first-child { order: 2; }
+  .cards { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="hero wrap">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="img/states.png" width="960" height="208">
+    <img class="pixel" src="img/demo.gif" width="273" height="342" alt="Perch, a teal pixel-art bird on a branch, going through its moods: idle, working at a laptop, holding up a question mark, inspecting with a magnifying glass, sad under a storm cloud, and waving">
+  </picture>
+  <h1>Perch</h1>
+  <p class="tagline">A pixel-art desktop pet for Claude Code. See every session at a glance, answer permission prompts and ask Claude Code something, right from your desktop.</p>
+  <ul class="downloads" aria-label="Download Perch">
+    <li><a class="btn primary" href="https://github.com/yeetstick/perch/releases/latest/download/Perch-windows-x64-setup.exe">Download for Windows <small>.exe</small></a></li>
+    <li><a class="btn" href="https://github.com/yeetstick/perch/releases/latest/download/Perch-macos-universal.dmg">macOS <small>.dmg, beta</small></a></li>
+    <li><a class="btn" href="https://github.com/yeetstick/perch/releases/latest/download/Perch-linux-x86_64.AppImage">Linux <small>AppImage, beta</small></a></li>
+    <li><a class="btn" href="https://github.com/yeetstick/perch/releases/latest/download/Perch-linux-amd64.deb">Linux <small>.deb, beta</small></a></li>
+  </ul>
+  <p class="meta">Free and open source (MIT) · <a href="https://github.com/yeetstick/perch/releases">All releases</a> · <a href="https://github.com/yeetstick/perch">Source on GitHub</a></p>
+</header>
+
+<main id="main" class="wrap">
+  <section aria-labelledby="features">
+    <h2 id="features">What it does</h2>
+    <div class="feature">
+      <img src="img/bubbles.png" width="760" height="660" loading="lazy" alt="The pet with two session cards above it: one running, one done">
+      <div>
+        <h3>Watch every session</h3>
+        <p>Every Claude Code session, in VS Code, a terminal or the desktop app, shows up as a card above the pet: running, needs input, ready or blocked. The pet reacts along with it, a card pops up when a session finishes or needs you, and a click takes you back to the project.</p>
+      </div>
+    </div>
+    <div class="feature flip">
+      <img src="img/composer.png" width="760" height="660" loading="lazy" alt="The composer card above the pet, with a project chip, a mode chip and a send button">
+      <div>
+        <h3>Ask from the pet</h3>
+        <p>Click the pet, pick a project folder and type. Perch runs your own Claude Code in that folder and streams the answer into a small chat above the pet. Follow-ups continue the same conversation.</p>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>Answer permission prompts</h3>
+        <p>When Claude Code wants to run a command or edit a file, Allow or Deny it from a card that shows the exact command, file or URL. Nothing is pre-selected and no key answers a card, so a stray Enter never approves anything.</p>
+      </div>
+      <div class="card">
+        <h3>Updates itself</h3>
+        <p>Perch checks for a new release at launch and once a day, and installs signed updates in the app, so there's no installer to download again. You can turn this off in Settings.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="pets" aria-labelledby="pets">
+    <h2 id="pets">Pick a pet</h2>
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="img/pets.png" width="576" height="208">
+      <img class="pixel" src="img/pets.gif" width="640" height="240" loading="lazy" alt="The three built-in pets idling on their branches: teal Perch, orange Ember and purple Plum">
+    </picture>
+    <p>Three pets are built in, and you can name yours. Perch also reads pets in the Codex pet format, so you can <a href="https://github.com/yeetstick/perch#making-your-own-pet">draw your own</a>.</p>
+  </section>
+
+  <section aria-labelledby="how">
+    <h2 id="how">How it works</h2>
+    <ol class="how">
+      <li><strong>Claude Code's hooks, on your machine.</strong> With your OK, Perch adds a few hooks to Claude Code's <code>settings.json</code>. Each session then reports its progress to Perch over <code>127.0.0.1</code>; if Perch isn't running, the hooks fail fast and silently. A backup is kept before every change, and one click removes exactly Perch's entries.</li>
+      <li><strong>Your own Claude Code, on your own subscription.</strong> When you ask from the pet, Perch runs the Claude Code you already have, logged in with your Claude plan. It never uses an API key and has no login of its own.</li>
+      <li><strong>Everything else stays out of the way.</strong> The area around the pet is click-through, so the window never blocks what's behind it.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="privacy">
+    <h2 id="privacy">Privacy</h2>
+    <p>Perch sends nothing anywhere itself except hook events and permission answers on <code>127.0.0.1</code>, which never leave your machine, and a daily check for a newer version on GitHub, which you can turn off. Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. On Windows, Microsoft's WebView2 runtime makes its own connections to Microsoft, as it does for every app built on it. This page loads no scripts, fonts or trackers. <a href="https://github.com/yeetstick/perch#privacy">More detail</a>.</p>
+  </section>
+
+  <section aria-labelledby="faq">
+    <h2 id="faq">Questions</h2>
+    <details>
+      <summary>Is it free?</summary>
+      <p>Yes. Perch is free and open source under the MIT license, with no paid tier and no account.</p>
+    </details>
+    <details>
+      <summary>Which operating systems does it run on?</summary>
+      <p>Windows 11 is verified. macOS (Apple Silicon and Intel) and Linux (AppImage and .deb) are in beta: the installers build and launch in CI on every change but haven't been tested on real hardware yet. Windows 10 isn't tested yet. You also need Claude Code 2.1.259 or newer, logged in with a Claude subscription (Pro, Max, Team or Enterprise).</p>
+    </details>
+    <details>
+      <summary>Will Windows warn me when I install it?</summary>
+      <p>Yes, the first time. The installers aren't signed with a paid certificate, so SmartScreen says "Windows protected your PC": click <strong>More info</strong>, then <strong>Run anyway</strong>. On macOS, open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>. <a href="https://github.com/yeetstick/perch#install">Install steps for every system</a>.</p>
+    </details>
+    <details>
+      <summary>What does it cost to use?</summary>
+      <p>Watching is free: Perch only listens to Claude Code's hooks, so no prompts are sent. Asking from the pet runs your own Claude Code in non-interactive mode, which draws on the monthly Agent SDK credit that comes with paid Claude plans. Perch never uses an API key, and it stops a run the moment Claude Code reports it would start using paid usage credits. <a href="https://github.com/yeetstick/perch#cost">How Asks are counted</a>.</p>
+    </details>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Perch is free and open source under the <a href="https://github.com/yeetstick/perch/blob/main/LICENSE">MIT license</a>. Perch is not affiliated with Anthropic.</p>
+  <p><a href="https://github.com/yeetstick/perch">GitHub</a> · <a href="https://github.com/yeetstick/perch/issues/new/choose">Report an issue</a> · <a href="https://github.com/yeetstick/perch/blob/main/SECURITY.md">Security</a></p>
+</footer>
+</body>
+</html>
