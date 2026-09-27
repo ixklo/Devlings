@@ -52,11 +52,19 @@ pub fn user_claude_dir(config_dir: Option<OsString>, home: &Path) -> PathBuf {
     }
 }
 
+/// Drops a Windows verbatim prefix: `\\?\UNC\server\share` becomes `\\server\share`, `\\?\C:\x` becomes `C:\x`.
+fn strip_verbatim(raw: &str) -> String {
+    const UNC: &str = r"\\?\UNC\";
+    match raw.get(..UNC.len()) {
+        Some(head) if head.eq_ignore_ascii_case(UNC) => format!(r"\\{}", &raw[UNC.len()..]),
+        _ => raw.strip_prefix(r"\\?\").unwrap_or(raw).to_string(),
+    }
+}
+
 /// A path as a comparable string: `\` and `/` alike and case ignored on Windows, no trailing separator.
 fn norm_path(raw: &str) -> String {
     let s = if cfg!(windows) {
-        let raw = raw.strip_prefix(r"\\?\").unwrap_or(raw);
-        raw.replace('\\', "/")
+        strip_verbatim(raw).replace('\\', "/")
     } else {
         raw.to_string()
     };
@@ -117,20 +125,29 @@ fn strip_bom(bytes: &[u8]) -> &[u8] {
     bytes.strip_prefix("\u{feff}".as_bytes()).unwrap_or(bytes)
 }
 
-/// Whether Claude Code trusts `folder`: `hasTrustDialogAccepted` is `true` for it or any parent folder in
-/// `claude_json`. A missing, unreadable, oversized or malformed file means "not trusted".
-pub fn claude_trusts(folder: &Path, claude_json: &Path) -> bool {
-    claude_trusts_capped(folder, claude_json, CLAUDE_JSON_CAP)
+/// Whether Claude Code trusts `folder`: `hasTrustDialogAccepted` is `true` in `claude_json` for a key K with the
+/// folder at or under K.
+/// - Inside a git repository (`repo_root`, from `git_root`), K must also be at or under the repository root, so a
+///   trusted home or projects folder doesn't cover a repository cloned under it: Claude Code shows its trust dialog
+///   for a nested repository.
+/// - Outside any repository, any parent folder counts.
+///
+/// A missing, unreadable, oversized or malformed file means "not trusted".
+pub fn claude_trusts(folder: &Path, repo_root: Option<&Path>, claude_json: &Path) -> bool {
+    claude_trusts_capped(folder, repo_root, claude_json, CLAUDE_JSON_CAP)
 }
 
-fn claude_trusts_capped(folder: &Path, claude_json: &Path, cap: u64) -> bool {
+fn claude_trusts_capped(folder: &Path, repo_root: Option<&Path>, claude_json: &Path, cap: u64) -> bool {
     let Ok(Some(bytes)) = read_capped(claude_json, cap) else { return false };
     let Ok(parsed) = serde_json::from_slice::<ClaudeJson>(strip_bom(&bytes)) else { return false };
     let folder = norm_path(&folder.to_string_lossy());
+    let root = repo_root.map(|r| norm_path(&r.to_string_lossy()));
     parsed.projects.iter().any(|(key, state)| {
-        state.has_trust_dialog_accepted == Some(Value::Bool(true))
-            && !key.is_empty()
-            && is_at_or_under(&folder, &norm_path(key))
+        if state.has_trust_dialog_accepted != Some(Value::Bool(true)) || key.is_empty() {
+            return false;
+        }
+        let key = norm_path(key);
+        is_at_or_under(&folder, &key) && root.as_deref().is_none_or(|root| is_at_or_under(&key, root))
     })
 }
 
@@ -242,13 +259,14 @@ fn scan_place(place: &Path, user_claude_dir: &Path, out: &mut ProjectConfig) {
     }
 }
 
-/// Scans `folder` and, when it is inside a git repository, the repository root, for project configuration.
-/// `user_claude_dir` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) is never counted as a project's `.claude` folder.
-pub fn scan(folder: &Path, user_claude_dir: &Path) -> ProjectConfig {
+/// Scans `folder` and, when it is inside a git repository (`repo_root`, from `git_root`), the repository root, for
+/// project configuration. `user_claude_dir` (`$CLAUDE_CONFIG_DIR` or `~/.claude`) is never counted as a project's
+/// `.claude` folder.
+pub fn scan(folder: &Path, repo_root: Option<&Path>, user_claude_dir: &Path) -> ProjectConfig {
     let mut out = ProjectConfig::default();
     scan_place(folder, user_claude_dir, &mut out);
-    if let Some(root) = git_root(folder).filter(|root| !same_dir(root, folder)) {
-        scan_place(&root, user_claude_dir, &mut out);
+    if let Some(root) = repo_root.filter(|root| !same_dir(root, folder)) {
+        scan_place(root, user_claude_dir, &mut out);
     }
     out
 }
@@ -367,16 +385,18 @@ impl AskPolicy {
 }
 
 /// The decision for an Ask in `folder`:
-/// - trusted in Perch, or by Claude Code (`claude_json`): normal flags, no notice;
+/// - trusted in Perch, or by Claude Code (`claude_json`, scoped to the folder's repository): normal flags, no notice;
 /// - otherwise, nothing to skip (no `.claude` folder, no `.mcp.json`): normal flags, no notice;
 /// - otherwise: `--setting-sources user` and a notice listing what was found.
 pub fn ask_policy(folder: &Path, perch_trusted: bool, claude_json: &Path, user_claude_dir: &Path) -> AskPolicy {
     if perch_trusted {
         return AskPolicy::normal();
     }
+    // One repository root for both: the scan looks there, and trust inside a repository stops at it.
+    let repo_root = git_root(folder);
     // The scan reads a few small files; do it before the possibly large .claude.json.
-    let found = scan(folder, user_claude_dir);
-    if found.is_empty() || claude_trusts(folder, claude_json) {
+    let found = scan(folder, repo_root.as_deref(), user_claude_dir);
+    if found.is_empty() || claude_trusts(folder, repo_root.as_deref(), claude_json) {
         return AskPolicy::normal();
     }
     AskPolicy { setting_sources_user: true, notice: Some(UntrustedNotice::from_config(&found)) }
@@ -407,6 +427,11 @@ mod tests {
         json!({ "numStartups": 3, "projects": projects })
     }
 
+    /// `scan` finding the repository root itself, as `ask_policy` does.
+    fn scan(folder: &Path, user_claude_dir: &Path) -> ProjectConfig {
+        super::scan(folder, git_root(folder).as_deref(), user_claude_dir)
+    }
+
     fn write(path: &Path, text: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
@@ -418,38 +443,38 @@ mod tests {
     fn trusts_an_exact_key() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj"), &cj));
-        assert!(!claude_trusts(Path::new("/home/me/other"), &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj));
+        assert!(!claude_trusts(Path::new("/home/me/other"), None, &cj));
     }
 
     #[test]
     fn trusts_a_folder_under_a_trusted_ancestor() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/me", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj"), &cj));
-        assert!(claude_trusts(Path::new("/home/me/proj/deep/er"), &cj));
-        assert!(!claude_trusts(Path::new("/home"), &cj), "a parent of the trusted key isn't trusted");
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj/deep/er"), None, &cj));
+        assert!(!claude_trusts(Path::new("/home"), None, &cj), "a parent of the trusted key isn't trusted");
         let cj = claude_json(dir.path(), trusted(&[("/", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj"), &cj), "the root trusts everything under it");
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj), "the root trusts everything under it");
     }
 
     #[test]
     fn a_sibling_with_the_same_prefix_is_not_trusted() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/p/proj", true)]));
-        assert!(!claude_trusts(Path::new("/p/proj2"), &cj));
-        assert!(!claude_trusts(Path::new("/p/pro"), &cj));
-        assert!(claude_trusts(Path::new("/p/proj/sub"), &cj));
+        assert!(!claude_trusts(Path::new("/p/proj2"), None, &cj));
+        assert!(!claude_trusts(Path::new("/p/pro"), None, &cj));
+        assert!(claude_trusts(Path::new("/p/proj/sub"), None, &cj));
     }
 
     #[test]
     fn ignores_a_trailing_separator() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj/", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj"), &cj));
-        assert!(claude_trusts(Path::new("/home/me/proj/"), &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj/"), None, &cj));
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj/"), &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj/"), None, &cj));
     }
 
     #[cfg(windows)]
@@ -458,17 +483,148 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Claude Code writes forward slashes; the folder dialog gives backslashes.
         let cj = claude_json(dir.path(), trusted(&[("C:/Users/me/proj", true)]));
-        assert!(claude_trusts(Path::new(r"C:\Users\me\proj"), &cj));
-        assert!(claude_trusts(Path::new(r"c:\users\ME\Proj\"), &cj));
-        assert!(claude_trusts(Path::new(r"C:\Users\me\proj\src"), &cj));
-        assert!(!claude_trusts(Path::new(r"C:\Users\me\proj2"), &cj));
+        assert!(claude_trusts(Path::new(r"C:\Users\me\proj"), None, &cj));
+        assert!(claude_trusts(Path::new(r"c:\users\ME\Proj\"), None, &cj));
+        assert!(claude_trusts(Path::new(r"C:\Users\me\proj\src"), None, &cj));
+        assert!(!claude_trusts(Path::new(r"C:\Users\me\proj2"), None, &cj));
         let cj = claude_json(dir.path(), trusted(&[(r"C:\Users\Me", true)]));
-        assert!(claude_trusts(Path::new("c:/users/me/proj"), &cj));
+        assert!(claude_trusts(Path::new("c:/users/me/proj"), None, &cj));
         let cj = claude_json(dir.path(), trusted(&[("C:/", true)]));
-        assert!(claude_trusts(Path::new(r"C:\Users\me\proj"), &cj));
-        assert!(!claude_trusts(Path::new(r"D:\Users\me\proj"), &cj));
+        assert!(claude_trusts(Path::new(r"C:\Users\me\proj"), None, &cj));
+        assert!(!claude_trusts(Path::new(r"D:\Users\me\proj"), None, &cj));
         let cj = claude_json(dir.path(), trusted(&[("C:/Users/me/proj", true)]));
-        assert!(claude_trusts(Path::new(r"\\?\C:\Users\me\proj"), &cj), "a verbatim path names the same folder");
+        assert!(claude_trusts(Path::new(r"\\?\C:\Users\me\proj"), None, &cj), "a verbatim path names the same folder");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_verbatim_unc_paths_match_unc_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        for key in ["//server/share/proj", r"\\server\share\proj", "//SERVER/Share/proj/"] {
+            let cj = claude_json(dir.path(), trusted(&[(key, true)]));
+            assert!(claude_trusts(Path::new(r"\\?\UNC\server\share\proj"), None, &cj), "{key}");
+            assert!(claude_trusts(Path::new(r"\\?\unc\server\share\proj\src"), None, &cj), "{key}");
+            assert!(claude_trusts(Path::new(r"\\server\share\proj"), None, &cj), "{key}");
+            assert!(!claude_trusts(Path::new(r"\\?\UNC\server\share\proj2"), None, &cj), "{key}");
+            assert!(!claude_trusts(Path::new(r"\\?\UNC\other\share\proj"), None, &cj), "{key}");
+        }
+        assert_eq!(norm_path(r"\\?\UNC\server\share\proj"), "//server/share/proj");
+        assert_eq!(norm_path(r"\\?\C:\proj"), "c:/proj");
+    }
+
+    // ---- Parent trust stops at a git repository (Claude Code shows the dialog for a nested repository) ----
+
+    /// A temp folder that is not itself inside a git repository, so repository detection is up to each test. A
+    /// developer whose temp folder is inside one skips these tests; CI never does.
+    fn outside_any_repo() -> Option<tempfile::TempDir> {
+        let dir = tempfile::tempdir().unwrap();
+        if git_root(dir.path()).is_none() {
+            return Some(dir);
+        }
+        assert_ne!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"), "CI's temp folder is inside a git repository");
+        eprintln!("skipped: the temp folder is inside a git repository");
+        None
+    }
+
+    fn trusts_on_disk(folder: &Path, cj: &Path) -> bool {
+        claude_trusts(folder, git_root(folder).as_deref(), cj)
+    }
+
+    fn key(p: &Path) -> String {
+        p.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_trusted_parent_does_not_cover_a_repository_under_it() {
+        let Some(home) = outside_any_repo() else { return };
+        let repo = home.path().join("code/fresh-clone");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        let cj = claude_json(home.path(), trusted(&[(&key(home.path()), true)]));
+        assert!(!trusts_on_disk(&repo, &cj));
+        assert!(!trusts_on_disk(&repo.join("src"), &cj));
+        let cj = claude_json(home.path(), trusted(&[(&key(&home.path().join("code")), true)]));
+        assert!(!trusts_on_disk(&repo, &cj), "a projects folder above the repository doesn't count either");
+    }
+
+    #[test]
+    fn a_trusted_repository_root_covers_the_repository() {
+        let Some(home) = outside_any_repo() else { return };
+        let repo = home.path().join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(repo.join("packages/app")).unwrap();
+        let cj = claude_json(home.path(), trusted(&[(&key(&repo), true)]));
+        assert!(trusts_on_disk(&repo, &cj));
+        assert!(trusts_on_disk(&repo.join("packages/app"), &cj));
+    }
+
+    #[test]
+    fn a_trusted_folder_inside_a_repository_covers_folders_under_it() {
+        let Some(home) = outside_any_repo() else { return };
+        let repo = home.path().join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(repo.join("packages/app/src")).unwrap();
+        fs::create_dir_all(repo.join("packages/other")).unwrap();
+        let cj = claude_json(home.path(), trusted(&[(&key(&repo.join("packages/app")), true)]));
+        assert!(trusts_on_disk(&repo.join("packages/app/src"), &cj));
+        assert!(trusts_on_disk(&repo.join("packages/app"), &cj));
+        assert!(!trusts_on_disk(&repo.join("packages/other"), &cj));
+        assert!(!trusts_on_disk(&repo, &cj));
+    }
+
+    #[test]
+    fn a_plain_folder_under_a_trusted_parent_is_trusted() {
+        let Some(home) = outside_any_repo() else { return };
+        let notes = home.path().join("notes/2026");
+        fs::create_dir_all(&notes).unwrap();
+        let cj = claude_json(home.path(), trusted(&[(&key(home.path()), true)]));
+        assert_eq!(git_root(&notes), None);
+        assert!(trusts_on_disk(&notes, &cj));
+    }
+
+    #[test]
+    fn a_nested_repository_needs_its_own_trust() {
+        let Some(home) = outside_any_repo() else { return };
+        let outer = home.path().join("outer");
+        fs::create_dir_all(outer.join(".git")).unwrap();
+        // A submodule or linked worktree marks its root with a .git file.
+        let inner = outer.join("libs/inner");
+        write(&inner.join(".git"), "gitdir: ../../.git/modules/inner");
+        fs::create_dir_all(inner.join("src")).unwrap();
+        assert_eq!(git_root(&inner.join("src")).as_deref(), Some(inner.as_path()));
+
+        let cj = claude_json(home.path(), trusted(&[(&key(&outer), true)]));
+        assert!(trusts_on_disk(&outer, &cj), "the outer repository itself is trusted");
+        assert!(!trusts_on_disk(&inner, &cj), "the outer key doesn't cover the inner repository");
+        assert!(!trusts_on_disk(&inner.join("src"), &cj));
+        let cj = claude_json(home.path(), trusted(&[(&key(&inner), true)]));
+        assert!(trusts_on_disk(&inner.join("src"), &cj));
+    }
+
+    #[test]
+    fn repository_scoping_matches_whole_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let cj = claude_json(dir.path(), trusted(&[("/home/me/repo", true)]));
+        let root = Some(Path::new("/home/me/repo"));
+        assert!(claude_trusts(Path::new("/home/me/repo/src"), root, &cj));
+        let cj = claude_json(dir.path(), trusted(&[("/home/me", true)]));
+        assert!(!claude_trusts(Path::new("/home/me/repo/src"), root, &cj));
+        assert!(claude_trusts(Path::new("/home/me/repo/src"), None, &cj), "without a repository any parent counts");
+        let cj = claude_json(dir.path(), trusted(&[("/home/me/rep", true)]));
+        assert!(!claude_trusts(Path::new("/home/me/repo"), Some(Path::new("/home/me/repo")), &cj));
+    }
+
+    #[test]
+    fn the_policy_ignores_a_parent_key_for_a_repository() {
+        let Some(home) = outside_any_repo() else { return };
+        let repo = home.path().join("clone");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        write(&repo.join(".claude/settings.json"), r#"{"hooks":{"Stop":[]}}"#);
+        let cj = claude_json(home.path(), trusted(&[(&key(home.path()), true)]));
+        let policy = ask_policy(&repo, false, &cj, &no_user_dir());
+        assert!(policy.setting_sources_user && policy.notice.is_some());
+        let cj = claude_json(home.path(), trusted(&[(&key(&repo), true)]));
+        assert_eq!(ask_policy(&repo, false, &cj, &no_user_dir()), AskPolicy::normal());
     }
 
     #[cfg(not(windows))]
@@ -476,38 +632,38 @@ mod tests {
     fn unix_keys_are_case_sensitive_and_keep_backslashes() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/Me/proj", true)]));
-        assert!(!claude_trusts(Path::new("/home/me/proj"), &cj));
+        assert!(!claude_trusts(Path::new("/home/me/proj"), None, &cj));
         let cj = claude_json(dir.path(), trusted(&[("/home/me/a\\b", true)]));
-        assert!(!claude_trusts(Path::new("/home/me/a/b"), &cj));
+        assert!(!claude_trusts(Path::new("/home/me/a/b"), None, &cj));
     }
 
     #[test]
     fn only_an_accepted_trust_dialog_counts() {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj", false)]));
-        assert!(!claude_trusts(Path::new("/home/me/proj"), &cj));
+        assert!(!claude_trusts(Path::new("/home/me/proj"), None, &cj));
         for entry in [json!({}), json!({ "hasTrustDialogAccepted": "true" }), json!({ "hasTrustDialogAccepted": 1 })] {
             let cj = claude_json(dir.path(), json!({ "projects": { "/home/me/proj": entry } }));
-            assert!(!claude_trusts(Path::new("/home/me/proj"), &cj), "{entry}");
+            assert!(!claude_trusts(Path::new("/home/me/proj"), None, &cj), "{entry}");
         }
         // The folder refused but a parent accepted: the parent's trust covers it, as in Claude Code.
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj", false), ("/home/me", true)]));
-        assert!(claude_trusts(Path::new("/home/me/proj"), &cj));
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &cj));
     }
 
     #[test]
     fn a_missing_unreadable_or_malformed_file_means_not_trusted() {
         let dir = tempfile::tempdir().unwrap();
         let folder = Path::new("/home/me/proj");
-        assert!(!claude_trusts(folder, &dir.path().join("missing.json")));
-        assert!(!claude_trusts(folder, dir.path()), "a directory, not a file");
+        assert!(!claude_trusts(folder, None, &dir.path().join("missing.json")));
+        assert!(!claude_trusts(folder, None, dir.path()), "a directory, not a file");
         let p = dir.path().join(".claude.json");
         for bad in ["{not json", "", "[]", "null", r#"{"projects": []}"#, r#"{"projects": {"/home/me/proj": null}}"#] {
             fs::write(&p, bad).unwrap();
-            assert!(!claude_trusts(folder, &p), "{bad:?}");
+            assert!(!claude_trusts(folder, None, &p), "{bad:?}");
         }
         let cj = claude_json(dir.path(), json!({ "projects": { "": { "hasTrustDialogAccepted": true } } }));
-        assert!(!claude_trusts(folder, &cj), "an empty key names no folder");
+        assert!(!claude_trusts(folder, None, &cj), "an empty key names no folder");
     }
 
     #[test]
@@ -515,7 +671,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join(".claude.json");
         fs::write(&p, format!("\u{feff}{}", trusted(&[("/home/me/proj", true)]))).unwrap();
-        assert!(claude_trusts(Path::new("/home/me/proj"), &p));
+        assert!(claude_trusts(Path::new("/home/me/proj"), None, &p));
     }
 
     #[test]
@@ -523,8 +679,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cj = claude_json(dir.path(), trusted(&[("/home/me/proj", true)]));
         let len = fs::metadata(&cj).unwrap().len();
-        assert!(claude_trusts_capped(Path::new("/home/me/proj"), &cj, len));
-        assert!(!claude_trusts_capped(Path::new("/home/me/proj"), &cj, len - 1));
+        assert!(claude_trusts_capped(Path::new("/home/me/proj"), None, &cj, len));
+        assert!(!claude_trusts_capped(Path::new("/home/me/proj"), None, &cj, len - 1));
         assert_eq!(CLAUDE_JSON_CAP, 32 * 1024 * 1024);
     }
 
