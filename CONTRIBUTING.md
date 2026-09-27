@@ -28,6 +28,13 @@ Opening `npm run dev` in a regular browser shows the pet (`/?window=pet`) and se
 
 Design docs live in `docs/specs/`; release gates and evidence live in `docs/release/`.
 
+### Images and the website
+
+- **Demo GIFs, social preview and favicon** are rendered straight from the bundled sprite atlases: `cd scripts/pets && npm install && node render-demo.mjs`. It rewrites `docs/screenshots/demo.gif` (the README and website hero), `docs/screenshots/pets.gif`, `docs/social-preview.png` and `site/favicon.png`. Re-run it after changing a pet's art (`node build.mjs` first) and commit the results. GitHub doesn't pick up the social preview from the repository: a maintainer uploads `docs/social-preview.png` under **Settings → General → Social preview**.
+- **The website** is the single page in `site/`, published to GitHub Pages by `.github/workflows/pages.yml` on every push to `main` that touches `site/**` or `docs/screenshots/**`; its images are copied in from `docs/` at deploy time, so there's one copy of each. It uses no JavaScript, web fonts or trackers, and should stay that way. Check changes with `npx html-validate site/index.html`.
+- **Download links** in the README and on the site point at version-free names (`https://github.com/yeetstick/perch/releases/latest/download/Perch-windows-x64-setup.exe` and friends), which the release workflow attaches to every release; `npm test` checks both use exactly those names.
+- **On a stable release**, update `softwareVersion` in the site's JSON-LD block; `npm test` fails until it matches `package.json` (release candidates are exempt).
+
 ## Before opening a pull request
 
 - `npm test`, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml` and `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` should all pass locally — CI runs the same checks on Windows, macOS and Linux and will block on any of them.

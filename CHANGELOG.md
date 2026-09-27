@@ -4,6 +4,10 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+
+- A website at https://yeetstick.github.io/perch/, an animated demo at the top of the README, and Download links that always point at the latest version: every release now also carries the installers under names without the version (`Perch-windows-x64-setup.exe`, `Perch-macos-universal.dmg`, `Perch-linux-x86_64.AppImage`, `Perch-linux-amd64.deb`).
+
 ## [1.0.0] - 2026-09-27
 
 The first stable release: Perch updates itself, answers Claude Code's permission prompts, protects you in folders you haven't trusted, and uninstalls cleanly.

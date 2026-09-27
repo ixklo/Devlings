@@ -83,3 +83,9 @@ Work through the README's "Using it" table on a live pet with at least one activ
 - [ ] Every gate above is ✅ or explicitly ⚠️ waived with a reason recorded.
 - [ ] Anthropic's current Claude Code terms and usage docs re-checked for anything affecting tools that launch the local `claude` binary; update the README Cost section if needed (G5.5).
 - [ ] The v1.0.0 milestone has zero open bugs (G7.4).
+
+## Every release
+
+- [ ] The release carries the four version-free installer copies (`Perch-windows-x64-setup.exe`, `Perch-macos-universal.dmg`, `Perch-linux-x86_64.AppImage`, `Perch-linux-amd64.deb`; the finalize job attaches them) and each appears in `SHA256SUMS.txt` with the same hash as its versioned original. The README and website Download links point at them.
+- [ ] For a stable release, `softwareVersion` in `site/index.html` matches (`npm test` enforces it), and the Pages workflow deployed the change.
+- [ ] If a pet's art changed, `node render-demo.mjs` in `scripts/pets` was re-run, and a changed `docs/social-preview.png` was re-uploaded under the repository's **Settings → General → Social preview**.
