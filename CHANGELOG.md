@@ -4,6 +4,15 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+### Added
+
+- **A wave when you come back.** After 10 minutes away from the computer (a locked screen counts), the pet waves once when you're back. Windows only for now; nothing happens if the system asks for reduced motion.
+- **Settings says when Windows has notifications turned off.** If they're off for all apps or for Devlings, the Notifications switch explains that none will appear and where to turn them on, and the bell's tooltip says so too.
+
+### Changed
+
+- **Calmer long states.** After a minute of work the pet pauses briefly between typing loops; after a failure the storm cloud settles after a few seconds and only stirs now and then; "done" settles after 20 seconds. "Needs you" keeps moving until you answer.
+
 ## [1.1.0] - 2026-09-27
 
 Perch is now Devlings, with six new pets and a calmer way to see hidden threads.

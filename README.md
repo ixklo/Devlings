@@ -11,7 +11,7 @@ Devlings puts a pixel-art pet on your desktop, above your other windows. It show
 - **Watch.** Any Claude Code session (VS Code, terminal, desktop app) shows up as a card above the pet: running, needs input, ready or blocked. Click a card to jump back to that project.
 - **Ask.** Click the pet or the pencil, pick a project folder and type. Devlings runs your own Claude Code in that folder and streams the answer into a small chat above the pet. Follow-ups continue the same conversation.
 - **Answer permission prompts.** When Claude Code asks to run a command or edit a file, Allow or Deny it from a card above the pet (see [Permission prompts](#permission-prompts)).
-- **It reacts.** The pet types while Claude works, holds up a "?" when it needs you, inspects the result when it's ready, and gets a little storm cloud when something fails. Drag it and it runs; hover and it waves.
+- **It reacts.** The pet types while Claude works, holds up a "?" when it needs you, inspects the result when it's ready, and gets a little storm cloud when something fails. Drag it and it runs; hover and it waves, and it waves hello when you come back after a while away (Windows). Long runs and failures settle down after a while, so the pet stays calm in the corner of your eye; "needs you" keeps moving until you answer.
 - **Pick a pet.** Nine pets are built in, and you can name yours. Devlings also reads pets in the Codex pet format (see below).
 - **Stays out of the way.** Everything around the pet is click-through, so the window never blocks what's behind it.
 
