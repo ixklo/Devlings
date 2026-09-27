@@ -366,6 +366,7 @@ export function PetApp() {
           visible={barVisible}
           composerOpen={view.kind === "compose"}
           notifications={config.notifications}
+          systemNotificationsOff={snap.setup.systemNotificationsOff}
           collapsed={collapsed}
           onCompose={toggleComposer}
           onToggleNotifications={() => api.setNotifications(!config.notifications).catch(() => {})}

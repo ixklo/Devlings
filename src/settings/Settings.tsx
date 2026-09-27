@@ -195,7 +195,11 @@ export function Settings({ snap }: { snap: Snapshot }) {
       <Section title="Notifications & startup">
         <SwitchRow
           label="Notifications"
-          description="When a session finishes, needs you, or gets stuck."
+          description={
+            snap.setup.systemNotificationsOff
+              ? "Windows has notifications turned off, so none will appear. Turn them on in Windows Settings → System → Notifications."
+              : "When a session finishes, needs you, or gets stuck."
+          }
           checked={config.notifications}
           onChange={(v) => void action.run(() => api.setNotifications(v))}
         />

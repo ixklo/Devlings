@@ -101,6 +101,19 @@ pub fn show(app: &AppHandle, notice: Notice) {
     windows_toast::show(app, notice);
 }
 
+/// Whether Windows will show our notifications: false when they're off for all apps or for Devlings (Settings →
+/// System → Notifications). None when Windows can't say.
+#[cfg(windows)]
+pub fn system_allows(app: &AppHandle) -> Option<bool> {
+    windows_toast::system_allows(app)
+}
+
+/// Unknown elsewhere: macOS asks on first use and Linux has no such switch to read.
+#[cfg(not(windows))]
+pub fn system_allows(_app: &AppHandle) -> Option<bool> {
+    None
+}
+
 /// Shows a notification. macOS and Linux: through the plugin, as before; a click does nothing yet.
 #[cfg(not(windows))]
 pub fn show(app: &AppHandle, notice: Notice) {
@@ -141,6 +154,13 @@ mod windows_toast {
             .and_then(|exe| exe.parent().map(|dir| dir.display().to_string()))
             .unwrap_or_default();
         registered_app_id(&exe_dir, identifier).unwrap_or(Toast::POWERSHELL_APP_ID).to_string()
+    }
+
+    pub fn system_allows(app: &AppHandle) -> Option<bool> {
+        use windows::core::HSTRING;
+        use windows::UI::Notifications::{NotificationSetting, ToastNotificationManager};
+        let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id(app))).ok()?;
+        Some(notifier.Setting().ok()? == NotificationSetting::Enabled)
     }
 
     pub fn show(app: &AppHandle, notice: Notice) {

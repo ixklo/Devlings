@@ -5,6 +5,8 @@ interface Props {
   visible: boolean;
   composerOpen: boolean;
   notifications: boolean;
+  /** The system won't show them anyway (Windows' own switch is off). */
+  systemNotificationsOff?: boolean;
   collapsed: boolean;
   onCompose: () => void;
   onToggleNotifications: () => void;
@@ -30,6 +32,7 @@ export function ControlBar({
   visible,
   composerOpen,
   notifications,
+  systemNotificationsOff = false,
   collapsed,
   onCompose,
   onToggleNotifications,
@@ -58,7 +61,9 @@ export function ControlBar({
         className={`icon-btn${notifications ? " is-on" : ""}`}
         aria-label="Notifications"
         aria-pressed={notifications}
-        title={notifications ? "Notifications on" : "Notifications off"}
+        title={
+          !notifications ? "Notifications off" : systemNotificationsOff ? "Notifications on, but Windows has them turned off" : "Notifications on"
+        }
         onClick={onToggleNotifications}
       >
         {notifications ? <IconBellFilled size={15} /> : <IconBell size={15} />}

@@ -100,6 +100,8 @@ export interface SetupStatus {
   /** Advice that doesn't block setup, e.g. "Move Devlings to Applications…" when it runs from a disk image. */
   setupHint: string | null;
   needsSetup: boolean;
+  /** The system won't show Devlings' notifications (Windows: turned off in its Settings), whatever the switch says. */
+  systemNotificationsOff: boolean;
 }
 
 export interface Snapshot {

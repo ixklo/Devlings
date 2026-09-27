@@ -427,6 +427,9 @@ pub fn set_notifications(app: AppHandle, enabled: bool) -> Snapshot {
     let s = app.state::<AppState>();
     lock(&s.config).notifications = enabled;
     s.save_config();
+    if enabled {
+        state::refresh_system_notifications(&app);
+    }
     publish(&app)
 }
 

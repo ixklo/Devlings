@@ -2778,6 +2778,7 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "ureq",
+ "windows",
 ]
 
 [[package]]
