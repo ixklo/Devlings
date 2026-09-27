@@ -53,7 +53,8 @@
     "targets": [
       "nsis",
       "dmg",
-      "appimage"
+      "appimage",
+      "deb"
     ],
     "icon": [
       "icons/32x32.png",
@@ -64,6 +65,9 @@
     ],
     "resources": {
       "pets/": "pets/"
+    },
+    "macOS": {
+      "signingIdentity": "-"
     }
   }
 }
