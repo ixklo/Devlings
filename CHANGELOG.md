@@ -19,6 +19,10 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 - `npm test` no longer passes with zero tests found (`vitest`'s `--passWithNoTests` is gone), so a worker-startup failure fails CI instead of silently reporting success.
 
+### Fixed
+
+- "Open in VS Code" now also checks common install locations and the `vscode://` link, not just `code` on PATH, so it works for people who have VS Code without its command-line shortcut set up.
+
 ## [0.2.0] - 2026-09-26
 
 Perch v0.2 is a full redesign. The pet is now a pixel-art character that floats above your windows, shows each Claude Code session as a speech-bubble card, and opens a small chat right above itself.

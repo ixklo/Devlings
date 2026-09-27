@@ -53,7 +53,7 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 | Do this | To |
 |---|---|
 | Click the pet, or the pencil | Ask Claude Code about a project |
-| Click a card | Open that chat, or jump to the project in VS Code |
+| Click a card | Open that chat, or jump to the project (VS Code if found, otherwise the folder) |
 | Hover a card, click × | Mark it seen |
 | Bell | Turn notifications on or off |
 | Chevron | Collapse the cards (a badge shows the count) |
