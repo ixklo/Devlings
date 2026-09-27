@@ -4,6 +4,10 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-27
+
+Perch is now Devlings, with six new pets and a calmer way to see hidden threads.
+
 ### Added
 
 - **Six new pets:** Pip the fox (its tail swishes while it works), Miso the cat (smug when reviewing, then a big stretch), Nori the axolotl (frills flutter while it waits), Bean the capybara (an orange on its head at idle), Bolt the robot (its antenna blinks while it works) and Wisp the ghost (floats, and fades a little when idle). Nine pets are now built in; Perch stays the default.
@@ -103,7 +107,8 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/ixklo/devlings/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/ixklo/devlings/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ixklo/devlings/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/ixklo/devlings/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ixklo/devlings/releases/tag/v0.1.0

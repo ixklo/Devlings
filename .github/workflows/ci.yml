@@ -5,6 +5,10 @@ on:
   pull_request:
 permissions:
   contents: read
+# A newer push to the same branch or PR replaces the run in progress (saves the private repo's minutes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:
