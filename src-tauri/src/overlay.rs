@@ -5,16 +5,38 @@
 //! (`.stage`) flip below the sprite when there isn't room above, and shift sideways near the left
 //! or right edge. See `docs/specs/2026-09-26-perch-v1.0-design.md` D9.
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        OnceLock,
+    },
+    thread::Thread,
+    time::{Duration, Instant},
+};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow, WindowEvent};
 
 use crate::{locks::lock, state::AppState};
 
 pub const PET: &str = "pet";
 pub const HIT_PADDING: f64 = 6.0;
-pub const POLL_MS: u64 = 33;
+
+// ---- Cursor poll rate (design D17) ----
+
+/// Cursor poll interval while the cursor is on the pet window or near it.
+pub const POLL_NEAR_MS: u64 = 33;
+/// The longest interval, with the cursor far from the pet window.
+pub const POLL_FAR_MS: u64 = 250;
+/// In between, the interval grows with the distance at this rate (logical px per ms): the cursor
+/// would have to move faster than about 2000 px/s to reach the window between two polls. Within
+/// about 64 px the fastest rate applies.
+const APPROACH_PX_PER_MS: f64 = 2.0;
+/// How long the poll sleeps while the pet window is hidden or minimized, unless woken sooner.
+const PAUSED_MS: u64 = 1000;
+/// The cached window geometry is re-read after any move, resize or scale change; this is only a
+/// backstop in case such an event is ever missed.
+const GEOMETRY_MAX_AGE: Duration = Duration::from_secs(5);
 /// Gap between the sprite and the work-area edges at the default position, in logical px.
 pub const EDGE_MARGIN: f64 = 16.0;
 
@@ -125,6 +147,41 @@ pub fn cursor_hits(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[
 /// The id of the rect under the cursor, if that rect has one.
 pub fn hovered_id(cursor: (f64, f64), origin: (i32, i32), scale: f64, rects: &[HitRect]) -> Option<String> {
     hit_at(cursor, origin, scale, rects).and_then(|r| r.id.clone())
+}
+
+/// Logical px from a physical cursor position to the nearest point of a physical window rect;
+/// 0 inside it.
+fn distance_to_window(cursor: (f64, f64), window: Area, scale: f64) -> f64 {
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let (left, top) = (f64::from(window.x), f64::from(window.y));
+    let (right, bottom) = (left + f64::from(window.w), top + f64::from(window.h));
+    let dx = (left - cursor.0).max(cursor.0 - right).max(0.0);
+    let dy = (top - cursor.1).max(cursor.1 - bottom).max(0.0);
+    dx.hypot(dy) / scale
+}
+
+/// How long the cursor poll waits before its next look (design D17): 33 ms with the cursor inside
+/// the pet window or within about 64 logical px of it, so hover and clicks stay instant. Farther
+/// out the wait grows with the distance, up to 250 ms, so a quick approach is still caught before
+/// the cursor gets there. An unknown cursor position keeps the fast rate.
+pub fn poll_delay(cursor: (f64, f64), window: Area, scale: f64) -> Duration {
+    let distance = distance_to_window(cursor, window, scale);
+    if !distance.is_finite() {
+        return Duration::from_millis(POLL_NEAR_MS);
+    }
+    let ms = (distance / APPROACH_PX_PER_MS).clamp(POLL_NEAR_MS as f64, POLL_FAR_MS as f64);
+    Duration::from_millis(ms.round() as u64)
+}
+
+/// Whether a window counts as on screen: not hidden by Perch and not minimized. The cursor poll
+/// runs, and a page renders, only while its window is on screen.
+pub fn on_screen(hidden: bool, minimized: bool) -> bool {
+    !hidden && !minimized
+}
+
+/// Windows reports a minimized window as resized to 0x0.
+pub fn minimized_size(width: u32, height: u32) -> bool {
+    width == 0 || height == 0
 }
 
 /// Clamps a horizontal span of `w` at `x` fully inside `[area_x, area_x + area_w]`: centered if
@@ -371,35 +428,103 @@ pub fn move_pet_by(app: &AppHandle, dx: f64, dy: f64) {
     remember(app, Some(pos));
 }
 
+/// The pet window's geometry as the cursor poll last read it. Each read is a round trip to the main
+/// thread, so it's re-read only when `AppState::pet_geometry_gen` says the window moved, resized or
+/// changed scale (or, as a backstop, after `GEOMETRY_MAX_AGE`).
+struct Geometry {
+    generation: u64,
+    read_at: Instant,
+    origin: (i32, i32),
+    size: (i32, i32),
+    scale: f64,
+}
+
+fn read_geometry(pet: &WebviewWindow, generation: u64) -> Option<Geometry> {
+    let origin = pet.inner_position().or_else(|_| pet.outer_position()).ok()?;
+    let scale = pet.scale_factor().ok()?;
+    Some(Geometry { generation, read_at: Instant::now(), origin: (origin.x, origin.y), size: outer_size(pet), scale })
+}
+
+static POLLER: OnceLock<Thread> = OnceLock::new();
+/// Set while the poll is waiting longer than its fastest interval (the cursor is far away).
+static POLL_IS_SLOW: AtomicBool = AtomicBool::new(false);
+
+/// Wakes the cursor poll at once (the pet was just shown or restored), instead of at its next
+/// paused check, so the first click lands.
+pub fn wake_click_through() {
+    if let Some(poller) = POLLER.get() {
+        poller.unpark();
+    }
+}
+
+/// Tells the cursor poll to re-read the pet window's geometry after a move, resize or scale change.
+/// If the poll is in a slow wait, it's woken too: the window may have just jumped under the cursor
+/// (Esc sends the pet home). Called on the main thread for every pet window event, so it only
+/// touches atomics; during a drag the cursor is on the pet, so the poll is already fast.
+pub fn on_pet_window_event(app: &AppHandle, event: &WindowEvent) {
+    if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }) {
+        app.state::<AppState>().pet_geometry_gen.fetch_add(1, Ordering::SeqCst);
+        if POLL_IS_SLOW.load(Ordering::SeqCst) {
+            wake_click_through();
+        }
+    }
+}
+
 /// Polls the cursor and lets clicks fall through the pet window except over the reported rects.
 ///
 /// Also emits `pet-pointer` with the hovered rect's id whenever it changes. The webview can't
 /// track hover itself: once the window turns click-through it never sees the pointer leave.
+///
+/// Design D17: the rate adapts to how close the cursor is (`poll_delay`), the poll pauses while
+/// the pet window is hidden or minimized, and the window's geometry is cached between moves, so
+/// a steady poll costs one main-thread round trip (the cursor position) instead of three.
 pub fn start_click_through(app: AppHandle) {
-    std::thread::spawn(move || {
+    let poller = std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
         let mut hovered: Option<String> = None;
+        let mut geometry: Option<Geometry> = None;
+        let mut delay = Duration::from_millis(POLL_NEAR_MS);
         loop {
-            std::thread::sleep(Duration::from_millis(POLL_MS));
+            // Parking, not sleeping, so `wake_click_through` can cut a wait short.
+            std::thread::park_timeout(delay);
+            POLL_IS_SLOW.store(false, Ordering::SeqCst);
+            delay = Duration::from_millis(POLL_NEAR_MS);
+            let s = app.state::<AppState>();
+            if !on_screen(s.pet_hidden.load(Ordering::SeqCst), s.pet_minimized.load(Ordering::SeqCst)) {
+                delay = Duration::from_millis(PAUSED_MS);
+                continue;
+            }
             // Until the frontend reports its rects, the whole window stays interactive.
-            let Some(rects) = lock(&app.state::<AppState>().hit_regions).clone() else { continue };
+            if lock(&s.hit_regions).is_none() {
+                continue;
+            }
             let Some(pet) = pet_window(&app) else { continue };
+            let generation = s.pet_geometry_gen.load(Ordering::SeqCst);
+            let stale = geometry.as_ref().is_none_or(|g| g.generation != generation || g.read_at.elapsed() >= GEOMETRY_MAX_AGE);
+            if stale {
+                geometry = read_geometry(&pet, generation);
+            }
+            let Some(g) = geometry.as_ref() else { continue };
             let Ok(cursor) = app.cursor_position() else { continue };
-            let Ok(origin) = pet.inner_position().or_else(|_| pet.outer_position()) else { continue };
-            let Ok(scale) = pet.scale_factor() else { continue };
             let cursor = (cursor.x, cursor.y);
-            let origin = (origin.x, origin.y);
-            let ignore = !cursor_hits(cursor, origin, scale, &rects);
+            let (ignore, id) = {
+                let rects = lock(&s.hit_regions);
+                let Some(rects) = rects.as_deref() else { continue };
+                (!cursor_hits(cursor, g.origin, g.scale, rects), hovered_id(cursor, g.origin, g.scale, rects))
+            };
             if ignoring != Some(ignore) && pet.set_ignore_cursor_events(ignore).is_ok() {
                 ignoring = Some(ignore);
             }
-            let id = hovered_id(cursor, origin, scale, &rects);
             if id != hovered {
                 let _ = app.emit_to(PET, "pet-pointer", &id);
                 hovered = id;
             }
+            let window = Area { x: g.origin.0, y: g.origin.1, w: g.size.0, h: g.size.1 };
+            delay = poll_delay(cursor, window, g.scale);
+            POLL_IS_SLOW.store(delay > Duration::from_millis(POLL_NEAR_MS), Ordering::SeqCst);
         }
     });
+    let _ = POLLER.set(poller.thread().clone());
 }
 
 #[cfg(test)]
@@ -445,6 +570,79 @@ mod tests {
     #[test]
     fn hit_test_survives_a_bad_scale() {
         assert!(cursor_hits((120.0, 420.0), (0, 0), 0.0, &[RECT]));
+    }
+
+    // ---- Adaptive cursor poll (design D17) ----
+
+    /// A 380x600 window at 1000,300 (physical).
+    const WIN: Area = Area { x: 1000, y: 300, w: 380, h: 600 };
+    const NEAR: Duration = Duration::from_millis(POLL_NEAR_MS);
+    const FAR: Duration = Duration::from_millis(POLL_FAR_MS);
+
+    #[test]
+    fn polls_fast_with_the_cursor_inside_the_window() {
+        assert_eq!(poll_delay((1100.0, 500.0), WIN, 1.0), NEAR);
+        assert_eq!(poll_delay((1000.0, 300.0), WIN, 1.0), NEAR, "on the corner");
+        assert_eq!(poll_delay((1380.0, 900.0), WIN, 1.0), NEAR, "on the far corner");
+    }
+
+    #[test]
+    fn polls_fast_within_64_logical_px_of_the_window() {
+        assert_eq!(poll_delay((1000.0 - 64.0, 500.0), WIN, 1.0), NEAR, "left");
+        assert_eq!(poll_delay((1380.0 + 64.0, 500.0), WIN, 1.0), NEAR, "right");
+        assert_eq!(poll_delay((1100.0, 300.0 - 64.0), WIN, 1.0), NEAR, "above");
+        assert_eq!(poll_delay((1100.0, 900.0 + 64.0), WIN, 1.0), NEAR, "below");
+        // At 150%, 64 logical px is 96 physical.
+        assert_eq!(poll_delay((1000.0 - 96.0, 500.0), WIN, 1.5), NEAR);
+        assert!(poll_delay((1000.0 - 96.0, 500.0), WIN, 1.0) > NEAR, "the same 96 physical px is farther at 100%");
+    }
+
+    #[test]
+    fn polls_slowly_far_from_the_window() {
+        assert_eq!(poll_delay((0.0, 0.0), WIN, 1.0), FAR);
+        assert_eq!(poll_delay((5000.0, 2000.0), WIN, 1.0), FAR);
+        assert_eq!(poll_delay((-3000.0, 500.0), WIN, 2.0), FAR, "on another monitor");
+    }
+
+    #[test]
+    fn slows_down_gradually_so_a_quick_approach_is_still_caught() {
+        // Past 64 px the wait grows with the distance: the cursor can't cover the gap to the window
+        // before the next poll unless it moves faster than about 2000 logical px/s.
+        let at = |dx: f64| poll_delay((1000.0 - dx, 500.0), WIN, 1.0);
+        let mut last = NEAR;
+        for dx in [64.0, 65.0, 100.0, 200.0, 300.0, 400.0, 480.0, 500.0, 1000.0] {
+            let d = at(dx);
+            assert!(d >= last, "never faster farther away ({dx} px)");
+            assert!(d == NEAR || d.as_secs_f64() * 2000.0 <= dx + 1.0, "{dx} px away must be polled again before 2000 px/s could cross it");
+            last = d;
+        }
+        assert!(at(100.0) < Duration::from_millis(60), "100 px away polls about every 50 ms");
+        assert_eq!(at(1000.0), FAR);
+        // Diagonal distances count as distances, not per axis.
+        assert!(poll_delay((1000.0 - 60.0, 300.0 - 60.0), WIN, 1.0) > NEAR, "85 px away on the diagonal");
+    }
+
+    #[test]
+    fn poll_delay_survives_bad_input() {
+        assert_eq!(poll_delay((1100.0, 500.0), WIN, 0.0), NEAR, "a bad scale is treated as 1");
+        assert_eq!(poll_delay((0.0, 0.0), WIN, f64::NAN), FAR);
+        assert_eq!(poll_delay((f64::NAN, 500.0), WIN, 1.0), NEAR, "unknown position: stay responsive");
+    }
+
+    #[test]
+    fn the_poll_runs_only_while_the_pet_is_on_screen() {
+        assert!(on_screen(false, false));
+        assert!(!on_screen(true, false), "hidden (tray, Ctrl+Alt+P, hide for 1 hour)");
+        assert!(!on_screen(false, true), "minimized");
+        assert!(!on_screen(true, true));
+    }
+
+    #[test]
+    fn a_zero_size_means_minimized() {
+        // Windows reports a minimized window as resized to 0x0.
+        assert!(minimized_size(0, 0));
+        assert!(minimized_size(0, 600));
+        assert!(!minimized_size(380, 600));
     }
 
     const WORK: Area = Area { x: 0, y: 0, w: 1920, h: 1032 };
