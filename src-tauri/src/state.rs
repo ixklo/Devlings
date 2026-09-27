@@ -20,6 +20,7 @@ use crate::{
     hook_server::HookServer,
     hooks_installer,
     locator::{self, Located},
+    locks::lock,
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
     overlay::HitRect,
@@ -89,11 +90,11 @@ impl AppState {
     }
 
     pub fn save_config(&self) {
-        let _ = store::save(&self.data_dir.join("config.json"), &*self.config.lock().unwrap());
+        let _ = store::save(&self.data_dir.join("config.json"), &*lock(&self.config));
     }
 
     pub fn save_projects(&self) {
-        let _ = store::save(&self.data_dir.join("projects.json"), &*self.projects.lock().unwrap());
+        let _ = store::save(&self.data_dir.join("projects.json"), &*lock(&self.projects));
     }
 }
 
@@ -121,11 +122,11 @@ pub struct Snapshot {
 }
 
 fn setup_status(s: &AppState) -> SetupStatus {
-    let claude = s.claude.lock().unwrap().clone();
-    let hooks_declined = s.config.lock().unwrap().hooks_declined;
-    let auth = s.auth.lock().unwrap().clone();
+    let claude = lock(&s.claude).clone();
+    let hooks_declined = lock(&s.config).hooks_declined;
+    let auth = lock(&s.auth).clone();
     let hooks_installed = s.hooks_installed.load(Ordering::SeqCst);
-    let hook_server_error = s.hook_server_error.lock().unwrap().clone();
+    let hook_server_error = lock(&s.hook_server_error).clone();
     let auth_refused = matches!(auth, Some(AuthVerdict::Refused { .. }));
     let needs_setup = claude.is_err()
         || hook_server_error.is_some()
@@ -149,13 +150,13 @@ fn view_key(threads: &[ThreadInfo], pet_state: PetState) -> ViewKey {
 pub fn snapshot(app: &AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
     let setup = setup_status(&s);
-    let threads = s.threads.lock().unwrap().visible(now_ms());
+    let threads = lock(&s.threads).visible(now_ms());
     let pet_state = threads::pet_state(&threads, setup.needs_setup);
-    let projects = s.projects.lock().unwrap().sorted();
-    let running = s.running.lock().unwrap().keys().cloned().collect();
-    let mut config = s.config.lock().unwrap().clone();
+    let projects = lock(&s.projects).sorted();
+    let running = lock(&s.running).keys().cloned().collect();
+    let mut config = lock(&s.config).clone();
     // Report the pet that is actually shown, so a removed pet falls back to the default everywhere.
-    if let Some(pet) = pets::resolve(&s.pets.lock().unwrap(), &config.pet_id) {
+    if let Some(pet) = pets::resolve(&lock(&s.pets), &config.pet_id) {
         config.pet_id = pet.info.id.clone();
     }
     Snapshot { config, pet_state, threads, projects, running, setup }
@@ -171,9 +172,9 @@ fn scan_pets(app: &AppHandle) -> (Vec<Pet>, bool) {
         &pets::codex_home(std::env::var_os("CODEX_HOME"), &home),
     );
     let found = pets::discover(&roots);
-    let wanted = s.config.lock().unwrap().pet_id.clone();
+    let wanted = lock(&s.config).pet_id.clone();
     let shown = |list: &[Pet]| pets::resolve(list, &wanted).map(|p| p.info.id.clone());
-    let old = std::mem::replace(&mut *s.pets.lock().unwrap(), found.clone());
+    let old = std::mem::replace(&mut *lock(&s.pets), found.clone());
     let changed = shown(&old) != shown(&found);
     (found, changed)
 }
@@ -189,14 +190,14 @@ pub fn refresh_pets(app: &AppHandle) -> Vec<Pet> {
 
 pub fn emit_snapshot(app: &AppHandle) {
     let snap = snapshot(app);
-    *app.state::<AppState>().last_view.lock().unwrap() = Some(view_key(&snap.threads, snap.pet_state));
+    *lock(&app.state::<AppState>().last_view) = Some(view_key(&snap.threads, snap.pet_state));
     let _ = app.emit("snapshot", &snap);
     shell::update_tray_tooltip(app, &snap);
 }
 
 pub fn handle_event(app: &AppHandle, ev: PetEvent) {
     let s = app.state::<AppState>();
-    let applied = s.threads.lock().unwrap().apply(&ev);
+    let applied = lock(&s.threads).apply(&ev);
     let _ = app.emit("pet-event", &ev);
     if let Some(status) = applied.alert {
         maybe_notify(app, &ev, status);
@@ -210,10 +211,10 @@ pub fn handle_event(app: &AppHandle, ev: PetEvent) {
 fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
     let s = app.state::<AppState>();
     let (enabled, pet) = {
-        let c = s.config.lock().unwrap();
+        let c = lock(&s.config);
         (c.notifications, c.pet_name.clone())
     };
-    let focused = s.focused_thread.lock().unwrap().as_deref() == Some(ev.session_id.as_str());
+    let focused = lock(&s.focused_thread).as_deref() == Some(ev.session_id.as_str());
     if !enabled || focused {
         return;
     }
@@ -229,10 +230,7 @@ fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
             .unwrap_or_else(|| "Something went wrong".to_string()),
         ThreadStatus::Running | ThreadStatus::Idle => return,
     };
-    let project = s
-        .threads
-        .lock()
-        .unwrap()
+    let project = lock(&s.threads)
         .get(&ev.session_id)
         .map(|t| t.project_name.clone())
         .unwrap_or_else(|| store::project_name(&ev.project));
@@ -242,10 +240,10 @@ fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
 pub fn on_hook_body(app: &AppHandle, body: Value) {
     let s = app.state::<AppState>();
     let sid = body.get("session_id").and_then(Value::as_str).unwrap_or("").to_string();
-    let ask_project = s.ask_sids.lock().unwrap().get(&sid).cloned();
+    let ask_project = lock(&s.ask_sids).get(&sid).cloned();
     if let Some(project) = ask_project {
         if let Some(tp) = body.get("transcript_path").and_then(Value::as_str) {
-            if let Some(p) = s.projects.lock().unwrap().get_mut(&project) {
+            if let Some(p) = lock(&s.projects).get_mut(&project) {
                 p.transcript_path = Some(tp.to_string());
             }
             s.save_projects();
@@ -255,7 +253,7 @@ pub fn on_hook_body(app: &AppHandle, body: Value) {
     let Some(ev) = normalize::from_hook(&body, now_ms()) else { return };
     // Sessions in scratch folders (e.g. other agents' temp dirs) still show in Activity but don't become projects.
     let is_project = !ev.project.is_empty() && !store::is_under(&ev.project, &temp_dir());
-    if is_project && s.projects.lock().unwrap().touch(&ev.project, ev.at) {
+    if is_project && lock(&s.projects).touch(&ev.project, ev.at) {
         s.save_projects();
     }
     handle_event(app, ev);
@@ -263,11 +261,11 @@ pub fn on_hook_body(app: &AppHandle, body: Value) {
 
 pub fn start_hook_server(app: &AppHandle) {
     let s = app.state::<AppState>();
-    if let Some(old) = s.hook_server.lock().unwrap().take() {
+    if let Some(old) = lock(&s.hook_server).take() {
         old.stop();
     }
     let (port, token) = {
-        let c = s.config.lock().unwrap();
+        let c = lock(&s.config);
         (c.hook_port, c.hook_token.clone())
     };
     let (Some(port), Some(token)) = (port, token) else { return };
@@ -275,15 +273,15 @@ pub fn start_hook_server(app: &AppHandle) {
     match HookServer::start(port, token, move |body| on_hook_body(&handle, body)) {
         Ok(server) => {
             let bound_port = server.port;
-            *s.hook_server.lock().unwrap() = Some(server);
-            *s.hook_server_error.lock().unwrap() = None;
-            if s.config.lock().unwrap().hook_port != Some(bound_port) {
-                s.config.lock().unwrap().hook_port = Some(bound_port);
+            *lock(&s.hook_server) = Some(server);
+            *lock(&s.hook_server_error) = None;
+            if lock(&s.config).hook_port != Some(bound_port) {
+                lock(&s.config).hook_port = Some(bound_port);
                 s.save_config();
             }
         }
         Err(e) => {
-            *s.hook_server_error.lock().unwrap() = Some(format!("{e}. Use \"Move to a new port\" in Settings."));
+            *lock(&s.hook_server_error) = Some(format!("{e}. Use \"Move to a new port\" in Settings."));
         }
     }
 }
@@ -291,7 +289,7 @@ pub fn start_hook_server(app: &AppHandle) {
 pub fn refresh_hooks_installed(app: &AppHandle) {
     let s = app.state::<AppState>();
     let (port, token) = {
-        let c = s.config.lock().unwrap();
+        let c = lock(&s.config);
         (c.hook_port, c.hook_token.clone())
     };
     let installed = match (port, token) {
@@ -305,14 +303,14 @@ pub fn refresh_hooks_installed(app: &AppHandle) {
 
 pub fn recheck_setup(app: &AppHandle) {
     let s = app.state::<AppState>();
-    let override_path = s.config.lock().unwrap().claude_path.clone();
+    let override_path = lock(&s.config).claude_path.clone();
     let home = dirs::home_dir().unwrap_or_default();
     let path_env = std::env::var_os("PATH");
     let cands = locator::candidates(override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
     let located = locator::locate(&cands, runner::version_of);
     let auth = located.as_ref().ok().map(|l| runner::auth_status(&l.path));
-    *s.claude.lock().unwrap() = located;
-    *s.auth.lock().unwrap() = auth;
+    *lock(&s.claude) = located;
+    *lock(&s.auth) = auth;
     refresh_hooks_installed(app);
 }
 
@@ -322,7 +320,7 @@ pub fn boot(app: AppHandle) {
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);
-        let onboarded = app.state::<AppState>().config.lock().unwrap().onboarded;
+        let onboarded = lock(&app.state::<AppState>().config).onboarded;
         if !onboarded {
             // Window calls from this thread are queued; on the main thread they run in order, so open_settings can see and undo a minimized start.
             let handle = app.clone();
@@ -341,12 +339,12 @@ fn tick(app: &AppHandle) {
     let s = app.state::<AppState>();
     let now = now_ms();
     let threads = {
-        let mut t = s.threads.lock().unwrap();
+        let mut t = lock(&s.threads);
         t.prune(now);
         t.visible(now)
     };
     let view = view_key(&threads, threads::pet_state(&threads, setup_status(&s).needs_setup));
-    let changed = s.last_view.lock().unwrap().as_ref() != Some(&view);
+    let changed = lock(&s.last_view).as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
     }
@@ -365,7 +363,7 @@ fn ask_event(sid: &str, project: &str, kind: Kind, label: &str, text: Option<Str
 }
 
 fn take_stop_request(s: &AppState, project: &str) -> bool {
-    let mut set = s.stop_requested.lock().unwrap();
+    let mut set = lock(&s.stop_requested);
     let hit = set.iter().find(|p| store::same_path(p, project)).cloned();
     if let Some(h) = &hit {
         set.remove(h);
@@ -390,8 +388,8 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
     let kill = runner::pump(BufReader::new(stdout), &project, now_ms, |item| match item {
         StreamItem::Init { session_id: sid, .. } => {
             session_id = sid.clone();
-            s.ask_sids.lock().unwrap().insert(sid.clone(), project.clone());
-            if let Some(p) = s.projects.lock().unwrap().get_mut(&project) {
+            lock(&s.ask_sids).insert(sid.clone(), project.clone());
+            if let Some(p) = lock(&s.projects).get_mut(&project) {
                 p.ask_session_id = Some(sid);
             }
             s.save_projects();
@@ -446,6 +444,6 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child) {
         };
         handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Something went wrong", Some(text)));
     }
-    s.running.lock().unwrap().retain(|p, _| !store::same_path(p, &project));
+    lock(&s.running).retain(|p, _| !store::same_path(p, &project));
     emit_snapshot(&app);
 }

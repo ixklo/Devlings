@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow};
 
-use crate::state::AppState;
+use crate::{locks::lock, state::AppState};
 
 pub const PET: &str = "pet";
 pub const HIT_PADDING: f64 = 6.0;
@@ -121,14 +121,14 @@ fn set_pos(pet: &WebviewWindow, pos: (i32, i32)) {
 
 fn remember(app: &AppHandle, pos: Option<(i32, i32)>) {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_position = pos;
+    lock(&s.config).pet_position = pos;
     s.save_config();
 }
 
 /// Startup placement: the saved spot clamped into a visible work area, else the default.
 pub fn place_pet(app: &AppHandle) {
     let Some(pet) = pet_window(app) else { return };
-    let saved = app.state::<AppState>().config.lock().unwrap().pet_position;
+    let saved = lock(&app.state::<AppState>().config).pet_position;
     let pos = saved.and_then(|p| clamp_position(p, outer_size(&pet), &work_areas(&pet))).or_else(|| default_for(&pet));
     if let Some(pos) = pos {
         set_pos(&pet, pos);
@@ -171,7 +171,7 @@ pub fn start_click_through(app: AppHandle) {
         loop {
             std::thread::sleep(Duration::from_millis(POLL_MS));
             // Until the frontend reports its rects, the whole window stays interactive.
-            let Some(rects) = app.state::<AppState>().hit_regions.lock().unwrap().clone() else { continue };
+            let Some(rects) = lock(&app.state::<AppState>().hit_regions).clone() else { continue };
             let Some(pet) = pet_window(&app) else { continue };
             let Ok(cursor) = app.cursor_position() else { continue };
             let Ok(origin) = pet.inner_position().or_else(|_| pet.outer_position()) else { continue };

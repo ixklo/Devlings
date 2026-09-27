@@ -3,6 +3,7 @@ mod events;
 mod hook_server;
 mod hooks_installer;
 mod locator;
+mod locks;
 mod money_guard;
 mod normalize;
 mod overlay;
