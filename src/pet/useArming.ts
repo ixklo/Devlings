@@ -5,6 +5,8 @@ import { api } from "../shared/api";
 export const ARM_MS = 800;
 /** How often their position is re-checked. */
 export const ARM_CHECK_MS = 100;
+/** A press that began before the buttons armed. */
+const PRESSED_UNARMED = -1;
 
 function sameRect(a: DOMRect, b: DOMRect): boolean {
   return (
@@ -66,7 +68,8 @@ export function useArming<T extends HTMLElement>(resetKey?: unknown) {
     const s = st.current;
     s.rect = null;
     s.armedAt = 0;
-    s.downAt = 0;
+    // A press already under way now began before the buttons (re-)arm.
+    if (s.downAt !== 0) s.downAt = PRESSED_UNARMED;
     s.stableSince = Date.now();
     setArmed(false);
   }, []);
@@ -91,16 +94,22 @@ export function useArming<T extends HTMLElement>(resetKey?: unknown) {
     };
   }, [check, disarm]);
 
+  // downAt: 0 = no press on these buttons, PRESSED_UNARMED = pressed before they armed, else when an armed press began.
   const onPointerDown = useCallback(() => {
-    st.current.downAt = check() ? Date.now() : 0;
+    st.current.downAt = check() ? Date.now() : PRESSED_UNARMED;
   }, [check]);
 
-  /** Whether this click may answer. Call it first thing in the click handler. */
+  /**
+   * Whether this click may answer. Call it first thing in the click handler. A click whose press began before
+   * the buttons armed is refused. A click with no press on them at all comes from the keyboard or from
+   * assistive technology (screen readers and voice control fire a click with no pointerdown); a real mouse
+   * click can't land on a button without pressing on it, so those count once armed.
+   */
   const accept = useCallback(
     (e: { detail: number }): boolean => {
       const s = st.current;
-      const keyboard = e.detail === 0;
-      const ok = check() && (keyboard || (s.downAt > 0 && s.downAt >= s.armedAt));
+      const noPress = e.detail === 0 || s.downAt === 0;
+      const ok = check() && (noPress || (s.downAt > 0 && s.downAt >= s.armedAt));
       s.downAt = 0;
       return ok;
     },
