@@ -217,6 +217,12 @@ pub fn handle_event(app: &AppHandle, ev: PetEvent) {
     }
 }
 
+/// Sends an Ask's untrusted-folder notice to its mini chat (design v1.0 D6). It rides on `pet-event` like the
+/// run's own messages, but changes no thread, so it skips the thread table and the snapshot.
+pub fn emit_ask_notice(app: &AppHandle, ev: &PetEvent) {
+    let _ = app.emit("pet-event", ev);
+}
+
 fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
     let s = app.state::<AppState>();
     let (enabled, pet) = {

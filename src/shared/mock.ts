@@ -6,6 +6,8 @@
 // Preview switches (query string): open=compose|thread, setup=1,
 // collapsed=1, empty=1, onboarding=1, credits=seen, scale=0.45|0.6|0.8,
 // update=ready|downloading|error|disabled|none (none: checks find nothing),
+// untrusted=1 (every Ask shows the untrusted-folder notice; without it, only
+// Asks in billing-service and ml-notebooks do, until trusted),
 // debug=hits (outlines the click-through regions).
 
 import { placeholderAtlas } from "../sprite/placeholderAtlas";
@@ -74,8 +76,17 @@ function project(name: string, minsAgo: number, mode: PermissionMode = "edit_fil
     permissionMode: mode,
     askSessionId: ask ? `ask-${name}` : null,
     transcriptPath: null,
+    trusted: false,
   };
 }
+
+// What the preview's untrusted folders "have", as the backend would list it (v1.0 D6).
+const UNTRUSTED_FINDINGS: Record<string, string> = {
+  "billing-service":
+    "Skipped: hooks (PreToolUse, Stop) · environment variables (STRIPE_API_BASE) · MCP servers (github, postgres) · apiKeyHelper · 2 project skills.",
+  "ml-notebooks": "Skipped: MCP servers (jupyter).",
+};
+const DEFAULT_FINDINGS = "Skipped: hooks (SessionStart) · MCP servers (github).";
 
 function thread(
   name: string,
@@ -239,9 +250,31 @@ class MockBackend {
     this.threads = [t, ...this.threads.filter((x) => x.sessionId !== t.sessionId)];
   }
 
+  /** The untrusted-folder notice's "Skipped: …" line for an Ask in `path`, or null when it runs normally. */
+  untrustedFindings(path: string): string | null {
+    const p = this.projects.find((x) => samePath(x.path, path));
+    if (p?.trusted) return null;
+    const name = path.split(/[\\/]/).pop() ?? path;
+    return UNTRUSTED_FINDINGS[name] ?? (params.get("untrusted") ? DEFAULT_FINDINGS : null);
+  }
+
   stream(path: string, sessionId: string, delay = 700, announce = true) {
     const name = path.split("\\").pop() ?? path;
     const later = (ms: number, fn: () => void) => this.timers.push(window.setTimeout(fn, ms));
+    const skipped = this.untrustedFindings(path);
+    if (skipped) {
+      // Like the backend: sent once per run, before anything the run says. The preview's already-running Ask
+      // waits until its thread view (?open=thread) is listening.
+      later(announce ? 60 : delay * 0.3, () =>
+        this.petEvent({
+          sessionId: "",
+          project: path,
+          kind: "untrusted",
+          label: `This folder isn't trusted in Claude Code yet, so ${this.config.petName} ran without its project settings.`,
+          text: skipped,
+        }),
+      );
+    }
     if (announce) later(150, () => this.petEvent({ sessionId, project: path, kind: "prompt" }));
     later(delay * 0.5, () => {
       this.petEvent({ sessionId, project: path, kind: "step", label: "Reading src/shared/useSnapshot.ts" });
@@ -392,6 +425,13 @@ class MockBackend {
         this.petEvent({ sessionId: t?.sessionId ?? "", project: path, kind: "ended", label: "Stopped" });
         this.publish();
         return null;
+      }
+      case "trust_project":
+      case "untrust_project": {
+        const p = this.projects.find((x) => samePath(x.path, String(a.project)));
+        if (!p) throw "Unknown project.";
+        p.trusted = cmd === "trust_project";
+        return this.publish();
       }
       case "mark_credits_notice_seen":
         c.creditsNoticeSeen = true;

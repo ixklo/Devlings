@@ -7,6 +7,7 @@ import { Section, Segmented, SwitchRow } from "./controls";
 import { NameField } from "./NameField";
 import { PetPicker } from "./PetPicker";
 import { SetupChecks } from "./SetupChecks";
+import { TrustedFolders } from "./TrustedFolders";
 import { useAction } from "./useAction";
 import { NoticeBar } from "./NoticeBar";
 
@@ -151,6 +152,8 @@ export function Settings({ snap }: { snap: Snapshot }) {
           </div>
         )}
       </Section>
+
+      <TrustedFolders projects={snap.projects} petName={pet} action={action} />
 
       <Section title="Notifications & startup">
         <SwitchRow

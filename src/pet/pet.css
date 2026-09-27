@@ -840,6 +840,68 @@ body[data-window="pet"] {
   margin-top: 2px;
 }
 
+/* Untrusted-folder notice: a system row in the chat, never styled like Claude's text. */
+.msg-untrusted {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--fill-1);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.msg-untrusted p {
+  margin: 0;
+}
+
+.msg-untrusted-head,
+.msg-untrusted-trusted {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.msg-untrusted-head {
+  color: var(--ink);
+}
+
+.msg-untrusted-head svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--wait-ink);
+}
+
+.msg-untrusted-skipped {
+  padding-left: 21px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.msg-untrusted-actions {
+  padding-left: 21px;
+}
+
+.msg-untrusted-trusted svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ok-ink);
+}
+
+.msg-untrusted-trusted .link {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-xs);
+}
+
+.msg-untrusted .inline-error {
+  margin: 0;
+}
+
 .msg-activity {
   display: flex;
   align-items: center;

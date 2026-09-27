@@ -22,6 +22,7 @@ This covers Perch itself: the Tauri/Rust backend, the frontend UI, the installer
 - **The Claude Code hooks Perch installs** into `settings.json`, and the uninstaller/relay that removes them.
 - **The auto-updater**, including signature verification of update artifacts.
 - **The Ask flow's subscription-only guard** (the "money guard" that's meant to stop a run before it would use paid API credits).
+- **The Ask flow's untrusted-folder guard**, which runs Claude Code without a folder's project settings (hooks, `env`, helper commands, skills, `.mcp.json` servers) until either Claude Code or you in Perch trust that folder.
 
 Out of scope: vulnerabilities in Claude Code itself (report those to Anthropic), and vulnerabilities in a third-party dependency that don't have a working exploit path through Perch (report those upstream; see `THIRD_PARTY_NOTICES.md` for what's bundled, and feel free to also flag it here so we can track an upgrade).
 

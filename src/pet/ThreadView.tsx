@@ -8,6 +8,7 @@ import { ComposerInput } from "./ComposerInput";
 import { CreditsNotice } from "./CreditsNotice";
 import { Messages } from "./Messages";
 import { StatusIndicator } from "./StatusIndicator";
+import { UntrustedNotice } from "./UntrustedNotice";
 import { useAskGate } from "./useAskGate";
 import type { Conversation } from "./useConversation";
 
@@ -113,6 +114,16 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
             <span>Claude Code works in this folder with your subscription login.</span>
           </>
         }
+        renderUntrusted={(turn) => (
+          <UntrustedNotice
+            headline={turn.text}
+            skipped={turn.detail}
+            petName={snap.config.petName}
+            trusted={entry?.trusted ?? false}
+            onTrust={() => api.trustProject(project)}
+            onUntrust={() => api.untrustProject(project)}
+          />
+        )}
       />
       <footer className="thread-foot">
         {gate.pending !== null && (
