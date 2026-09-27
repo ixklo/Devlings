@@ -56,6 +56,16 @@ describe("api contract", () => {
     ]);
   });
 
+  it("sends the v1.0 folder trust commands", async () => {
+    const { calls } = fakeTransport();
+    await api.trustProject("C:\\code\\app");
+    await api.untrustProject("C:\\code\\app");
+    expect(calls).toEqual([
+      ["trust_project", { project: "C:\\code\\app" }],
+      ["untrust_project", { project: "C:\\code\\app" }],
+    ]);
+  });
+
   it("keeps the v0.1 commands unchanged", async () => {
     const { calls } = fakeTransport();
     await api.ask("p", "hi");

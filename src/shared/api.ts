@@ -104,6 +104,8 @@ export const api = {
   setAutoUpdate: (enabled: boolean) => call<Snapshot>("set_auto_update", { enabled }),
   getDiagnostics: () => call<string>("get_diagnostics"),
   openLogFolder: () => call<void>("open_log_folder"),
+  trustProject: (project: string) => call<Snapshot>("trust_project", { project }),
+  untrustProject: (project: string) => call<Snapshot>("untrust_project", { project }),
 
   // Events.
   onSnapshot: (cb: (s: Snapshot) => void) => transport.listen<Snapshot>("snapshot", cb),
