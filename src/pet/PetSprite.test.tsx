@@ -5,7 +5,7 @@ import { DRAG_FLUSH_MS, PetSprite } from "./PetSprite";
 
 const clip = { name: "idle" as const, loop: true, still: true, key: "still-idle" };
 
-function setup(badge: { count: number; tone: "neutral" | "wait" | "err" } | null = null) {
+function setup() {
   const fake = fakeTransport();
   const onActivate = vi.fn();
   const onHover = vi.fn();
@@ -18,7 +18,6 @@ function setup(badge: { count: number; tone: "neutral" | "wait" | "err" } | null
       clip={clip}
       onClipDone={() => {}}
       label="Mochi, idle"
-      badge={badge}
       onActivate={onActivate}
       onHover={onHover}
       onDragStart={onDragStart}
@@ -100,8 +99,10 @@ describe("PetSprite", () => {
     expect(onHover).toHaveBeenCalled();
   });
 
-  it("shows the thread count badge when collapsed", () => {
-    setup({ count: 4, tone: "wait" });
-    expect(document.querySelector(".pet-badge")).toHaveTextContent("4");
+  it("draws nothing over the pet's art (the hidden-threads count lives in the cards' place)", () => {
+    const { pet } = setup();
+    expect(pet.children).toHaveLength(1);
+    expect(pet.firstElementChild).toHaveClass("sprite");
+    expect(document.querySelector(".pet-badge")).toBeNull();
   });
 });

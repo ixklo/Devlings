@@ -637,6 +637,47 @@ body[data-window="pet"] {
   color: var(--ink);
 }
 
+/* Collapsed cards fold into this pill, in their place in the stack, so nothing sits on the pet's art
+   (every pet draws its thought puff and "?" at its top right). A `.more-pill` in size, type and focus
+   halo; amber when something needs you, red when a thread is blocked. */
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.count-pill svg {
+  flex: none;
+}
+
+.count-pill-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.count-pill.is-wait {
+  border-color: transparent;
+  background: var(--wait);
+  color: var(--on-wait);
+}
+
+.count-pill.is-err {
+  border-color: transparent;
+  background: var(--err-ink);
+  color: var(--on-color);
+}
+
+.count-pill.is-wait:hover,
+.count-pill.is-err:hover {
+  filter: brightness(0.94);
+}
+
 /* ---- Status indicators ---- */
 
 .status {
@@ -1352,8 +1393,8 @@ body[data-window="pet"] {
   cursor: grabbing;
 }
 
-/* The pet and the "+N more" pill sit over whatever is on the desktop, so their focus ring gets a halo
-   in the surface colour on both sides: visible on any background. */
+/* The pet and the pills ("+N more", the hidden-threads count) sit over whatever is on the desktop, so
+   their focus ring gets a halo in the surface colour on both sides: visible on any background. */
 .pet:focus-visible,
 .more-pill:focus-visible {
   box-shadow: 0 0 0 6px var(--surface);
@@ -1362,38 +1403,6 @@ body[data-window="pet"] {
 .sprite {
   background-repeat: no-repeat;
   image-rendering: pixelated;
-}
-
-.pet-badge {
-  position: absolute;
-  top: 8%;
-  right: 10%;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: var(--r-pill);
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  line-height: 18px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 2px 6px rgb(0 0 0 / 0.25);
-  animation: view-in var(--t-slow) var(--ease-out) both;
-  pointer-events: none;
-}
-
-.pet-badge.is-wait {
-  background: var(--wait);
-  color: var(--on-wait);
-}
-
-.pet-badge.is-err {
-  background: var(--err-ink);
-  color: var(--on-color);
 }
 
 .control-bar {

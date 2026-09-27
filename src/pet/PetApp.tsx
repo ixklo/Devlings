@@ -18,7 +18,8 @@ import { showApprovalsIntro } from "./ApprovalCard";
 import { BubbleStack } from "./BubbleStack";
 import { ComposerCard } from "./ComposerCard";
 import { ControlBar } from "./ControlBar";
-import { PetSprite, type Badge } from "./PetSprite";
+import { hiddenCount } from "./CountPill";
+import { PetSprite } from "./PetSprite";
 import { activateThread } from "./ThreadCard";
 import { ThreadView } from "./ThreadView";
 import { visibleUpdate } from "./UpdateCard";
@@ -51,16 +52,6 @@ const STATE_LABEL: Record<PetState, string> = {
 
 function mostRecent(projects: ProjectEntry[]): ProjectEntry | undefined {
   return projects.reduce<ProjectEntry | undefined>((best, p) => (!best || p.lastSeen > best.lastSeen ? p : best), undefined);
-}
-
-function badgeFor(threads: ThreadInfo[]): Badge | null {
-  if (!threads.length) return null;
-  const tone = threads.some((t) => t.status === "needs_input")
-    ? "wait"
-    : threads.some((t) => t.status === "blocked")
-      ? "err"
-      : "neutral";
-  return { count: threads.length, tone };
 }
 
 /** A pending permission request makes the pet wait, like a thread that needs input (setup still wins). */
@@ -281,6 +272,14 @@ export function PetApp() {
   };
 
   const openSetup = () => api.openSettings(config.onboarded ? "settings" : "onboarding").catch(() => {});
+  // The count pill: the same as the chevron's "Show threads". It leaves once the threads show, so a
+  // pill that held focus hands it to the pet first, as a closing card does.
+  const showThreads = (hadFocus: boolean) => {
+    if (hadFocus) mainRef.current?.querySelector<HTMLElement>(".pet")?.focus({ preventScroll: true });
+    setExpanded(false);
+    api.setThreadsCollapsed(false).catch(() => {});
+  };
+  const hidden = collapsed ? hiddenCount(threads, snap.approvals) : null;
   const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
@@ -336,6 +335,7 @@ export function PetApp() {
             holdMs={config.approvalHoldSecs * 1000}
             layoutKey={layoutKey}
             intro={!collapsed && showApprovalsIntro(snap) ? { petName: config.petName } : null}
+            folded={hidden ? { hidden, onShow: showThreads } : null}
           />
         )}
       </div>
@@ -347,7 +347,6 @@ export function PetApp() {
           onClipDone={onClipDone}
           label={`${config.petName}, ${STATE_LABEL[petState]}. Click to ask, drag to move.`}
           describedBy="pet-keys"
-          badge={collapsed ? badgeFor(threads) : null}
           onActivate={toggleComposer}
           onHover={() => {
             if (!reduced) dispatch({ type: "hover", now: performance.now() });
