@@ -1,9 +1,11 @@
 //! Perch's localhost hook endpoint: `POST /hook/<token>` with a Claude Code hook body.
 //!
 //! - Every request is read on its own worker thread, so a slow or held request never blocks the others.
-//!   At most `MAX_IN_FLIGHT` requests are handled at once; beyond that the server answers 503 at once.
+//!   At most `MAX_IN_FLIGHT` requests are read at once; beyond that the server answers 503 at once.
 //! - PermissionRequest bodies go to a synchronous handler on their worker; its return value is the response,
-//!   and it may block (Perch holds a request there while it waits for an answer).
+//!   and it may block (Perch holds a request there while it waits for an answer). A held request gives its
+//!   worker slot back, so holds never starve other hooks; the handler bounds its own holds. The body also goes
+//!   to the processing thread in arrival order, like any other event.
 //! - Every other body is answered `{}` first, then handed to one processing thread in arrival order.
 //! - Size never causes an error answer: a body over `MAX_BODY_BYTES` is drained, answered `{}` and ignored.
 
@@ -148,7 +150,7 @@ fn skip_oversized(mut req: tiny_http::Request) {
     reply(req, 200, EMPTY_ANSWER.to_string());
 }
 
-fn handle(mut req: tiny_http::Request, token: &str, ticket: Ticket, on_permission: &PermissionHandler) {
+fn handle(mut req: tiny_http::Request, token: &str, ticket: Ticket, slot: Slot, on_permission: &PermissionHandler) {
     let authorized = *req.method() == tiny_http::Method::Post
         && req.url().strip_prefix("/hook/").is_some_and(|t| constant_time_eq(t.as_bytes(), token.as_bytes()));
     if !authorized {
@@ -171,8 +173,10 @@ fn handle(mut req: tiny_http::Request, token: &str, ticket: Ticket, on_permissio
         return reply(req, 200, EMPTY_ANSWER.to_string());
     };
     if event.get("hook_event_name").and_then(Value::as_str) == Some(PERMISSION_EVENT) {
-        // Free this request's place in line first: the handler may hold it for a long time.
-        drop(ticket);
+        // The body also takes its place in line, so the session shows "needs input" in order with its other events.
+        ticket.send(event.clone());
+        // A held request must not take a slot from other hooks; the handler bounds its own holds.
+        drop(slot);
         // A panic is logged by the panic hook; Claude Code still gets a well-formed "no decision".
         let answer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_permission(event))).unwrap_or_default();
         let answer = if answer.trim().is_empty() { EMPTY_ANSWER.to_string() } else { answer };
@@ -185,10 +189,10 @@ fn handle(mut req: tiny_http::Request, token: &str, ticket: Ticket, on_permissio
 
 impl HookServer {
     /// Listens on 127.0.0.1:`port` (0 picks a free port).
-    /// - `on_event` gets every body except PermissionRequest, after it was answered `{}`, one at a time on a
-    ///   single processing thread, in arrival order.
+    /// - `on_event` gets every body, one at a time on a single processing thread, in arrival order: after it was
+    ///   answered `{}`, or for a PermissionRequest, while `on_permission` decides its answer.
     /// - `on_permission` gets PermissionRequest bodies on their worker thread and returns the JSON response body
-    ///   (empty means `{}`). It may block.
+    ///   (empty means `{}`). It may block, without counting toward `MAX_IN_FLIGHT`.
     pub fn start<E, P>(port: u16, token: String, on_event: E, on_permission: P) -> Result<Self, String>
     where
         E: FnMut(Value) + Send + 'static,
@@ -257,10 +261,9 @@ impl HookServer {
                 }
                 let slot = Slot(in_flight.clone());
                 let (token, on_permission) = (token.clone(), on_permission.clone());
-                let spawned = std::thread::Builder::new().name("perch-hook".into()).spawn(move || {
-                    let _slot = slot;
-                    handle(req, &token, ticket, &*on_permission);
-                });
+                let spawned = std::thread::Builder::new()
+                    .name("perch-hook".into())
+                    .spawn(move || handle(req, &token, ticket, slot, &*on_permission));
                 if let Err(e) = spawned {
                     // The request, its ticket and its slot went down with the closure; the client sees a 500.
                     log::error!("Couldn't start a hook worker: {e}");
@@ -363,11 +366,24 @@ mod tests {
         let base = format!("http://127.0.0.1:{}", server.port);
         let (_, ct, body) = post(&base, "/hook/abc", r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash"}"#);
         assert_eq!((ct.as_str(), body.as_str()), ("application/json", r#"{"tool":"Bash"}"#));
-        // Permission requests don't reach the event thread.
-        assert!(rx.recv_timeout(Duration::from_millis(200)).is_err());
+        // Permission requests also reach the event thread, in order, for the "needs input" state.
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"], "PermissionRequest");
         let (_, _, body) = post(&base, "/hook/abc", r#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#);
         assert_eq!(body, "{}");
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"], "PreToolUse");
+        server.stop();
+    }
+
+    #[test]
+    fn a_permission_request_keeps_its_place_in_line() {
+        let (tx, rx) = mpsc::channel();
+        let server = HookServer::start(0, TOKEN.into(), move |v| tx.send(v).unwrap(), |_| EMPTY_ANSWER.to_string()).unwrap();
+        let base = format!("http://127.0.0.1:{}", server.port);
+        for name in ["PreToolUse", "PermissionRequest", "PostToolUse"] {
+            post(&base, "/hook/abc", &format!(r#"{{"hook_event_name":"{name}"}}"#));
+        }
+        let got: Vec<Value> = (0..3).map(|_| rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"].clone()).collect();
+        assert_eq!(got, vec!["PreToolUse", "PermissionRequest", "PostToolUse"]);
         server.stop();
     }
 
@@ -490,35 +506,84 @@ mod tests {
         let t0 = Instant::now();
         assert_eq!(post(&base, "/hook/abc", r#"{"hook_event_name":"PreToolUse"}"#).0, 200);
         assert!(t0.elapsed() < Duration::from_secs(2), "blocked for {:?}", t0.elapsed());
-        // Its event is processed even though an earlier request is still held.
+        // Its event is processed even though an earlier request is still held (whose body was applied first).
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"], "PermissionRequest");
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"], "PreToolUse");
         release_tx.send(()).unwrap();
         assert_eq!(held.join().unwrap(), r#"{"held":true}"#);
         server.stop();
     }
 
+    /// Opens a request whose body never finishes arriving, so its worker keeps its slot.
+    fn stalled_request(port: u16) -> std::net::TcpStream {
+        use std::io::Write;
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.write_all(b"POST /hook/abc HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n{\"hook")
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        s
+    }
+
+    /// Retries `f` until it's true, for up to 5 s (the listener can lag under a loaded test run).
+    fn eventually(what: &str, mut f: impl FnMut() -> bool) {
+        let t0 = Instant::now();
+        while !f() {
+            assert!(t0.elapsed() < Duration::from_secs(5), "{what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     #[test]
     fn answers_503_when_too_many_are_in_flight() {
+        let server = HookServer::start_with_limit(0, TOKEN.into(), 1, |_| {}, |_| EMPTY_ANSWER.to_string()).unwrap();
+        let base = format!("http://127.0.0.1:{}", server.port);
+        let stalled = stalled_request(server.port);
+        // The stalled request holds the only slot, so others are refused at once, as JSON.
+        eventually("never answered 503", || {
+            let t0 = Instant::now();
+            let (status, ct, _) = post(&base, "/hook/abc", "{}");
+            assert_eq!(ct, "application/json");
+            assert!(t0.elapsed() < Duration::from_secs(2));
+            status == 503
+        });
+        // Capacity comes back once the stalled request ends.
+        drop(stalled);
+        eventually("the slot never came back", || post(&base, "/hook/abc", "{}").0 == 200);
+        server.stop();
+    }
+
+    #[test]
+    fn held_permission_requests_do_not_take_worker_slots() {
         let (release_tx, release_rx) = mpsc::channel::<()>();
+        let (entered_tx, entered_rx) = mpsc::channel::<()>();
         let release_rx = Mutex::new(release_rx);
+        let entered_tx = Mutex::new(entered_tx);
         let server = HookServer::start_with_limit(0, TOKEN.into(), 1, |_| {}, move |_| {
+            entered_tx.lock().unwrap().send(()).unwrap();
             let _ = release_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
             EMPTY_ANSWER.to_string()
         })
         .unwrap();
         let base = format!("http://127.0.0.1:{}", server.port);
-        let held_base = base.clone();
-        let held = std::thread::spawn(move || post(&held_base, "/hook/abc", r#"{"hook_event_name":"PermissionRequest"}"#).0);
-        std::thread::sleep(Duration::from_millis(150));
-        let t0 = Instant::now();
-        let (status, ct, _) = post(&base, "/hook/abc", "{}");
-        assert_eq!((status, ct.as_str()), (503, "application/json"));
-        assert!(t0.elapsed() < Duration::from_secs(2));
-        release_tx.send(()).unwrap();
-        assert_eq!(held.join().unwrap(), 200);
-        // Capacity comes back once the held request finishes. With the sender gone, nothing holds any more.
-        drop(release_tx);
-        assert_eq!(post(&base, "/hook/abc", "{}").0, 200);
+        // Three holds, one after another, with a limit of one.
+        let held: Vec<_> = (0..3)
+            .map(|_| {
+                let b = base.clone();
+                let h = std::thread::spawn(move || post(&b, "/hook/abc", r#"{"hook_event_name":"PermissionRequest"}"#).0);
+                entered_rx.recv_timeout(Duration::from_secs(5)).expect("a hold never reached the handler");
+                h
+            })
+            .collect();
+        // Other hooks are still answered.
+        eventually("a hook was refused while requests were held", || {
+            post(&base, "/hook/abc", r#"{"hook_event_name":"PreToolUse"}"#).0 == 200
+        });
+        for _ in 0..3 {
+            release_tx.send(()).unwrap();
+        }
+        for h in held {
+            assert_eq!(h.join().unwrap(), 200);
+        }
         server.stop();
     }
 
@@ -554,6 +619,7 @@ mod tests {
         let base = format!("http://127.0.0.1:{}", server.port);
         let (status, ct, body) = post(&base, "/hook/abc", r#"{"hook_event_name":"PermissionRequest"}"#);
         assert_eq!((status, ct.as_str(), body.as_str()), (200, "application/json", "{}"));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap()["hook_event_name"], "PermissionRequest");
         assert_eq!(post(&base, "/hook/abc", r#"{"hook_event_name":"Stop","boom":true}"#).0, 200);
         // The processing thread survives and handles the next event.
         post(&base, "/hook/abc", r#"{"hook_event_name":"Stop","n":2}"#);

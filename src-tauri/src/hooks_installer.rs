@@ -19,12 +19,12 @@ pub const HTTP_EVENTS: [&str; 7] = [
     "Notification",
     "PermissionDenied",
 ];
-/// Answered synchronously; Perch always answers before this long hold ends.
+/// Answered synchronously; Perch always answers before this long hold ends (its own holds are at most 240 s).
 pub const PERMISSION_EVENT: &str = "PermissionRequest";
 /// HTTP versions of these show error noise when Perch is quit, so they go through the async relay.
 pub const RELAY_EVENTS: [&str; 3] = ["Stop", "StopFailure", "SessionEnd"];
 pub const HTTP_TIMEOUT_SECS: u64 = 2;
-pub const PERMISSION_TIMEOUT_SECS: u64 = 75;
+pub const PERMISSION_TIMEOUT_SECS: u64 = 300;
 pub const RELAY_FLAG: &str = "--hook-relay";
 pub const MAX_BACKUPS: usize = 5;
 const BACKUP_PREFIX: &str = "settings.json.perch-backup-";
@@ -587,7 +587,7 @@ mod tests {
         for ev in RELAY_EVENTS {
             assert_eq!(v["hooks"][ev], json!([{ "hooks": [ { "type": "http", "url": url, "timeout": 2 } ] }]), "{ev}");
         }
-        assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 75);
+        assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 300);
         assert!(!v.to_string().contains("--hook-relay"));
         assert_eq!(status(&v, t), HookStatus::Current);
         // Once a usable path exists (Perch moved to Applications), the HTTP fallback is outdated, and back.
@@ -607,7 +607,7 @@ mod tests {
             // Other key order, 2.0 instead of 2, an explicit "async": false and an extra field.
             hooks.insert(ev.into(), json!([{ "hooks": [ { "timeout": 2.0, "url": url, "async": false, "statusMessage": "x", "type": "http" } ] }]));
         }
-        hooks.insert("PermissionRequest".into(), json!([{ "hooks": [ { "url": url, "type": "http", "timeout": 75 } ] }]));
+        hooks.insert("PermissionRequest".into(), json!([{ "hooks": [ { "url": url, "type": "http", "timeout": 300 } ] }]));
         for ev in RELAY_EVENTS {
             hooks.insert(ev.into(), json!([{ "hooks": [ { "async": true, "command": cmd, "type": "command", "extra": [1] } ] }]));
         }
@@ -638,7 +638,7 @@ mod tests {
         }
         assert_eq!(
             v["hooks"]["PermissionRequest"],
-            json!([{ "hooks": [ { "type": "http", "url": url, "timeout": 75 } ] }])
+            json!([{ "hooks": [ { "type": "http", "url": url, "timeout": 300 } ] }])
         );
         let cmd = relay_command(&exe, 4545, TOKEN);
         for ev in RELAY_EVENTS {
@@ -933,6 +933,26 @@ mod tests {
         let moved = Path::new("/new/home/perch");
         assert_eq!(migrate_file(&path, HookTarget { exe: Some(moved), ..t }, 4).unwrap(), Migration::Migrated);
         assert!(read_settings(&path).unwrap().to_string().contains("/new/home/perch"));
+    }
+
+    /// Design D2: the PermissionRequest entry went from 75 s to 300 s; earlier v1 installs migrate once.
+    #[test]
+    fn a_75_second_permission_entry_migrates_to_300() {
+        let exe = exe();
+        let t = target(4545, &exe);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut old = install(foreign(), t).unwrap();
+        old["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"] = json!(75);
+        assert_eq!(status(&old, t), HookStatus::Outdated);
+        std::fs::write(&path, old.to_string()).unwrap();
+        assert_eq!(migrate_file(&path, t, 7).unwrap(), Migration::Migrated);
+        assert!(dir.path().join("settings.json.perch-backup-7").exists());
+        let v = read_settings(&path).unwrap();
+        assert_eq!(v["hooks"]["PermissionRequest"], json!([{ "hooks": [ { "type": "http", "url": hook_url(4545, TOKEN), "timeout": 300 } ] }]));
+        assert_eq!(status(&v, t), HookStatus::Current);
+        assert_eq!(v["model"], "opus");
+        assert_eq!(migrate_file(&path, t, 8).unwrap(), Migration::UpToDate);
     }
 
     #[test]
