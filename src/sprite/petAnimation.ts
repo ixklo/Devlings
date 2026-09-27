@@ -66,6 +66,11 @@ export interface Clip {
   loop: boolean;
   /** Reduced motion: hold frame 0. */
   still: boolean;
+  /**
+   * A loop that rests on frame 0 for 4-8 s between plays (the idle row only; see `spriteClock.ts`).
+   * Active rows loop back to back.
+   */
+  rest?: boolean;
   /** Changes whenever the clip should restart from frame 0. */
   key: string;
 }
@@ -78,7 +83,7 @@ export function resolveClip(state: PetState, anim: AnimState, reducedMotion: boo
     return { name, loop: true, still: false, key: name };
   }
   if (anim.oneShot) return { name: anim.oneShot, loop: false, still: false, key: `${anim.oneShot}-${anim.oneShotId}` };
-  return { name: base, loop: true, still: false, key: base };
+  return { name: base, loop: true, still: false, rest: base === "idle", key: base };
 }
 
 /** True when some thread is ready now that wasn't ready in the previous snapshot. */

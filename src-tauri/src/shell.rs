@@ -91,15 +91,49 @@ fn bump_visibility(app: &AppHandle) -> u64 {
     app.state::<AppState>().pet_visibility_gen.fetch_add(1, Ordering::SeqCst) + 1
 }
 
+/// Design D17. On Windows, WebView2 keeps the page of a hidden or minimized window "visible":
+/// rendering, running its timers and its CSS animations. Hiding the webview along with its window
+/// makes the page's `document.visibilityState` "hidden", so Chromium throttles it and the sprite
+/// clock stops. macOS and Linux already hide the page together with its window.
+fn set_page_visible(win: &WebviewWindow, visible: bool) {
+    #[cfg(windows)]
+    {
+        let webview: &tauri::Webview = win.as_ref();
+        let result = if visible { webview.show() } else { webview.hide() };
+        if let Err(e) = result {
+            log::debug!("Couldn't {} the {} page: {e}", if visible { "show" } else { "hide" }, win.label());
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = (win, visible);
+}
+
 pub fn show_pet(app: &AppHandle) {
     bump_visibility(app);
-    let _ = window(app, overlay::PET).show();
+    let pet = window(app, overlay::PET);
+    let s = app.state::<AppState>();
+    s.pet_hidden.store(false, Ordering::SeqCst);
+    // Where the window is may have changed while it was hidden (monitors, scale).
+    s.pet_geometry_gen.fetch_add(1, Ordering::SeqCst);
+    if !s.pet_minimized.load(Ordering::SeqCst) {
+        set_page_visible(&pet, true);
+    }
+    let _ = pet.show();
+    overlay::wake_click_through();
 }
 
 fn hide_pet(app: &AppHandle) -> u64 {
     let generation = bump_visibility(app);
-    let _ = window(app, overlay::PET).hide();
+    let pet = window(app, overlay::PET);
+    app.state::<AppState>().pet_hidden.store(true, Ordering::SeqCst);
+    let _ = pet.hide();
+    set_page_visible(&pet, false);
     generation
+}
+
+/// The settings window starts hidden (tauri.conf.json), so its page starts hidden too.
+pub fn hide_settings_page_at_startup(app: &AppHandle) {
+    set_page_visible(&window(app, SETTINGS), false);
 }
 
 /// Shows or hides the pet. When `compose` is set, showing it also focuses it and opens the composer.
@@ -129,6 +163,7 @@ fn hide_pet_for_hour(app: &AppHandle) {
 
 pub fn open_settings(app: &AppHandle, view: SettingsView) -> tauri::Result<()> {
     let settings = window(app, SETTINGS);
+    set_page_visible(&settings, true);
     if !settings.is_visible()? {
         settings.show()?;
     }
@@ -140,7 +175,10 @@ pub fn open_settings(app: &AppHandle, view: SettingsView) -> tauri::Result<()> {
 }
 
 pub fn close_settings(app: &AppHandle) -> tauri::Result<()> {
-    window(app, SETTINGS).hide()
+    let settings = window(app, SETTINGS);
+    settings.hide()?;
+    set_page_visible(&settings, false);
+    Ok(())
 }
 
 pub fn show_pet_menu(win: &Window) -> tauri::Result<()> {
@@ -190,13 +228,44 @@ pub fn on_menu_event(app: &AppHandle, event: MenuEvent) {
 }
 
 pub fn on_window_event(win: &Window, event: &WindowEvent) {
-    if let WindowEvent::CloseRequested { api, .. } = event {
-        api.prevent_close();
-        if win.label() == overlay::PET {
-            hide_pet(win.app_handle());
-        } else {
-            let _ = win.hide();
+    let app = win.app_handle();
+    let is_pet = win.label() == overlay::PET;
+    if is_pet {
+        overlay::on_pet_window_event(app, event);
+    }
+    match event {
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            if is_pet {
+                hide_pet(app);
+            } else {
+                let _ = close_settings(app);
+            }
         }
+        // Only Windows reports minimizing, as a resize to 0x0; macOS and Linux hide a minimized
+        // window's page themselves.
+        WindowEvent::Resized(size) if cfg!(windows) => {
+            track_minimized(win, is_pet, overlay::minimized_size(size.width, size.height));
+        }
+        _ => {}
+    }
+}
+
+/// Design D17: a minimized window's page stops rendering, and the pet's cursor poll pauses, until
+/// the window is restored. Acts only when the window goes in or out of the minimized state.
+fn track_minimized(win: &Window, is_pet: bool, minimized: bool) {
+    let app = win.app_handle();
+    let s = app.state::<AppState>();
+    let flag = if is_pet { &s.pet_minimized } else { &s.settings_minimized };
+    if flag.swap(minimized, Ordering::SeqCst) == minimized {
+        return;
+    }
+    let hidden = if is_pet { s.pet_hidden.load(Ordering::SeqCst) } else { !win.is_visible().unwrap_or(false) };
+    if let Some(webview_window) = app.get_webview_window(win.label()) {
+        set_page_visible(&webview_window, overlay::on_screen(hidden, minimized));
+    }
+    if is_pet && !minimized {
+        overlay::wake_click_through();
     }
 }
 

@@ -68,6 +68,14 @@ export function useHitRegions(send: (regions: HitRect[]) => void): () => void {
     const events = ["transitionend", "animationend", "scroll"] as const;
     events.forEach((e) => document.addEventListener(e, schedule, true));
     window.addEventListener("resize", schedule);
+    // A hidden window hides its page (design D17), and a hidden page's timers are throttled, so a
+    // report due while hidden may be late. Start a fresh one the moment the page shows or hides.
+    const onVisibility = () => {
+      window.clearTimeout(timer);
+      timer = undefined;
+      schedule();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     schedule();
 
     return () => {
@@ -76,6 +84,7 @@ export function useHitRegions(send: (regions: HitRect[]) => void): () => void {
       mo?.disconnect();
       events.forEach((e) => document.removeEventListener(e, schedule, true));
       window.removeEventListener("resize", schedule);
+      document.removeEventListener("visibilitychange", onVisibility);
       scheduleRef.current = () => {};
     };
   }, []);
