@@ -73,6 +73,17 @@ describe("threadLine", () => {
       "Say what it holds: unpaidInvoices beats Heading see the docs",
     );
   });
+
+  it("leaves identifiers, file names and arithmetic alone", () => {
+    const line = (excerpt: string) => threadLine(makeThread({ status: "ready", excerpt }));
+    expect(line("Renamed `get_user_id` to `fetch_user_id`.")).toBe("Renamed get_user_id to fetch_user_id.");
+    expect(line("Fixed src/my_file_name.rs and 2*3*4 math")).toBe("Fixed src/my_file_name.rs and 2*3*4 math");
+    expect(line("**Done.** Tests pass in `snake_case_module`, *all* of them")).toBe(
+      "Done. Tests pass in snake_case_module, all of them",
+    );
+    expect(line("Kept `**kwargs` and `a_b_c` as they were")).toBe("Kept **kwargs and a_b_c as they were");
+    expect(line("a * b * c, _emphasis_ and ~~gone~~")).toBe("a * b * c, emphasis and gone");
+  });
 });
 
 describe("relativeTime", () => {

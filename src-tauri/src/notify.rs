@@ -45,7 +45,7 @@ pub struct Notice {
 /// The notification for a thread that just entered `status`, or None when that status doesn't get one. `thread` is
 /// the thread as the table has it after the event, when it's there.
 pub fn notice_for(pet: &str, ev: &PetEvent, status: ThreadStatus, thread: Option<&ThreadInfo>) -> Option<Notice> {
-    let short = |t: &str| threads::excerpt(t).map(|x| x.chars().take(BODY_CHARS).collect::<String>());
+    let short = |t: &str| threads::excerpt(&threads::plain_line(t)).map(|x| x.chars().take(BODY_CHARS).collect::<String>());
     let body = match status {
         ThreadStatus::NeedsInput => "Needs your approval".to_string(),
         ThreadStatus::Ready => ev.text.as_deref().and_then(short).unwrap_or_else(|| "Done".to_string()),
@@ -220,6 +220,15 @@ mod tests {
         assert_eq!(body(ThreadStatus::Blocked, None, None).as_deref(), Some("Something went wrong"));
         let long = body(ThreadStatus::Ready, None, Some(&"x".repeat(500))).unwrap();
         assert_eq!(long.chars().count(), BODY_CHARS);
+    }
+
+    #[test]
+    fn bodies_show_markdown_as_plain_text_like_the_cards() {
+        let md = "**Done.** Renamed `get_user_id` in [users.rs](src/users.rs).\n\n- All tests pass";
+        assert_eq!(body(ThreadStatus::Ready, None, Some(md)).as_deref(), Some("Done. Renamed get_user_id in users.rs. All tests pass"));
+        assert_eq!(body(ThreadStatus::Blocked, None, Some("`cargo` failed: *exit 101*")).as_deref(), Some("cargo failed: exit 101"));
+        assert_eq!(body(ThreadStatus::Ready, None, Some("2 * 3 = 6, not 2*3*4")).as_deref(), Some("2 * 3 = 6, not 2*3*4"));
+        assert_eq!(body(ThreadStatus::Ready, None, Some("## \n- ")).as_deref(), Some("Done"));
     }
 
     #[test]

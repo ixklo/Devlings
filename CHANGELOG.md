@@ -14,6 +14,12 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 - The pet pickers in onboarding and Settings scroll, and the right-click **Change pet** menu lists every built-in pet, birds first.
 - Switching pets keeps a name you chose; if you never renamed your pet, the new pet brings its own name.
 
+### Fixed
+
+- A Claude Code session stays with the folder it started in. Before, every subfolder a session moved into was added to your project list, and the session's card was renamed after it.
+- Cards no longer drop underscores and asterisks from names like `get_user_id`, file names or `2*3*4` when they show Claude's reply as plain text, and notifications now show the reply as plain text too instead of raw Markdown.
+- A conversation file that starts with a byte order mark no longer hides its first message.
+
 ## [1.0.0] - 2026-09-27
 
 The first stable release: Perch updates itself, answers Claude Code's permission prompts, protects you in folders you haven't trusted, and uninstalls cleanly.

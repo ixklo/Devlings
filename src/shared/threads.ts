@@ -46,12 +46,18 @@ export const STATUS_TEXT: Record<ThreadStatus, string> = {
   idle: "Idle",
 };
 
-/** Flattens a Markdown snippet to one readable line for a card. */
+// Emphasis markers only where they wrap words, so `snake_case` and `2*3*4` survive. The marker before is caught
+// in a group rather than a lookbehind, which older WebKit can't parse.
+const EMPHASIS = /(^|[^\p{L}\p{N}_])(\*\*|__|~~|\*|_)(\S(?:.*?\S)?)\2(?![\p{L}\p{N}_])/gu;
+
+/** Flattens a Markdown snippet to one readable line for a card. Code spans keep their content as written. */
 export function plainLine(md: string): string {
   return md
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/`+([^`]*)`+/g, "$1")
-    .replace(/(\*\*|__|\*|_|~~)(\S(?:.*?\S)?)\1/g, "$2")
+    .split(/(`+[^`]*`+)/)
+    .map((part, i) =>
+      i % 2 ? part.replace(/^`+|`+$/g, "") : part.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(EMPHASIS, "$1$3"),
+    )
+    .join("")
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*(#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "").trim())
     .filter(Boolean)
