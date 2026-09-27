@@ -155,7 +155,7 @@ A backup of `settings.json` is saved before every change, and Perch never rewrit
 
 ## Privacy
 
-Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a check for a newer version at launch and once a day, which downloads a small `latest.json` file from this repository's latest GitHub release (turn it off in Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
+Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a check for a newer version at launch and once a day, which downloads a small `latest.json` file from this repository's latest GitHub release (turn it off in Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. On Windows, Perch's windows are drawn by Microsoft's WebView2 runtime (part of Windows), which makes its own connections to Microsoft services as it does for every app built on it; Perch's pages never load anything from the internet. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
 
 ### Untrusted folders
 
