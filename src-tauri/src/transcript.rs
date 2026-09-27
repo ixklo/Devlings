@@ -11,7 +11,7 @@ pub struct ChatTurn {
 
 pub fn parse_transcript(content: &str) -> Vec<ChatTurn> {
     let mut turns: Vec<ChatTurn> = Vec::new();
-    for line in content.lines() {
+    for line in content.trim_start_matches('\u{feff}').lines() {
         let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
         let flag = |k: &str| v.get(k).and_then(Value::as_bool) == Some(true);
         if flag("isSidechain") || flag("isMeta") {
@@ -79,6 +79,12 @@ mod tests {
                 ChatTurn { role: "assistant".into(), text: "Looking now.\n\nAll green.".into() },
             ]
         );
+    }
+
+    #[test]
+    fn a_byte_order_mark_doesnt_hide_the_first_turn() {
+        let content = format!("\u{feff}{}", r#"{"type":"user","message":{"role":"user","content":"Hi"}}"#);
+        assert_eq!(parse_transcript(&content), vec![ChatTurn { role: "user".into(), text: "Hi".into() }]);
     }
 
     #[test]
