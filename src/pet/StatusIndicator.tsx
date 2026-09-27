@@ -16,13 +16,13 @@ export function StatusIndicator({ status, size = 16 }: { status: ThreadStatus; s
       {status === "ready" && (
         <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true">
           <circle cx="8" cy="8" r="8" className="status-fill" />
-          <path d="M4.8 8.3 7 10.4l4.2-4.6" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4.8 8.3 7 10.4l4.2-4.6" className="status-glyph" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
       {status === "blocked" && (
         <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true">
           <circle cx="8" cy="8" r="8" className="status-fill" />
-          <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" className="status-glyph" fill="none" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       )}
       {status === "idle" && <span className="status-dot" aria-hidden="true" />}

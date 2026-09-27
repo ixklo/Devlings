@@ -41,7 +41,7 @@ describe("ApprovalCard", () => {
   it("shows the project, tool, exact command and Claude's description", () => {
     fakeTransport();
     render(card(makeApproval({ summary: 'git push --force "origin"' })));
-    const group = screen.getByRole("group", { name: "Bash request in app" });
+    const group = screen.getByRole("group", { name: "Bash request in app: needs your answer" });
     expect(within(group).getByText("app")).toBeInTheDocument();
     expect(within(group).getByText("Bash")).toBeInTheDocument();
     const summary = within(group).getByText('git push --force "origin"');
@@ -167,7 +167,8 @@ describe("ApprovalCard", () => {
     const bar = container.querySelector<HTMLElement>(".approval-countdown-bar");
     expect(bar).not.toBeNull();
     expect(bar!.style.transform).toBe("scaleX(0.5)");
-    expect(bar!.style.animationDuration).toBe("30000ms");
+    // As a custom property, so reduced motion can keep its pace (pet.css).
+    expect(bar!.style.getPropertyValue("--countdown-ms")).toBe("30000ms");
     unmount();
     // Ask requests have no hold.
     const ask = render(card(makeApproval({ source: "ask", expiresAt: null })));
@@ -178,7 +179,7 @@ describe("ApprovalCard", () => {
   it("renders as an inline row in the mini chat", () => {
     fakeTransport();
     const { container } = render(card(makeApproval({ source: "ask" }), { variant: "row" }));
-    const row = screen.getByRole("group", { name: "Bash request in app" });
+    const row = screen.getByRole("group", { name: "Bash request in app: needs your answer" });
     expect(row).toHaveClass("approval-row");
     expect(row).not.toHaveClass("card");
     expect(container.querySelector(".thread-card-project")).toBeNull();

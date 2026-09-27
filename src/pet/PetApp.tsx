@@ -13,6 +13,7 @@ import {
   resolveClip,
 } from "../sprite/petAnimation";
 import { usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { useAnnouncements } from "./announce";
 import { showApprovalsIntro } from "./ApprovalCard";
 import { BubbleStack } from "./BubbleStack";
 import { ComposerCard } from "./ComposerCard";
@@ -93,6 +94,8 @@ export function PetApp() {
   const [placement, setPlacement] = useState<Placement>({ cardsBelow: false, shiftX: 0, stageRoom: Infinity });
   const [anim, dispatch] = useReducer(animReducer, initialAnim);
   const src = usePetSprite(snap ? snap.config.petId : null);
+  const announcement = useAnnouncements(snap);
+  const mainRef = useRef<HTMLElement>(null);
 
   const snapRef = useRef(snap);
   snapRef.current = snap;
@@ -230,6 +233,19 @@ export function PetApp() {
     refreshHits();
   }, [view, expanded, hover, snap, src, laterUpdate, refreshHits]);
 
+  // A card that held focus just closed (Esc, Close, Send's chat closing): give focus back to the pet
+  // instead of dropping it on the page, so the keyboard carries on from where the card was opened.
+  const prevKind = useRef(view.kind);
+  useEffect(() => {
+    const was = prevKind.current;
+    prevKind.current = view.kind;
+    if (was === "bubbles" || view.kind !== "bubbles") return;
+    const active = document.activeElement;
+    if (!active || active === document.body) {
+      mainRef.current?.querySelector<HTMLElement>(".pet")?.focus({ preventScroll: true });
+    }
+  }, [view.kind]);
+
   const onClipDone = useCallback(() => dispatch({ type: "clipDone" }), []);
 
   if (!snap) return null;
@@ -256,7 +272,7 @@ export function PetApp() {
   const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
-    <main className="overlay" data-pet-state={petState} data-cards-below={placement.cardsBelow}>
+    <main ref={mainRef} className="overlay" data-pet-state={petState} data-cards-below={placement.cardsBelow}>
       <div
         className="stage"
         style={
@@ -318,6 +334,7 @@ export function PetApp() {
           clip={clip}
           onClipDone={onClipDone}
           label={`${config.petName}, ${STATE_LABEL[petState]}. Click to ask, drag to move.`}
+          describedBy="pet-keys"
           badge={collapsed ? badgeFor(threads) : null}
           onActivate={toggleComposer}
           onHover={() => {
@@ -352,6 +369,13 @@ export function PetApp() {
             api.setThreadsCollapsed(!collapsed).catch(() => {});
           }}
         />
+        <span id="pet-keys" className="sr-only">
+          Press Enter to ask. Arrow keys move {config.petName}, Escape sends it home, and Shift+F10 opens its menu.
+        </span>
+      </div>
+      {/* The one live region: status changes, once each (announce.ts). Never the streaming reply. */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
       </div>
     </main>
   );

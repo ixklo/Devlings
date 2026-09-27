@@ -110,7 +110,7 @@ export function ComposerCard({
   }));
 
   return (
-    <div className="card composer-card view-enter" data-hit="">
+    <section className="card composer-card view-enter" data-hit="" aria-label="New message">
       {gate.pending !== null && (
         <CreditsNotice petName={petName} onConfirm={() => void confirmNotice()} onCancel={gate.cancel} />
       )}
@@ -163,6 +163,6 @@ export function ComposerCard({
           </>
         }
       />
-    </div>
+    </section>
   );
 }

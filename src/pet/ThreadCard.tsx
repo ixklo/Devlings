@@ -35,6 +35,8 @@ export function ThreadCard({ thread, now, tail, onOpenThread }: Props) {
         dismissible ? " is-dismissible" : ""
       }`}
       data-hit=""
+      role="group"
+      aria-label={`${thread.projectName}: ${STATUS_TEXT[thread.status]}`}
     >
       <button
         type="button"

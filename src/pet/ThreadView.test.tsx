@@ -174,7 +174,7 @@ describe("ThreadView approval rows", () => {
     expect(screen.getByRole("group", { name: /request in/ })).toBeInTheDocument();
     rerender(view(makeSnapshot({ running: [], approvals: [] })));
     expect(screen.queryByRole("group", { name: /request in/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("No longer waiting");
-    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument(), { timeout: GHOST_MS + 1000 });
+    expect(document.querySelector(".approval-ghost")).toHaveTextContent("No longer waiting");
+    await waitFor(() => expect(document.querySelector(".approval-ghost")).not.toBeInTheDocument(), { timeout: GHOST_MS + 1000 });
   });
 });

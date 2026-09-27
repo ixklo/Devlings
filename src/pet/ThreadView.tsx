@@ -92,7 +92,7 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
         : "Thinking…";
 
   return (
-    <section className="card thread-view view-enter" data-hit="" aria-label={`Conversation in ${name}`}>
+    <section className="card thread-view view-enter" data-hit="" aria-label={`Conversation in ${name}${statusText ? `: ${statusText}` : ""}`}>
       <header className="thread-head">
         <StatusIndicator status={status} size={14} />
         <div className="thread-title">

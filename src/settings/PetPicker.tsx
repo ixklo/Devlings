@@ -4,6 +4,7 @@ import { IconCheck, IconRefresh } from "../shared/icons";
 import type { PetInfo } from "../shared/types";
 import { idleClip, SpriteView, usePetSprite, useReducedMotion } from "../sprite/SpriteView";
 import { errorText } from "../shared/errors";
+import { onRadioGroupKey, radioTabIndex } from "./controls";
 
 const SOURCE_LABEL: Record<PetInfo["source"], string | null> = { bundled: null, perch: "Custom", codex: "Codex" };
 const THUMB_SCALE = 0.4;
@@ -22,7 +23,7 @@ export function usePets() {
   return { pets, error, reload: load };
 }
 
-function PetThumb({ pet, selected, onSelect }: { pet: PetInfo; selected: boolean; onSelect: () => void }) {
+function PetThumb({ pet, selected, tabIndex, onSelect }: { pet: PetInfo; selected: boolean; tabIndex: 0 | -1; onSelect: () => void }) {
   const src = usePetSprite(pet.id);
   const reduced = useReducedMotion();
   const source = SOURCE_LABEL[pet.source];
@@ -32,6 +33,7 @@ function PetThumb({ pet, selected, onSelect }: { pet: PetInfo; selected: boolean
       role="radio"
       aria-checked={selected}
       aria-label={pet.displayName}
+      tabIndex={tabIndex}
       title={pet.description}
       className="pet-option"
       onClick={onSelect}
@@ -74,9 +76,17 @@ export function PetPicker({ selectedId, onSelect }: Props) {
     );
   }
   return (
-    <div className="pet-grid" role="radiogroup" aria-label="Pet" aria-busy={!pets}>
+    <div className="pet-grid" role="radiogroup" aria-label="Pet" aria-busy={!pets} onKeyDown={onRadioGroupKey}>
       {pets
-        ? pets.map((p) => <PetThumb key={p.id} pet={p} selected={p.id === selectedId} onSelect={() => onSelect(p.id)} />)
+        ? pets.map((p, i) => (
+            <PetThumb
+              key={p.id}
+              pet={p}
+              selected={p.id === selectedId}
+              tabIndex={radioTabIndex(p.id === selectedId, i, pets.some((x) => x.id === selectedId))}
+              onSelect={() => onSelect(p.id)}
+            />
+          ))
         : [0, 1, 2].map((i) => <span key={i} className="pet-option is-skeleton" aria-hidden="true" />)}
     </div>
   );

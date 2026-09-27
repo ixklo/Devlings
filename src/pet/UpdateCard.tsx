@@ -43,7 +43,7 @@ export function UpdateCard({ version, tail, onRestart, onLater }: Props) {
       className={`card thread-card update-card${tail ? " has-tail" : ""}`}
       data-hit=""
       role="group"
-      aria-label="Update ready"
+      aria-label={`Perch ${version}: update ready`}
     >
       <div className="update-card-main">
         <span className="status status-update" aria-hidden="true">

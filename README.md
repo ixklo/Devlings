@@ -63,6 +63,9 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 | Drag the pet | Move it (arrow keys nudge it, Esc sends it home) |
 | Right-click the pet | Settings, change pet, hide for an hour, quit |
 | Ctrl+Alt+P | Show or hide the pet |
+| Tab, Enter or Space, Esc | Use the pet, its cards and Settings from the keyboard (the menu key opens the pet's menu) |
+
+Screen readers hear each status change once, for example "api-server: needs input", and Perch follows your system's reduced-motion setting.
 
 Clicking a notification to open its thread works on Windows only for now. On macOS and Linux, notifications still appear, but clicking one does nothing.
 

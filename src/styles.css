@@ -38,12 +38,17 @@
   --fill-3: #e3e3e3;
   --ink: #0d0d0d;
   --ink-2: #555555;
-  --ink-3: #6f6f6f;
+  --ink-3: #6b6b6b;
   --line: #e5e5e5;
   --line-strong: #d6d6d6;
+  /* Edges that identify a control (switch track, text box, selected segment): 3:1 against surfaces. */
+  --line-control: #8a8a8a;
   --primary: #0d0d0d;
   --primary-hover: #2f2f2f;
   --on-primary: #ffffff;
+  /* Glyphs and text on the ok / err / accent fills. */
+  --on-color: #ffffff;
+  --on-wait: #1c1300;
   --accent: oklch(0.56 0.1 186);
   --accent-soft: oklch(0.95 0.03 186);
   --accent-ink: oklch(0.45 0.09 186);
@@ -56,6 +61,13 @@
   --err-ink: #c4262c;
   --err-soft: #fdecec;
   --code-bg: #f7f7f7;
+  --code-comment: #6e6e6e;
+  --code-keyword: #a3367c;
+  --code-string: #2f7a3d;
+  --code-number: #b35900;
+  --code-title: #2a5db0;
+  --code-variable: #7a4db3;
+  --code-deletion: #c4262c;
   --shadow-card: 0 8px 24px rgb(0 0 0 / 0.18), 0 1px 2px rgb(0 0 0 / 0.05);
   --shadow-bar: 0 4px 14px rgb(0 0 0 / 0.16), 0 1px 2px rgb(0 0 0 / 0.05);
   --shadow-menu: 0 12px 32px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.06);
@@ -75,9 +87,11 @@
     --ink-3: #9a9a9a;
     --line: #333333;
     --line-strong: #404040;
+    --line-control: #787878;
     --primary: #ececec;
     --primary-hover: #ffffff;
     --on-primary: #111111;
+    --on-color: #111111;
     --accent: oklch(0.72 0.1 186);
     --accent-soft: oklch(0.3 0.05 186);
     --accent-ink: oklch(0.8 0.09 186);
@@ -90,6 +104,13 @@
     --err-ink: #ff8a8d;
     --err-soft: #3a2224;
     --code-bg: #171717;
+    --code-comment: #8b8b8b;
+    --code-keyword: #f28bc8;
+    --code-string: #8fd19e;
+    --code-number: #f5b36b;
+    --code-title: #8ab4f8;
+    --code-variable: #c7a6f5;
+    --code-deletion: #ff8a8d;
     --shadow-card: 0 8px 24px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow-bar: 0 4px 14px rgb(0 0 0 / 0.45), 0 1px 2px rgb(0 0 0 / 0.3);
     --shadow-menu: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
@@ -275,6 +296,8 @@ button:disabled {
   padding: 0 11px;
   border-radius: var(--r-control);
   border: 1px solid var(--line-strong);
+  /* A stronger bottom edge marks the box at 3:1 without darkening the whole outline. */
+  border-bottom-color: var(--line-control);
   background: var(--surface);
   transition:
     border-color var(--t-fast) var(--ease-out),
@@ -288,7 +311,9 @@ button:disabled {
 .text-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-soft);
 }
 
 .link {
@@ -399,79 +424,46 @@ button:disabled {
   padding: 4px 8px;
 }
 
-/* Syntax colours (highlight.js classes), tuned for both themes. */
+/* Syntax colours (highlight.js classes); the tokens above set them per theme. */
 .hljs-comment,
 .hljs-quote {
-  color: #8a8a8a;
+  color: var(--code-comment);
   font-style: italic;
 }
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-built_in,
 .hljs-type {
-  color: #a3367c;
+  color: var(--code-keyword);
 }
 .hljs-string,
 .hljs-attr,
 .hljs-template-tag,
 .hljs-addition {
-  color: #2f7a3d;
+  color: var(--code-string);
 }
 .hljs-number,
 .hljs-literal,
 .hljs-symbol {
-  color: #b35900;
+  color: var(--code-number);
 }
 .hljs-title,
 .hljs-section,
 .hljs-function .hljs-title {
-  color: #2a5db0;
+  color: var(--code-title);
 }
 .hljs-variable,
 .hljs-params,
 .hljs-property {
-  color: #7a4db3;
+  color: var(--code-variable);
 }
 .hljs-deletion {
-  color: #c4262c;
-}
-@media (prefers-color-scheme: dark) {
-  .hljs-comment,
-  .hljs-quote {
-    color: #8b8b8b;
-  }
-  .hljs-keyword,
-  .hljs-selector-tag,
-  .hljs-built_in,
-  .hljs-type {
-    color: #f28bc8;
-  }
-  .hljs-string,
-  .hljs-attr,
-  .hljs-template-tag,
-  .hljs-addition {
-    color: #8fd19e;
-  }
-  .hljs-number,
-  .hljs-literal,
-  .hljs-symbol {
-    color: #f5b36b;
-  }
-  .hljs-title,
-  .hljs-section,
-  .hljs-function .hljs-title {
-    color: #8ab4f8;
-  }
-  .hljs-variable,
-  .hljs-params,
-  .hljs-property {
-    color: #c7a6f5;
-  }
-  .hljs-deletion {
-    color: #ff8a8d;
-  }
+  color: var(--code-deletion);
 }
 
+/* Reduced motion: no looping, pulsing or spinning, and instant transitions. Animations end at once on
+   their final frame (entrances land in place, the spinner and dots hold still). The sprite holds a
+   still frame on its own (useSpriteClip), and entrances played from script check the same query. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -479,5 +471,6 @@ button:disabled {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
