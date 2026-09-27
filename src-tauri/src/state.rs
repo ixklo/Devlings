@@ -246,10 +246,10 @@ pub fn on_hook_body(app: &AppHandle, body: Value) {
     let ask_project = lock(&s.ask_sids).get(&sid).cloned();
     if let Some(project) = ask_project {
         if let Some(tp) = body.get("transcript_path").and_then(Value::as_str) {
-            if let Some(p) = lock(&s.projects).get_mut(&project) {
-                p.transcript_path = Some(tp.to_string());
+            let changed = lock(&s.projects).set_transcript_path(&project, tp);
+            if changed {
+                s.save_projects();
             }
-            s.save_projects();
         }
         return;
     }

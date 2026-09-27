@@ -137,6 +137,17 @@ impl Projects {
         self.list.iter_mut().find(|p| same_path(&p.path, path))
     }
 
+    /// Records an Ask conversation's transcript. Returns whether it changed, so callers save only then.
+    pub fn set_transcript_path(&mut self, project: &str, transcript: &str) -> bool {
+        match self.get_mut(project) {
+            Some(p) if p.transcript_path.as_deref() != Some(transcript) => {
+                p.transcript_path = Some(transcript.to_string());
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn retain_outside(&mut self, base: &str) {
         self.list.retain(|p| !is_under(&p.path, base));
     }
@@ -299,6 +310,17 @@ mod tests {
     #[test]
     fn detects_windows_temp_paths_ignoring_case() {
         assert!(is_under("C:\\Users\\Me\\AppData\\Local\\Temp\\claude\\tc", "c:\\users\\me\\appdata\\local\\temp\\"));
+    }
+
+    #[test]
+    fn transcript_path_changes_are_reported() {
+        let mut p = Projects::default();
+        assert!(!p.set_transcript_path("/home/u/proj", "/t/a.jsonl"), "unknown project");
+        p.touch("/home/u/proj", 1);
+        assert!(p.set_transcript_path("/home/u/proj", "/t/a.jsonl"));
+        assert!(!p.set_transcript_path("/home/u/proj/", "/t/a.jsonl"));
+        assert!(p.set_transcript_path("/home/u/proj", "/t/b.jsonl"));
+        assert_eq!(p.get("/home/u/proj").unwrap().transcript_path.as_deref(), Some("/t/b.jsonl"));
     }
 
     #[test]
