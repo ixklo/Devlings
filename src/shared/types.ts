@@ -127,9 +127,19 @@ export interface PendingApproval {
   /** "watch": another Claude Code session; "ask": one of the pet's own Ask runs. */
   source: Source;
   toolName: string;
+  /** Claude Code's own name for an MCP tool shown under a display name, e.g. "mcp__github__create_issue". */
+  rawToolName: string | null;
   /** The exact command, file path or URL; otherwise the input as compact JSON. */
   summary: string;
   description: string | null;
+  /** The whole tool input as pretty JSON (at most 16 KB). */
+  details: string;
+  /** The headline leaves something out, so the card opens Details by default. */
+  lossy: boolean;
+  /** Part of the request can't be shown, so it can only be denied here. */
+  tooLong: boolean;
+  /** Short warnings for risky flags, e.g. "Runs outside the sandbox". */
+  risks: string[];
   canAlwaysAllow: boolean;
   /** "Allow for this session" or "Always allow"; null without canAlwaysAllow. */
   alwaysLabel: string | null;

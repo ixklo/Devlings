@@ -1,11 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeTransport } from "../test/fakeTransport";
 import { makeApproval, makeThread } from "../test/fixtures";
-import type { ThreadInfo } from "../shared/types";
+import type { PendingApproval, ThreadInfo } from "../shared/types";
 import { BubbleStack } from "./BubbleStack";
+import { GHOST_MS } from "./useApprovalGhosts";
+import { ARM_CHECK_MS, ARM_MS } from "./useArming";
 
 function Harness({ threads, setup }: { threads: ThreadInfo[]; setup?: { detail: string; onOpen: () => void } }) {
   const [expanded, setExpanded] = useState(false);
@@ -129,6 +131,59 @@ describe("BubbleStack with approvals", () => {
 
   it("marks approval and intro cards as hit regions", () => {
     render(stack({ approvals: [makeApproval()], intro: { petName: "Mochi" } }));
-    for (const el of screen.getAllByRole("group")) expect(el).toHaveAttribute("data-hit");
+    const cards = screen.getAllByRole("group", { name: /request in|Answer permission prompts/ });
+    expect(cards).toHaveLength(2);
+    for (const el of cards) expect(el).toHaveAttribute("data-hit");
+  });
+});
+
+describe("BubbleStack placeholders", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fakeTransport();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const stack = (approvals: PendingApproval[], props: Partial<Parameters<typeof BubbleStack>[0]> = {}) => (
+    <BubbleStack threads={[]} now={60_000} expanded={false} onToggleExpanded={() => {}} onOpenThread={() => {}} approvals={approvals} {...props} />
+  );
+
+  it("keeps a gone request's place for a moment, so the next card doesn't slide under the cursor", () => {
+    const a = makeApproval({ id: "a", summary: "first" });
+    const b = makeApproval({ id: "b", summary: "second" });
+    const { rerender } = render(stack([a, b]));
+    rerender(stack([b]));
+    const slots = Array.from(document.querySelectorAll(".bubble-slot")).map((el) => el.textContent);
+    expect(slots[0]).toBe("No longer waiting");
+    expect(slots[1]).toContain("second");
+    expect(screen.getByRole("status")).toHaveAttribute("data-hit");
+    act(() => {
+      vi.advanceTimersByTime(GHOST_MS);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".bubble-slot")).toHaveLength(1);
+  });
+
+  it("says Answered for a request answered from its card", async () => {
+    const a = makeApproval({ id: "a" });
+    const { rerender } = render(stack([a]));
+    act(() => {
+      vi.advanceTimersByTime(ARM_MS + 2 * ARM_CHECK_MS);
+    });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Allow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }), { detail: 1 });
+    await act(async () => {});
+    rerender(stack([]));
+    expect(screen.getByRole("status")).toHaveTextContent("Answered");
+  });
+
+  it("leaves no placeholder when the cards are collapsed", () => {
+    const a = makeApproval({ id: "a" });
+    const { rerender } = render(stack([a]));
+    rerender(stack([a], { approvalsHidden: true }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: /request in/ })).not.toBeInTheDocument();
   });
 });

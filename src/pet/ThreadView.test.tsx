@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +6,8 @@ import { fakeTransport } from "../test/fakeTransport";
 import { makeApproval, makeSnapshot } from "../test/fixtures";
 import type { ChatTurn } from "../shared/types";
 import { ThreadView } from "./ThreadView";
+import { GHOST_MS } from "./useApprovalGhosts";
+import { ARM_CHECK_MS, ARM_MS } from "./useArming";
 import type { Conversation } from "./useConversation";
 
 function fakeConversation(send: (text: string) => Promise<void>, turns: ChatTurn[] = []): Conversation {
@@ -158,15 +160,21 @@ describe("ThreadView approval rows", () => {
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Reply" }));
     await userEvent.keyboard("{Enter}");
     expect(calls.filter(([c]) => c === "answer_approval")).toEqual([]);
+    // Only once the row has sat still long enough to be read.
+    await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+    expect(calls.filter(([c]) => c === "answer_approval")).toEqual([]);
+    await act(() => new Promise((r) => setTimeout(r, ARM_MS + 3 * ARM_CHECK_MS)));
     await userEvent.click(screen.getByRole("button", { name: "Allow" }));
     expect(calls.filter(([c]) => c === "answer_approval")).toEqual([["answer_approval", { id: "r1", decision: "allow" }]]);
   });
 
-  it("drops the rows once the snapshot does (Stop and New chat deny them)", () => {
+  it("drops the rows once the snapshot does (Stop and New chat deny them), after a brief placeholder", async () => {
     fakeTransport();
     const { rerender } = render(view(makeSnapshot({ running: ["C:\\code\\app"], approvals: [askApproval()] })));
     expect(screen.getByRole("group", { name: /request in/ })).toBeInTheDocument();
     rerender(view(makeSnapshot({ running: [], approvals: [] })));
     expect(screen.queryByRole("group", { name: /request in/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("No longer waiting");
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument(), { timeout: GHOST_MS + 1000 });
   });
 });

@@ -2,9 +2,10 @@ import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { IconAlert, IconChevronRight } from "../shared/icons";
 import { stackCards } from "../shared/threads";
 import type { PendingApproval, ThreadInfo } from "../shared/types";
-import { ApprovalCard, ApprovalsIntroCard } from "./ApprovalCard";
+import { ApprovalCard, ApprovalGhost, ApprovalsIntroCard } from "./ApprovalCard";
 import { ThreadCard } from "./ThreadCard";
 import { UpdateCard } from "./UpdateCard";
+import { useApprovalGhosts, type ApprovalItem } from "./useApprovalGhosts";
 
 interface SetupProps {
   detail: string;
@@ -69,9 +70,17 @@ interface Props {
   approvals?: PendingApproval[];
   /** The configured hold, for the approval cards' countdown bars. */
   holdMs?: number;
+  /** Collapsed cards: approvals aren't drawn (and don't leave placeholders). */
+  approvalsHidden?: boolean;
+  /** Changes when the stage is laid out differently (flipped below the pet, shifted): re-arms approval buttons. */
+  layoutKey?: unknown;
   /** The one-time "answer permission prompts" intro, shown at the top. */
   intro?: { petName: string } | null;
 }
+
+type Stacked = ApprovalItem & { sessionId: string };
+
+const itemKey = (it: ApprovalItem) => `approval-${it.kind === "live" ? it.approval.id : it.id}`;
 
 /**
  * Cards above the pet, nearest first: setup, permission requests, then threads
@@ -88,11 +97,18 @@ export function BubbleStack({
   update,
   approvals = [],
   holdMs = 60_000,
+  approvalsHidden = false,
+  layoutKey,
   intro,
 }: Props) {
-  const shown = stackCards(approvals, threads, expanded);
+  const ghosts = useApprovalGhosts(approvals);
+  // A placeholder keeps a gone request's place (and never hides a thread card).
+  const stackable: Stacked[] = approvalsHidden
+    ? []
+    : ghosts.items.map((it) => ({ ...it, sessionId: it.kind === "live" ? it.approval.sessionId : "" }));
+  const shown = stackCards(stackable, threads, expanded);
   const { more } = shown;
-  const collapsible = expanded && stackCards(approvals, threads, false).more > 0;
+  const collapsible = expanded && stackCards(stackable, threads, false).more > 0;
   const first = setup
     ? "setup"
     : shown.approvals.length
@@ -105,9 +121,21 @@ export function BubbleStack({
   return (
     <div className="bubbles" aria-label="Claude Code threads">
       {setup && <SetupCard detail={setup.detail} onOpen={setup.onOpen} tail />}
-      {shown.approvals.map((a, i) => (
-        <BubbleSlot key={`approval-${a.id}`} index={i}>
-          <ApprovalCard approval={a} holdMs={holdMs} tail={first === "approval" && i === 0} />
+      {shown.approvals.map((it, i) => (
+        // Same key for a card and the placeholder that replaces it, so the slot doesn't replay its entrance.
+        <BubbleSlot key={itemKey(it)} index={i}>
+          {it.kind === "live" ? (
+            <ApprovalCard
+              approval={it.approval}
+              holdMs={holdMs}
+              tail={first === "approval" && i === 0}
+              layoutKey={layoutKey}
+              onHeight={(h) => ghosts.onHeight(it.approval.id, h)}
+              onAnswered={() => ghosts.onAnswered(it.approval.id)}
+            />
+          ) : (
+            <ApprovalGhost text={it.text} height={it.height} tail={first === "approval" && i === 0} />
+          )}
         </BubbleSlot>
       ))}
       {shown.threads.map((t, i) => (

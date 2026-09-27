@@ -4,12 +4,13 @@ import { IconAlert, IconSquarePen, IconX } from "../shared/icons";
 import { projectName, samePath } from "../shared/paths";
 import { STATUS_TEXT } from "../shared/threads";
 import type { Snapshot, ThreadStatus } from "../shared/types";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, ApprovalGhost } from "./ApprovalCard";
 import { ComposerInput } from "./ComposerInput";
 import { CreditsNotice } from "./CreditsNotice";
 import { Messages } from "./Messages";
 import { StatusIndicator } from "./StatusIndicator";
 import { UntrustedNotice } from "./UntrustedNotice";
+import { useApprovalGhosts } from "./useApprovalGhosts";
 import { useAskGate } from "./useAskGate";
 import type { Conversation } from "./useConversation";
 
@@ -22,10 +23,12 @@ interface Props {
   initialPrompt?: string;
   conversation: Conversation;
   onClose: () => void;
+  /** Changes when the stage is laid out differently: re-arms the approval rows' buttons. */
+  layoutKey?: unknown;
 }
 
 /** The mini chat for one Ask thread: header, streamed messages, follow-up box. */
-export function ThreadView({ snap, project, initialSessionId, initialPrompt, conversation, onClose }: Props) {
+export function ThreadView({ snap, project, initialSessionId, initialPrompt, conversation, onClose, layoutKey }: Props) {
   const entry = snap.projects.find((p) => samePath(p.path, project)) ?? null;
   const thread =
     snap.threads.find((t) => t.source === "ask" && samePath(t.project, project)) ??
@@ -44,6 +47,7 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
   }, [thread?.status]);
   // This run's permission requests, answered inline (design v1.0 D4). Stop and New chat deny them in the backend.
   const approvals = snap.approvals.filter((a) => a.source === "ask" && samePath(a.project, project));
+  const ghosts = useApprovalGhosts(approvals);
   const status: ThreadStatus = approvals.length ? "needs_input" : running ? "running" : (thread?.status ?? lastStatus);
 
   useEffect(() => {
@@ -135,11 +139,23 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
         )}
       />
       <footer className="thread-foot">
-        {approvals.length > 0 && (
+        {ghosts.items.length > 0 && (
           <div className="approval-rows">
-            {approvals.map((a) => (
-              <ApprovalCard key={a.id} approval={a} holdMs={snap.config.approvalHoldSecs * 1000} variant="row" />
-            ))}
+            {ghosts.items.map((it) =>
+              it.kind === "live" ? (
+                <ApprovalCard
+                  key={it.approval.id}
+                  approval={it.approval}
+                  holdMs={snap.config.approvalHoldSecs * 1000}
+                  variant="row"
+                  layoutKey={layoutKey}
+                  onHeight={(h) => ghosts.onHeight(it.approval.id, h)}
+                  onAnswered={() => ghosts.onAnswered(it.approval.id)}
+                />
+              ) : (
+                <ApprovalGhost key={it.id} text={it.text} height={it.height} variant="row" />
+              ),
+            )}
           </div>
         )}
         {gate.pending !== null && (

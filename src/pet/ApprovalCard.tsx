@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { api } from "../shared/api";
-import { IconShield } from "../shared/icons";
+import { IconAlert, IconShield } from "../shared/icons";
 import type { ApprovalDecision, PendingApproval, Snapshot } from "../shared/types";
+import { useArming } from "./useArming";
 
 interface Props {
   approval: PendingApproval;
@@ -11,6 +12,17 @@ interface Props {
   variant?: "card" | "row";
   /** The card nearest the pet gets the speech-bubble tail. */
   tail?: boolean;
+  /** Changes when the cards around it are laid out differently (e.g. flipped below the pet): re-arms. */
+  layoutKey?: unknown;
+  /** Reports the card's height, for the placeholder that keeps its place once it's gone. */
+  onHeight?: (height: number) => void;
+  /** Called once this card's answer went through. */
+  onAnswered?: () => void;
+}
+
+/** What a request that can only be denied says, per source. */
+export function tooLongText(a: PendingApproval): string {
+  return a.source === "ask" ? "Too long to review here, so it can only be denied." : "Too long to review here. Answer in Claude Code.";
 }
 
 /** A thin bar that empties as a watched request's hold runs out. */
@@ -27,21 +39,32 @@ function Countdown({ expiresAt, holdMs }: { expiresAt: number; holdMs: number })
 }
 
 /**
- * A Claude Code permission request: project, tool, the exact command/file/URL
- * and Claude's description, with Deny / Allow and, when Claude Code offered a
- * rule, the always button. Nothing is focused on mount and no key answers:
- * only a click (or a deliberately focused button) does.
+ * A Claude Code permission request: project, tool, the exact command/file/URL,
+ * Claude's description and the whole input under Details (open by default when
+ * the headline leaves something out), with Deny / Allow and, when Claude Code
+ * offered a rule, the always button. The buttons only answer once the card has
+ * sat still for a moment (see `useArming`); nothing is focused on mount and no
+ * key answers on its own. A request too long to show can only be denied.
  */
-export function ApprovalCard({ approval: a, holdMs, variant = "card", tail }: Props) {
+export function ApprovalCard({ approval: a, holdMs, variant = "card", tail, layoutKey, onHeight, onAnswered }: Props) {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(a.lossy);
   const detailId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const arm = useArming<HTMLDivElement>(layoutKey);
 
-  const answer = async (decision: ApprovalDecision) => {
-    if (busy) return;
+  useLayoutEffect(() => {
+    const h = rootRef.current?.getBoundingClientRect().height ?? 0;
+    onHeight?.(h);
+  });
+
+  const answer = async (e: MouseEvent, decision: ApprovalDecision) => {
+    if (!arm.accept(e) || busy) return;
     setBusy(true);
     try {
       // On success the snapshot drops the request; the first answer wins.
       await api.answerApproval(a.id, decision);
+      onAnswered?.();
     } catch {
       // Already answered elsewhere, or no longer waiting: harmless.
       setBusy(false);
@@ -49,10 +72,28 @@ export function ApprovalCard({ approval: a, holdMs, variant = "card", tail }: Pr
   };
 
   const card = variant === "card";
+  const inert = !arm.armed || busy;
+  const offerAlways = a.canAlwaysAllow && !!a.alwaysLabel && !a.tooLong;
+  const button = (decision: ApprovalDecision, label: string, className: string, extra: Record<string, string | undefined> = {}) => (
+    <button
+      type="button"
+      className={`btn btn-sm ${className}`}
+      disabled={busy}
+      aria-disabled={inert}
+      onPointerDown={arm.onPointerDown}
+      onClick={(e) => void answer(e, decision)}
+      {...extra}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div
+      ref={rootRef}
       className={card ? `card thread-card approval-card${tail ? " has-tail" : ""}` : "approval-row"}
       data-hit=""
+      data-armed={arm.armed}
       role="group"
       aria-label={`${a.toolName} request in ${a.projectName}`}
     >
@@ -64,43 +105,65 @@ export function ApprovalCard({ approval: a, holdMs, variant = "card", tail }: Pr
         <span className="approval-tool">{a.toolName}</span>
         {card && a.source === "ask" && <span className="thread-card-source">Ask</span>}
       </div>
+      {a.rawToolName && (
+        <p className="approval-raw" title={a.rawToolName}>
+          {a.rawToolName}
+        </p>
+      )}
+      {a.risks.length > 0 && (
+        <p className="approval-risks">
+          {a.risks.map((r) => (
+            <span key={r} className="approval-risk">
+              <IconAlert size={12} />
+              {r}
+            </span>
+          ))}
+        </p>
+      )}
       {a.summary && <code className="approval-summary">{a.summary}</code>}
       {a.description && <p className="approval-desc">{a.description}</p>}
-      <div className="approval-actions">
-        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void answer("deny")}>
-          Deny
-        </button>
-        {a.canAlwaysAllow && a.alwaysLabel && (
-          <>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm approval-always"
-              disabled={busy}
-              title={a.alwaysDetail ?? undefined}
-              aria-describedby={a.alwaysDetail ? detailId : undefined}
-              onClick={() => void answer("always")}
-            >
-              {a.alwaysLabel}
-            </button>
-            {a.alwaysDetail && (
-              <span id={detailId} className="sr-only">
-                {a.alwaysDetail}
-              </span>
-            )}
-          </>
-        )}
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void answer("allow")}>
-          Allow
-        </button>
+      <details className="approval-details" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary>Details</summary>
+        <pre className="approval-details-body">{a.details}</pre>
+      </details>
+      {a.tooLong && <p className="approval-too-long">{tooLongText(a)}</p>}
+      <div ref={arm.ref} className="approval-actions">
+        {button("deny", "Deny", "btn-secondary")}
+        {offerAlways &&
+          button("always", a.alwaysLabel ?? "Always allow", "btn-ghost approval-always", {
+            title: a.alwaysDetail ?? undefined,
+            "aria-describedby": a.alwaysDetail ? detailId : undefined,
+          })}
+        {!a.tooLong && button("allow", "Allow", "btn-primary")}
       </div>
+      {offerAlways && a.alwaysDetail && (
+        <p id={detailId} className="approval-always-detail">
+          {a.alwaysLabel}: {a.alwaysDetail}
+        </p>
+      )}
       {a.source === "watch" && a.expiresAt !== null && <Countdown expiresAt={a.expiresAt} holdMs={holdMs} />}
     </div>
   );
 }
 
-/** The one-time intro after upgrading: onboarding already finished, hooks installed, not answered yet. */
+/** Keeps a removed request's place for a moment, so the cards around it don't slide under the cursor. */
+export function ApprovalGhost({ text, height, variant = "card", tail }: { text: string; height: number; variant?: "card" | "row"; tail?: boolean }) {
+  return (
+    <div
+      className={variant === "card" ? `card thread-card approval-ghost${tail ? " has-tail" : ""}` : "approval-row approval-ghost"}
+      data-hit=""
+      style={height > 0 ? { minHeight: height } : undefined}
+      role="status"
+    >
+      {text}
+    </div>
+  );
+}
+
+/** The one-time intro after upgrading: onboarding already finished, hooks installed, not answered yet, not already on. */
 export function showApprovalsIntro(snap: Snapshot): boolean {
-  return !snap.config.approvalsIntroSeen && snap.config.onboarded && snap.setup.hooksInstalled;
+  const c = snap.config;
+  return !c.approvalsIntroSeen && !c.watchApprovals && c.onboarded && snap.setup.hooksInstalled;
 }
 
 /** "{pet} can answer permission prompts…" with Turn on and Not now. */

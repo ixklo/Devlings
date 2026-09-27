@@ -8,8 +8,10 @@
 // update=ready|downloading|error|disabled|none (none: checks find nothing),
 // untrusted=1 (every Ask shows the untrusted-folder notice; without it, only
 // Asks in billing-service and ml-notebooks do, until trusted),
-// approvals=none|ask (no sample permission card; or also one inline in the
-// running Ask's chat), intro=1 (the one-time "answer permission prompts" card),
+// approvals=none|mcp|ask (no sample permission card; or also an MCP tool
+// card; or also one inline in the running Ask's chat), intro=1 (the one-time
+// "answer permission prompts" card; hidden while watching is on, so it also
+// starts with watching off),
 // debug=hits (outlines the click-through regions).
 
 import { placeholderAtlas } from "../sprite/placeholderAtlas";
@@ -163,15 +165,43 @@ function initialApprovals(holdSecs: number): PendingApproval[] {
       projectName: "billing-service",
       source: "watch",
       toolName: "Bash",
+      rawToolName: null,
       summary: "npm install stripe@18",
       description: "Install the Stripe SDK",
+      details: JSON.stringify({ command: "npm install stripe@18", description: "Install the Stripe SDK" }, null, 2),
+      lossy: false,
+      tooLong: false,
+      risks: [],
       canAlwaysAllow: true,
       alwaysLabel: "Always allow",
       alwaysDetail: "Adds the rule Bash(npm install:*) to this project's local settings",
       expiresAt: Date.now() + holdSecs * 1000,
     },
   ];
+  if (params.get("approvals") === "mcp") {
+    const input = { owner: "you", repo: "billing-service", title: "Flaky webhook test", body: "Seen twice on CI today." };
+    list.push({
+      id: "preview-watch-2",
+      sessionId: "watch-docs-site",
+      project: `${ROOT}docs-site`,
+      projectName: "docs-site",
+      source: "watch",
+      toolName: "Create issue",
+      rawToolName: "mcp__github__create_issue",
+      summary: JSON.stringify(input),
+      description: null,
+      details: JSON.stringify(input, null, 2),
+      lossy: true,
+      tooLong: false,
+      risks: [],
+      canAlwaysAllow: false,
+      alwaysLabel: null,
+      alwaysDetail: null,
+      expiresAt: Date.now() + holdSecs * 1000,
+    });
+  }
   if (params.get("approvals") === "ask") {
+    const file = `${ROOT}perch\\src\\shared\\useSnapshot.ts`;
     list.push({
       id: "preview-ask-1",
       sessionId: "ask-perch",
@@ -179,8 +209,13 @@ function initialApprovals(holdSecs: number): PendingApproval[] {
       projectName: "perch",
       source: "ask",
       toolName: "Edit",
-      summary: `${ROOT}perch\\src\\shared\\useSnapshot.ts`,
+      rawToolName: null,
+      summary: file,
       description: null,
+      details: JSON.stringify({ file_path: file, old_string: "let fresh = false;", new_string: "let fresh = true;" }, null, 2),
+      lossy: false,
+      tooLong: false,
+      risks: [],
       canAlwaysAllow: true,
       alwaysLabel: "Allow for this session",
       alwaysDetail: "Lets Claude Code edit files for the rest of this session",
@@ -230,7 +265,7 @@ class MockBackend {
     threadsCollapsed: !!params.get("collapsed"),
     autoUpdate: true,
     lastUpdateCheck: null,
-    watchApprovals: true,
+    watchApprovals: !params.get("intro"),
     approvalHoldSecs: 60,
     approvalsIntroSeen: !params.get("intro"),
   };
@@ -518,6 +553,7 @@ class MockBackend {
         return this.answerApproval(String(a.id), String(a.decision));
       case "set_watch_approvals":
         c.watchApprovals = !!a.enabled;
+        if (c.watchApprovals) c.approvalsIntroSeen = true;
         // Turning it off answers every held request "no decision"; the threads keep "needs input".
         if (!c.watchApprovals) this.approvals = this.approvals.filter((x) => x.source !== "watch");
         return this.publish();

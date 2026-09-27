@@ -239,6 +239,8 @@ export function PetApp() {
   const threads = snap.threads;
   const barVisible = hover || view.kind !== "bubbles" || threads.length > 0;
   const petState = petStateFor(snap);
+  // Approval buttons re-arm whenever the stage moves as a whole.
+  const layoutKey = `${placement.cardsBelow}|${placement.shiftX}|${placement.stageRoom}`;
   const clip = resolveClip(petState, anim, reduced);
   const toggleComposer = () => setView((v) => (v.kind === "bubbles" ? { kind: "compose" } : BUBBLES));
   const closeView = () => setView(BUBBLES);
@@ -285,6 +287,7 @@ export function PetApp() {
             initialPrompt={view.initialPrompt}
             conversation={conversation}
             onClose={closeView}
+            layoutKey={layoutKey}
           />
         )}
         {view.kind === "bubbles" && (
@@ -300,8 +303,10 @@ export function PetApp() {
                 ? { version: updateVersion, onRestart: api.installUpdate, onLater: () => setLaterUpdate(updateVersion) }
                 : null
             }
-            approvals={collapsed ? [] : snap.approvals}
+            approvals={snap.approvals}
+            approvalsHidden={collapsed}
             holdMs={config.approvalHoldSecs * 1000}
+            layoutKey={layoutKey}
             intro={!collapsed && showApprovalsIntro(snap) ? { petName: config.petName } : null}
           />
         )}
