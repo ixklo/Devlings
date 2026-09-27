@@ -299,7 +299,7 @@ pub async fn get_pet_sprite(app: AppHandle, id: String) -> CmdResult<String> {
         Some(p) => p,
         None => pets::resolve(&state::refresh_pets(&app), &id).cloned().ok_or("No pets found.")?,
     };
-    pets::sprite_data_url(&pet.sprite)
+    pets::sprite_data_url(&pet)
 }
 
 #[tauri::command]

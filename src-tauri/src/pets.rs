@@ -41,6 +41,8 @@ pub struct PetInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pet {
     pub info: PetInfo,
+    /// The pet's folder; the sprite must stay inside it.
+    pub dir: PathBuf,
     pub sprite: PathBuf,
 }
 
@@ -172,6 +174,7 @@ pub fn load_pet(dir: &Path, source: PetSource) -> Result<Pet, String> {
     check_inside(dir, &sprite)?;
     check_sprite(&sprite)?;
     Ok(Pet {
+        dir: dir.to_path_buf(),
         info: PetInfo {
             display_name: non_empty(m.display_name).unwrap_or_else(|| id.clone()),
             description: non_empty(m.description).unwrap_or_default(),
@@ -227,8 +230,14 @@ pub fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-pub fn sprite_data_url(path: &Path) -> Result<String, String> {
-    check_sprite(path)?;
+/// The pet's sprite as a data URL. The folder is checked again here: it may have changed since discovery.
+pub fn sprite_data_url(pet: &Pet) -> Result<String, String> {
+    check_inside(&pet.dir, &pet.sprite)?;
+    check_sprite(&pet.sprite)?;
+    read_data_url(&pet.sprite)
+}
+
+fn read_data_url(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| format!("Couldn't read {}: {e}", path.display()))?;
     let mime = sniff_mime(&bytes).ok_or_else(|| format!("{} is not a PNG or WebP image", path.display()))?;
     Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
@@ -418,6 +427,7 @@ mod tests {
     #[test]
     fn resolves_with_fallbacks() {
         let pet = |id: &str| Pet {
+            dir: PathBuf::new(),
             info: PetInfo { id: id.into(), display_name: id.into(), description: String::new(), source: PetSource::Bundled },
             sprite: PathBuf::new(),
         };
@@ -432,16 +442,32 @@ mod tests {
     #[test]
     fn data_urls_use_the_real_image_type() {
         let t = tempfile::tempdir().unwrap();
-        let png_path = t.path().join("a.png");
-        fs::write(&png_path, png()).unwrap();
-        assert!(sprite_data_url(&png_path).unwrap().starts_with("data:image/png;base64,iVBORw0KGgo"));
+        let a = make_pet(t.path(), "a", &manifest("a", "s.png"), Some(("s.png", &png())));
+        let pet = load_pet(&a, PetSource::Perch).unwrap();
+        assert!(sprite_data_url(&pet).unwrap().starts_with("data:image/png;base64,iVBORw0KGgo"));
         // A WebP saved with a .png extension still gets the WebP type.
-        let misnamed = t.path().join("b.png");
-        fs::write(&misnamed, webp()).unwrap();
-        assert!(sprite_data_url(&misnamed).unwrap().starts_with("data:image/webp;base64,UklGR"));
-        let junk = t.path().join("c.webp");
-        fs::write(&junk, b"hello").unwrap();
-        assert!(sprite_data_url(&junk).is_err());
+        let b = make_pet(t.path(), "b", &manifest("b", "s.png"), Some(("s.png", &webp())));
+        assert!(sprite_data_url(&load_pet(&b, PetSource::Perch).unwrap()).unwrap().starts_with("data:image/webp;base64,UklGR"));
+        // Changed after discovery: checked again when read.
+        fs::write(a.join("s.png"), b"hello").unwrap();
+        assert!(sprite_data_url(&pet).is_err());
+        fs::write(a.join("s.png"), png_of(10, 10)).unwrap();
+        assert!(sprite_data_url(&pet).is_err());
+    }
+
+    #[test]
+    fn a_sprite_swapped_for_a_symlink_after_discovery_is_refused() {
+        let t = tempfile::tempdir().unwrap();
+        let outside = t.path().join("outside.png");
+        fs::write(&outside, png()).unwrap();
+        let dir = make_pet(t.path(), "p", &manifest("p", "s.png"), Some(("s.png", &png())));
+        let pet = load_pet(&dir, PetSource::Perch).unwrap();
+        fs::remove_file(dir.join("s.png")).unwrap();
+        if symlink(&outside, &dir.join("s.png")).is_err() {
+            eprintln!("skipping: can't create symlinks here");
+            return;
+        }
+        assert!(sprite_data_url(&pet).unwrap_err().contains("symlink"));
     }
 
     #[test]
@@ -502,7 +528,8 @@ mod tests {
         assert!(load_pet(&ext, PetSource::Perch).is_err());
         let junk = make_pet(t.path(), "junk", &manifest("junk", "s.png"), Some(("s.png", b"not a png")));
         assert!(load_pet(&junk, PetSource::Perch).is_err());
-        assert!(sprite_data_url(&small.join("s.png")).is_err());
+        let small_pet = Pet { dir: small.clone(), sprite: small.join("s.png"), ..load_pet(&lossy, PetSource::Perch).unwrap() };
+        assert!(sprite_data_url(&small_pet).is_err());
     }
 
     #[test]
