@@ -1,4 +1,6 @@
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, str::FromStr};
+
+use log::LevelFilter;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -8,7 +10,6 @@ pub const DEFAULT_PET_SCALE: f64 = 0.6;
 pub const MIN_PET_SCALE: f64 = 0.4;
 pub const MAX_PET_SCALE: f64 = 1.0;
 pub const DEFAULT_DIAGNOSTICS_LEVEL: &str = "info";
-pub const DIAGNOSTICS_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -26,7 +27,7 @@ pub struct Config {
     pub pet_id: String,
     pub pet_scale: f64,
     pub threads_collapsed: bool,
-    /// Log level: "error", "warn", "info", "debug" or "trace".
+    /// Log level: "off", "error", "warn", "info", "debug" or "trace".
     pub diagnostics_level: String,
 }
 
@@ -42,10 +43,14 @@ impl Config {
     }
 }
 
-/// A known log level in lower case, else the default.
+/// The log level a `diagnosticsLevel` value names. The one place levels are parsed; unknown values read as info.
+pub fn diagnostics_level_filter(level: &str) -> LevelFilter {
+    LevelFilter::from_str(level.trim()).unwrap_or(LevelFilter::Info)
+}
+
+/// The canonical lower-case spelling of a `diagnosticsLevel` value.
 pub fn normalize_diagnostics_level(level: &str) -> String {
-    let level = level.trim().to_ascii_lowercase();
-    if DIAGNOSTICS_LEVELS.contains(&level.as_str()) { level } else { DEFAULT_DIAGNOSTICS_LEVEL.to_string() }
+    diagnostics_level_filter(level).as_str().to_ascii_lowercase()
 }
 
 pub fn clamp_pet_scale(scale: f64) -> f64 {
@@ -256,9 +261,21 @@ mod tests {
         assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
         std::fs::write(&p, r#"{"petName":"Bo"}"#).unwrap();
         assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
-        for level in DIAGNOSTICS_LEVELS {
+        for level in ["off", "error", "warn", "info", "debug", "trace"] {
             assert_eq!(normalize_diagnostics_level(level), level);
         }
+    }
+
+    #[test]
+    fn diagnostics_levels_parse_in_one_place() {
+        assert_eq!(diagnostics_level_filter("info"), LevelFilter::Info);
+        assert_eq!(diagnostics_level_filter(" DEBUG "), LevelFilter::Debug);
+        assert_eq!(diagnostics_level_filter("trace"), LevelFilter::Trace);
+        assert_eq!(diagnostics_level_filter("Warn"), LevelFilter::Warn);
+        assert_eq!(diagnostics_level_filter("error"), LevelFilter::Error);
+        assert_eq!(diagnostics_level_filter("off"), LevelFilter::Off);
+        assert_eq!(diagnostics_level_filter("chatty"), LevelFilter::Info);
+        assert_eq!(diagnostics_level_filter(""), LevelFilter::Info);
     }
 
     #[test]

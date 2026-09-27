@@ -31,7 +31,7 @@ pub fn run() {
         .expect("this OS provides a per-user data directory")
         .join(&context.config().identifier);
     let app_state = state::AppState::load(data_dir).expect("Perch's data directory must be writable");
-    let log_level = diagnostics::level_filter(&locks::lock(&app_state.config).diagnostics_level);
+    let log_level = store::diagnostics_level_filter(&locks::lock(&app_state.config).diagnostics_level);
 
     tauri::Builder::default()
         .manage(app_state)

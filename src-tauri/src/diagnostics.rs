@@ -26,16 +26,6 @@ pub const MAX_LOG_FILES: usize = 5;
 pub const TAIL_LINES: usize = 200;
 pub const TOKEN_MARK: &str = "<token>";
 
-pub fn level_filter(level: &str) -> LevelFilter {
-    match level.trim().to_ascii_lowercase().as_str() {
-        "error" => LevelFilter::Error,
-        "warn" => LevelFilter::Warn,
-        "debug" => LevelFilter::Debug,
-        "trace" => LevelFilter::Trace,
-        _ => LevelFilter::Info,
-    }
-}
-
 /// Rotating file log in the app log dir, plus stdout in debug builds.
 pub fn log_plugin<R: Runtime>(level: LevelFilter) -> TauriPlugin<R> {
     let mut targets = vec![Target::new(TargetKind::LogDir { file_name: Some(LOG_FILE_STEM.into()) })];
@@ -296,17 +286,6 @@ mod tests {
     use super::*;
 
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-
-    #[test]
-    fn levels() {
-        assert_eq!(level_filter("info"), LevelFilter::Info);
-        assert_eq!(level_filter("DEBUG"), LevelFilter::Debug);
-        assert_eq!(level_filter("trace"), LevelFilter::Trace);
-        assert_eq!(level_filter("warn"), LevelFilter::Warn);
-        assert_eq!(level_filter("error"), LevelFilter::Error);
-        assert_eq!(level_filter("chatty"), LevelFilter::Info);
-        assert_eq!(level_filter(""), LevelFilter::Info);
-    }
 
     #[test]
     fn panic_descriptions() {
