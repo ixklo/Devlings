@@ -11,36 +11,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  ATLAS_W, ATLAS_H, CELL_W, CELL_H, COLS,
-  newImage, paintLayer, drawImage, fillRect, writePng,
-} from './lib/engine.mjs';
-import { PETS, paletteFor } from './lib/palettes.mjs';
-import { ROW_SPECS } from './lib/rows.mjs';
+import { CELL_W, CELL_H, COLS, newImage, drawImage, fillRect, writePng } from './lib/engine.mjs';
 import { ATLAS_ROWS, PET_IDS } from './lib/contract.mjs';
+import { PETS } from './lib/pets.mjs';
+import { buildAtlas, manifestOf } from './lib/atlas.mjs';
 import { drawText } from './lib/font.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-function buildFrames() {
-  return ATLAS_ROWS.map((row, r) => {
-    const spec = ROW_SPECS[r];
-    if (spec.name !== row.name) throw new Error(`Row ${r}: expected ${row.name}, got ${spec.name}`);
-    const frames = spec.frames();
-    if (frames.length !== row.frames) {
-      throw new Error(`Row ${row.name}: expected ${row.frames} frames, got ${frames.length}`);
-    }
-    return frames;
-  });
-}
-
-function buildAtlas(frames, palette) {
-  const img = newImage(ATLAS_W, ATLAS_H);
-  frames.forEach((row, r) => {
-    row.forEach((layer, c) => paintLayer(img, layer, palette, c * CELL_W, r * CELL_H));
-  });
-  return img;
-}
 
 const INK = [40, 44, 52, 255];
 const MUTED = [120, 128, 140, 255];
@@ -91,19 +68,17 @@ function bigPreview(atlas) {
   return img;
 }
 
-const frames = buildFrames();
+const missing = PET_IDS.filter((id) => !PETS[id]);
+const extra = Object.keys(PETS).filter((id) => !PET_IDS.includes(id));
+if (missing.length || extra.length) {
+  throw new Error(`PET_IDS and PETS disagree (missing: ${missing.join(', ') || '-'}; extra: ${extra.join(', ') || '-'})`);
+}
+
 for (const id of PET_IDS) {
-  const pet = PETS[id];
-  const atlas = buildAtlas(frames, paletteFor(id));
+  const atlas = buildAtlas(id);
   const dir = path.join(ROOT, 'src-tauri', 'pets', id);
   writePng(path.join(dir, 'spritesheet.png'), atlas);
-  const manifest = {
-    id,
-    displayName: pet.displayName,
-    description: pet.description,
-    spritesheetPath: 'spritesheet.png',
-  };
-  fs.writeFileSync(path.join(dir, 'pet.json'), JSON.stringify(manifest, null, 2) + '\n');
+  fs.writeFileSync(path.join(dir, 'pet.json'), JSON.stringify(manifestOf(id), null, 2) + '\n');
   writePng(path.join(ROOT, 'docs', 'pets', `preview-${id}.png`), contactSheet(id, atlas));
   writePng(path.join(ROOT, 'docs', 'pets', `preview-${id}-big.png`), bigPreview(atlas));
   console.log(`built ${id}: ${path.relative(ROOT, dir)}`);

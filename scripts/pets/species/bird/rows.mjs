@@ -1,6 +1,7 @@
-// Frame composition for every atlas row.
-import { compose, dropRows, dupRows, flipX } from './engine.mjs';
-import { OUTLINE_OF, LINE_ROLES } from './palettes.mjs';
+// The bird's frames for every atlas row.
+import { compose, dropRows, dupRows, flipX } from '../../lib/engine.mjs';
+import { OUTLINE_OF, LINE_ROLES } from '../../lib/palettes.mjs';
+import * as P from '../../lib/props.mjs';
 import * as S from './sprites.mjs';
 
 // Layout on the 48x52 art grid.
@@ -114,9 +115,9 @@ function runRight() {
 function working() {
   const laptop = (dots) => () => ({
     // screen light spilling onto the belly just above the lid
-    mid: [{ parts: [part(S.SCREEN_GLOW, 16, 32)], outline: false }],
-    front: [group(part(S.LAPTOP, 15, 33))],
-    back: [group(part(S.PUFFS[dots], 31, 3))],
+    mid: [{ parts: [part(P.SCREEN_GLOW, 16, 32)], outline: false }],
+    front: [group(part(P.LAPTOP, 15, 33))],
+    back: [group(part(P.PUFFS[dots], 31, 3))],
   });
   const f = (wingL, wingR, squash, dots) =>
     front({ eyeDy: 1, wingL, wingR, squash, props: laptop(dots) });
@@ -131,7 +132,7 @@ function working() {
 }
 
 function waiting() {
-  const ask = (dy) => () => ({ back: [group(part(S.ASK, 33, 3 + dy))] });
+  const ask = (dy) => () => ({ back: [group(part(P.ASK, 33, 3 + dy))] });
   const base = { wingL: 'up', eyes: 'up', eyeDy: -1 };
   return [
     front({ ...base, props: ask(0) }),
@@ -159,9 +160,9 @@ function failed() {
       lean: l,
       props: () => ({
         back: [
-          group(part(S.CLOUD, 15, 2 + cloudDy[i])),
-          dropA[i] == null ? null : group(part(S.DROP, 19, dropA[i] + cloudDy[i])),
-          dropB[i] == null ? null : group(part(S.DROP, 28, dropB[i] + cloudDy[i])),
+          group(part(P.CLOUD, 15, 2 + cloudDy[i])),
+          dropA[i] == null ? null : group(part(P.DROP, 19, dropA[i] + cloudDy[i])),
+          dropB[i] == null ? null : group(part(P.DROP, 28, dropB[i] + cloudDy[i])),
         ],
       }),
     }),
@@ -182,8 +183,8 @@ function review() {
         const ly = g.fy + 5;
         return {
           mid: [
-            group(part(S.HANDLE, lx + 8, ly + 8)),
-            group(part(S.LENS, lx, ly), part(S.BIG_EYE, lx + 2 + dx, ly + 1)),
+            group(part(P.HANDLE, lx + 8, ly + 8)),
+            group(part(P.LENS, lx, ly), part(P.BIG_EYE, lx + 2 + dx, ly + 1)),
           ],
         };
       },

@@ -47,6 +47,28 @@ export function flipX(s) {
   return { w: s.w, h: s.h, rows: s.rows.map((r) => [...r].reverse().join('')) };
 }
 
+/** Mirror a sprite vertically. */
+export const flipY = (s) => ({ w: s.w, h: s.h, rows: [...s.rows].reverse() });
+
+/**
+ * A left/right eye pair from one left-eye map: the shape mirrors for the
+ * right eye, but highlight pixels (`hi`, default 'W') stay where they are,
+ * so both eyes catch the light from the same side. Mirrored highlight spots
+ * become `fill` (default 'e').
+ */
+export function eyePair(src, { hi = 'W', fill = 'e' } = {}) {
+  const l = sprite(src);
+  const m = flipX(l);
+  const rows = m.rows.map((row, y) => {
+    const out = [...row].map((ch) => (ch === hi ? fill : ch));
+    [...l.rows[y]].forEach((ch, x) => {
+      if (ch === hi) out[x] = hi;
+    });
+    return out.join('');
+  });
+  return { l, r: { w: l.w, h: l.h, rows } };
+}
+
 /** Remove the given rows (squash) from a sprite. */
 export function dropRows(s, indices) {
   const drop = new Set(indices);

@@ -3,8 +3,10 @@
 //
 //   node scripts/pets/validate.mjs [petDir...]
 //
-// With no arguments, checks every bundled pet in src-tauri/pets/. Checks:
-//   - pet.json parses and has id/displayName/description/spritesheetPath
+// With no arguments, checks every bundled pet in src-tauri/pets/, and that
+// those folders are exactly PET_IDS. Checks:
+//   - pet.json parses and has id/displayName/description/spritesheetPath,
+//     with a one-line description
 //   - the atlas is exactly 1536x1872
 //   - every used cell has opaque pixels; every unused cell is fully transparent
 //   - nothing is drawn in the outermost 2 px of any cell (no bleeding)
@@ -14,9 +16,9 @@
 //     the idle / waiting / running / review / failed frames
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
-import { ATLAS_ROWS, BASELINE_ROWS } from './lib/contract.mjs';
+import { ATLAS_ROWS, BASELINE_ROWS, PET_IDS } from './lib/contract.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ATLAS_W = 1536;
@@ -28,7 +30,7 @@ const MARGIN = 2;
 const GRID = 4;
 const BASELINE_TOLERANCE = 2; // art px
 
-function validatePet(dir) {
+export function validatePet(dir) {
   const errors = [];
   const info = [];
   const fail = (msg) => errors.push(msg);
@@ -42,6 +44,9 @@ function validatePet(dir) {
   }
   for (const key of ['id', 'displayName', 'description', 'spritesheetPath']) {
     if (typeof manifest[key] !== 'string' || !manifest[key]) fail(`pet.json: missing "${key}"`);
+  }
+  if (typeof manifest.description === 'string' && /[\r\n]/.test(manifest.description)) {
+    fail('pet.json: description must be one line');
   }
   if (manifest.id && manifest.id !== path.basename(dir)) {
     fail(`pet.json: id "${manifest.id}" does not match folder "${path.basename(dir)}"`);
@@ -122,27 +127,53 @@ function validatePet(dir) {
   return { errors, info };
 }
 
-const dirs = process.argv.slice(2).length
-  ? process.argv.slice(2).map((d) => path.resolve(d))
-  : fs
-      .readdirSync(path.join(ROOT, 'src-tauri', 'pets'), { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => path.join(ROOT, 'src-tauri', 'pets', d.name));
+/** Every bundled pet folder in src-tauri/pets. */
+export function bundledPetDirs() {
+  const root = path.join(ROOT, 'src-tauri', 'pets');
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => path.join(root, d.name));
+}
 
-let failed = 0;
-for (const dir of dirs) {
-  const { errors, info } = validatePet(dir);
-  const name = path.basename(dir);
-  if (errors.length) {
-    failed++;
-    console.log(`FAIL ${name}`);
-    for (const e of errors) console.log(`  - ${e}`);
-  } else {
-    console.log(`ok   ${name} (${info.join(', ')})`);
+/** The bundled folders must be exactly the pets the generator builds. */
+export function checkBundledSet(dirs) {
+  const found = dirs.map((d) => path.basename(d));
+  const missing = PET_IDS.filter((id) => !found.includes(id));
+  const extra = found.filter((id) => !PET_IDS.includes(id));
+  return [
+    ...missing.map((id) => `missing bundled pet "${id}" (run build.mjs)`),
+    ...extra.map((id) => `src-tauri/pets/${id} is not in PET_IDS`),
+  ];
+}
+
+function main(args) {
+  const dirs = args.length ? args.map((d) => path.resolve(d)) : bundledPetDirs();
+  let failed = 0;
+  for (const dir of dirs) {
+    const { errors, info } = validatePet(dir);
+    const name = path.basename(dir);
+    if (errors.length) {
+      failed++;
+      console.log(`FAIL ${name}`);
+      for (const e of errors) console.log(`  - ${e}`);
+    } else {
+      console.log(`ok   ${name} (${info.join(', ')})`);
+    }
   }
+  if (!args.length) {
+    for (const e of checkBundledSet(dirs)) {
+      failed++;
+      console.log(`FAIL ${e}`);
+    }
+  }
+  if (!dirs.length) {
+    console.log('no pets found');
+    return 1;
+  }
+  return failed ? 1 : 0;
 }
-if (!dirs.length) {
-  console.log('no pets found');
-  process.exit(1);
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  process.exit(main(process.argv.slice(2)));
 }
-process.exit(failed ? 1 : 0);
