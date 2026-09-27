@@ -7,11 +7,6 @@ export const DRAG_THRESHOLD_PX = 4;
 /** Window moves are batched to about one per frame. */
 export const DRAG_FLUSH_MS = 16;
 
-export interface Badge {
-  count: number;
-  tone: "neutral" | "wait" | "err";
-}
-
 interface Props {
   src: string | null;
   scale: number;
@@ -20,7 +15,6 @@ interface Props {
   label: string;
   /** Id of an element describing the keys (Enter, arrows, Esc, the menu key). */
   describedBy?: string;
-  badge: Badge | null;
   /** A click without movement. */
   onActivate: () => void;
   onHover: () => void;
@@ -52,7 +46,6 @@ export function PetSprite({
   onClipDone,
   label,
   describedBy,
-  badge,
   onActivate,
   onHover,
   onDragStart,
@@ -144,11 +137,6 @@ export function PetSprite({
       }}
     >
       <SpriteView src={src} scale={scale} clip={clip} onClipDone={onClipDone} aria-hidden="true" />
-      {badge && badge.count > 0 && (
-        <span className={`pet-badge is-${badge.tone}`} aria-hidden="true">
-          {badge.count > 9 ? "9+" : badge.count}
-        </span>
-      )}
     </div>
   );
 }

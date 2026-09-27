@@ -55,6 +55,24 @@ describe("pet window keyboard", () => {
     expect(screen.getByRole("button", { name: "Hide threads" })).toHaveFocus();
   });
 
+  it("tabs from the hidden-threads pill to the pet, and Enter on it shows the threads with focus on the pet", async () => {
+    const threads = [makeThread({ status: "needs_input" }), makeThread({ status: "running" })];
+    const { pet, calls } = await setup(makeSnapshot({ threads, config: makeConfig({ threadsCollapsed: true }) }));
+    await userEvent.tab();
+    const pill = screen.getByRole("button", { name: "2 threads hidden, 1 needs you. Show threads." });
+    expect(pill).toHaveFocus();
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    expect(pill).toHaveClass("more-pill");
+    await userEvent.tab();
+    expect(pet).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "New message" })).toHaveFocus();
+    pill.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(calls).toContainEqual(["set_threads_collapsed", { collapsed: false }]);
+    expect(pet).toHaveFocus();
+  });
+
   it("names every control bar button and exposes its state", async () => {
     await setup(makeSnapshot({ config: makeConfig({ threadsCollapsed: true, notifications: false }) }));
     const bar = screen.getByRole("toolbar", { name: "Pet controls" });
