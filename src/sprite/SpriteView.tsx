@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type HTMLAttributes } from "react";
 import { api } from "../shared/api";
 import { cellBox } from "./atlas";
-import type { Clip } from "./petAnimation";
+import { IDLE_REST, type Clip } from "./petAnimation";
 import { placeholderAtlas } from "./placeholderAtlas";
 import { useSpriteClip } from "./useSpriteClip";
 
@@ -103,5 +103,5 @@ export function useReducedMotion(): boolean {
 export function idleClip(reducedMotion: boolean): Clip {
   return reducedMotion
     ? { name: "idle", loop: false, still: true, key: "still-idle" }
-    : { name: "idle", loop: true, still: false, rest: true, key: "idle" };
+    : { name: "idle", loop: true, still: false, rest: IDLE_REST, key: "idle" };
 }

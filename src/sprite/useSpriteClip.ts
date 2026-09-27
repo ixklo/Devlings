@@ -36,8 +36,13 @@ export function useSpriteClip(ref: RefObject<HTMLElement | null>, clip: Clip, sc
     if (clip.still) return;
 
     const durations = ROW_SPECS[clip.name].durations;
-    let start = performance.now();
-    let restMs = clip.rest ? restLength(Math.random()) : 0;
+    const play = durations.reduce((a, b) => a + b, 0);
+    const policy = clip.rest;
+    const drawRest = () => (policy ? restLength(Math.random(), policy.minMs, policy.maxMs) : 0);
+    const clipStart = performance.now();
+    let start = clipStart;
+    let resting = !!policy && policy.afterMs <= 0;
+    let restMs = resting ? drawRest() : 0;
     let timer: number | undefined;
     let done = false;
 
@@ -45,12 +50,18 @@ export function useSpriteClip(ref: RefObject<HTMLElement | null>, clip: Clip, sc
       timer = undefined;
       if (!clockRuns(clip, pageHidden(), done)) return;
       const now = performance.now();
+      if (policy && !resting && now - clipStart >= policy.afterMs) {
+        // Settle: the play in progress finishes, then rests begin.
+        start = now - ((now - start) % play);
+        resting = true;
+        restMs = drawRest();
+      }
       let next: { frame: number; nextIn: number; done: boolean };
-      if (clip.rest) {
+      if (resting) {
         let f = restingFrameAt(durations, now - start, restMs);
         if (f.cycleOver) {
           start = now;
-          restMs = restLength(Math.random());
+          restMs = drawRest();
           f = restingFrameAt(durations, 0, restMs);
         }
         next = { frame: f.frame, nextIn: f.nextIn, done: false };

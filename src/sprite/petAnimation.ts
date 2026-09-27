@@ -61,16 +61,41 @@ export function animReducer(s: AnimState, a: AnimAction): AnimState {
   }
 }
 
+/**
+ * How a looping row rests: after `afterMs` of playing back to back it finishes the play in progress, then holds
+ * frame 0 for `minMs` to `maxMs` between plays (see `spriteClock.ts`). Motion in the corner of the eye is hard to
+ * ignore, so a state that lasts keeps moving less once it has been noticed (design v1.1 §2a).
+ */
+export interface RestPolicy {
+  afterMs: number;
+  minMs: number;
+  maxMs: number;
+}
+
+/** Idle breathes from the start. */
+export const IDLE_REST: RestPolicy = { afterMs: 0, minMs: 4000, maxMs: 8000 };
+/** Working: a minute of typing, then short pauses, so a long run isn't constant motion. */
+export const WORKING_REST: RestPolicy = { afterMs: 60_000, minMs: 1500, maxMs: 3000 };
+/** Failed: a few seconds of storm, then the cloud holds still and only stirs now and then. */
+export const FAILED_REST: RestPolicy = { afterMs: 8000, minMs: 6000, maxMs: 10_000 };
+/** Done: reviewing settles too. */
+export const REVIEW_REST: RestPolicy = { afterMs: 20_000, minMs: 4000, maxMs: 8000 };
+
+// "Waiting" never rests: it's the one state meant to keep catching the eye until it's answered.
+const REST_FOR: Partial<Record<RowName, RestPolicy>> = {
+  idle: IDLE_REST,
+  running: WORKING_REST,
+  failed: FAILED_REST,
+  review: REVIEW_REST,
+};
+
 export interface Clip {
   name: RowName;
   loop: boolean;
   /** Reduced motion: hold frame 0. */
   still: boolean;
-  /**
-   * A loop that rests on frame 0 for 4-8 s between plays (the idle row only; see `spriteClock.ts`).
-   * Active rows loop back to back.
-   */
-  rest?: boolean;
+  /** Resting between plays; without it the row loops back to back. */
+  rest?: RestPolicy;
   /** Changes whenever the clip should restart from frame 0. */
   key: string;
 }
@@ -83,7 +108,7 @@ export function resolveClip(state: PetState, anim: AnimState, reducedMotion: boo
     return { name, loop: true, still: false, key: name };
   }
   if (anim.oneShot) return { name: anim.oneShot, loop: false, still: false, key: `${anim.oneShot}-${anim.oneShotId}` };
-  return { name: base, loop: true, still: false, rest: base === "idle", key: base };
+  return { name: base, loop: true, still: false, rest: REST_FOR[base], key: base };
 }
 
 /** True when some thread is ready now that wasn't ready in the previous snapshot. */

@@ -23,7 +23,14 @@ function setVisibility(v: DocumentVisibilityState) {
 }
 
 const IDLE_LOOP: Clip = { name: "idle", loop: true, still: false, key: "idle" };
-const IDLE_REST: Clip = { name: "idle", loop: true, still: false, rest: true, key: "idle" };
+const IDLE_REST: Clip = { name: "idle", loop: true, still: false, rest: { afterMs: 0, minMs: 4000, maxMs: 8000 }, key: "idle" };
+const RUNNING_SETTLES: Clip = {
+  name: "running",
+  loop: true,
+  still: false,
+  rest: { afterMs: 2000, minMs: 1000, maxMs: 1000 },
+  key: "running",
+};
 const RUNNING: Clip = { name: "running", loop: true, still: false, key: "running" };
 
 describe("useSpriteClip", () => {
@@ -89,6 +96,22 @@ describe("useSpriteClip", () => {
     advance(1); // rest over: the next cycle starts on frame 0 ...
     expect(frame()).toBe(0);
     advance(280); // ... and plays again
+    expect(frame()).toBe(1);
+  });
+
+  it("plays an active row back to back at first, then finishes the play in progress and rests between plays", () => {
+    render(<Probe clip={RUNNING_SETTLES} />); // the row is 5 x 120 ms + 220 ms = 820 ms
+    advance(940); // second play, no rest before it
+    expect(frame()).toBe(1);
+    advance(1060); // 2 s in: settling starts, but the third play (from 1640 ms) carries on
+    expect(frame()).toBe(3);
+    advance(460); // that play ends at 2460 ms: rest on frame 0
+    expect(frame()).toBe(0);
+    advance(999);
+    expect(frame()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(1); // rest over, the next play starts
+    advance(120);
     expect(frame()).toBe(1);
   });
 
