@@ -236,7 +236,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         let exe = Path::new("/opt/perch");
-        let t = hooks_installer::HookTarget { port: 4545, token: TOKEN, exe };
+        let t = hooks_installer::HookTarget { port: 4545, token: TOKEN, exe: Some(exe) };
         std::fs::write(&path, r#"{"model":"opus"}"#).unwrap();
         hooks_installer::install_file(&path, t, 1).unwrap();
         let mut removed = false;

@@ -35,7 +35,61 @@ const WRITE_ATTEMPTS: usize = 3;
 pub struct HookTarget<'a> {
     pub port: u16,
     pub token: &'a str,
-    pub exe: &'a Path,
+    /// None when this executable can't safely be written into a hook command; the relay events then use HTTP.
+    pub exe: Option<&'a Path>,
+}
+
+/// This executable, judged as a relay command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelayExe {
+    Usable(PathBuf),
+    /// Gone after this run: macOS App Translocation, or running straight from a mounted disk image.
+    Ephemeral(PathBuf),
+    /// Its path has characters that bash and cmd expand differently inside double quotes.
+    Unsafe(PathBuf),
+}
+
+impl RelayExe {
+    pub fn classify(path: PathBuf) -> Self {
+        if is_ephemeral(&path) {
+            RelayExe::Ephemeral(path)
+        } else if !is_relay_safe(&path) {
+            RelayExe::Unsafe(path)
+        } else {
+            RelayExe::Usable(path)
+        }
+    }
+
+    /// What the user can do about a relay Perch can't use, for the setup status.
+    pub fn setup_hint(&self) -> Option<String> {
+        matches!(self, RelayExe::Ephemeral(_)).then(|| {
+            "Move Perch to Applications and open it from there. Until then, Claude Code may show hook errors \
+             while Perch is closed."
+                .to_string()
+        })
+    }
+
+    pub fn usable(&self) -> Option<&Path> {
+        match self {
+            RelayExe::Usable(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+
+/// A path that disappears after this run.
+pub fn is_ephemeral(path: &Path) -> bool {
+    let p = path.to_string_lossy();
+    p.contains("/AppTranslocation/") || p.starts_with("/Volumes/")
+}
+
+/// A path that can go inside double quotes in a hook command and mean the same to bash and cmd.
+pub fn is_relay_safe(path: &Path) -> bool {
+    let Some(p) = path.to_str() else { return false };
+    // `$`, backticks and `"` are live inside double quotes in sh; `%` and `!` in cmd. Backslashes are
+    // Windows separators, but escapes to sh elsewhere.
+    let special = |c: char| matches!(c, '$' | '`' | '"' | '%' | '!') || c.is_control() || (!cfg!(windows) && c == '\\');
+    !p.is_empty() && !p.chars().any(special)
 }
 
 /// How the hooks in settings.json compare with what this build of Perch would install.
@@ -87,29 +141,20 @@ pub fn hook_url(port: u16, token: &str) -> String {
     format!("http://127.0.0.1:{port}/hook/{token}")
 }
 
-/// `"<exe>" --hook-relay <port> <token>`, with the path quoted for the shell that runs hook commands.
+/// `"<exe>" --hook-relay <port> <token>`. Only for paths that pass `is_relay_safe`, which need no escaping.
 pub fn relay_command(exe: &Path, port: u16, token: &str) -> String {
-    let path = exe.display().to_string();
-    // Windows paths can't contain quotes, and a verified hook command there keeps backslashes as they are.
-    // Elsewhere the command runs through sh, where these four characters are special inside double quotes.
-    let quoted = if cfg!(windows) {
-        path
-    } else {
-        path.chars()
-            .flat_map(|c| match c {
-                '\\' | '"' | '$' | '`' => vec!['\\', c],
-                c => vec![c],
-            })
-            .collect()
-    };
-    format!("\"{quoted}\" {RELAY_FLAG} {port} {token}")
+    format!("\"{}\" {RELAY_FLAG} {port} {token}", exe.display())
 }
 
 /// Every hook object Perch installs, with its event.
 pub fn expected(t: HookTarget) -> Vec<(&'static str, Value)> {
     let url = hook_url(t.port, t.token);
     let http = |timeout: u64| json!({ "type": "http", "url": url, "timeout": timeout });
-    let relay = json!({ "type": "command", "command": relay_command(t.exe, t.port, t.token), "async": true });
+    // Without a usable executable, the relay events fall back to HTTP (noisy while Perch is quit, but they work).
+    let relay = match t.exe {
+        Some(exe) => json!({ "type": "command", "command": relay_command(exe, t.port, t.token), "async": true }),
+        None => http(HTTP_TIMEOUT_SECS),
+    };
     let mut out: Vec<(&'static str, Value)> = HTTP_EVENTS.iter().map(|ev| (*ev, http(HTTP_TIMEOUT_SECS))).collect();
     out.push((PERMISSION_EVENT, http(PERMISSION_TIMEOUT_SECS)));
     out.extend(RELAY_EVENTS.iter().map(|ev| (*ev, relay.clone())));
@@ -132,13 +177,23 @@ fn perch_hooks(settings: &Value) -> Vec<(String, Value)> {
     out
 }
 
+/// What a hook entry means to Claude Code: event, type, URL or command, timeout (in ms, so 2 and 2.0 match)
+/// and async. Key order and fields Perch doesn't set don't count.
+type Meaning = (String, Option<String>, Option<String>, Option<String>, Option<i64>, bool);
+
+fn meaning(event: &str, h: &Value) -> Meaning {
+    let text = |k: &str| h.get(k).and_then(Value::as_str).map(str::to_string);
+    let timeout_ms = h.get("timeout").and_then(Value::as_f64).map(|t| (t * 1000.0).round() as i64);
+    let is_async = h.get("async").and_then(Value::as_bool).unwrap_or(false);
+    (event.to_string(), text("type"), text("url"), text("command"), timeout_ms, is_async)
+}
+
 pub fn status(settings: &Value, t: HookTarget) -> HookStatus {
-    let key = |(ev, h): &(String, Value)| (ev.clone(), h.to_string());
-    let mut found: Vec<(String, String)> = perch_hooks(settings).iter().map(key).collect();
+    let mut found: Vec<Meaning> = perch_hooks(settings).iter().map(|(ev, h)| meaning(ev, h)).collect();
     if found.is_empty() {
         return HookStatus::NotInstalled;
     }
-    let mut wanted: Vec<(String, String)> = expected(t).into_iter().map(|(ev, h)| key(&(ev.to_string(), h))).collect();
+    let mut wanted: Vec<Meaning> = expected(t).iter().map(|(ev, h)| meaning(ev, h)).collect();
     found.sort();
     wanted.sort();
     if found == wanted { HookStatus::Current } else { HookStatus::Outdated }
@@ -203,12 +258,20 @@ pub fn install(settings: Value, t: HookTarget) -> Result<Value, String> {
 }
 
 /// The program the relay hooks run: this executable, or the AppImage file itself (its mount path changes every launch).
-pub fn relay_exe() -> Result<PathBuf, String> {
-    #[cfg(target_os = "linux")]
-    if let Some(appimage) = std::env::var_os("APPIMAGE").filter(|p| !p.is_empty()) {
-        return Ok(PathBuf::from(appimage));
-    }
-    std::env::current_exe().map_err(|e| format!("Couldn't find Perch's own program file: {e}"))
+/// Found once per run: the path doesn't change while Perch runs, and the setup status asks every second.
+pub fn relay_exe() -> Result<RelayExe, String> {
+    static RELAY: std::sync::OnceLock<Result<RelayExe, String>> = std::sync::OnceLock::new();
+    RELAY
+        .get_or_init(|| {
+            #[cfg(target_os = "linux")]
+            if let Some(appimage) = std::env::var_os("APPIMAGE").filter(|p| !p.is_empty()) {
+                return Ok(RelayExe::classify(PathBuf::from(appimage)));
+            }
+            std::env::current_exe()
+                .map(RelayExe::classify)
+                .map_err(|e| format!("Couldn't find Perch's own program file: {e}"))
+        })
+        .clone()
 }
 
 pub fn settings_path() -> PathBuf {
@@ -301,6 +364,7 @@ fn update_file_with(
     stamp: i64,
     mut change: impl FnMut(Value) -> Result<Option<Value>, String>,
     mut before_commit: impl FnMut(),
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<bool, String> {
     let io = |e: std::io::Error| format!("Couldn't write {}: {e}", path.display());
     // A symlinked settings.json (dotfiles) stays a symlink: the file it points to is replaced instead.
@@ -325,26 +389,35 @@ fn update_file_with(
             let _ = fs::remove_file(&tmp);
             continue;
         }
-        if let Some(original) = &raw {
-            let backup = backup_path(path, stamp);
-            if let Err(e) = fs::write(&backup, original) {
-                let _ = fs::remove_file(&tmp);
-                return Err(io(e));
+        let backup = match &raw {
+            Some(original) => {
+                let backup = backup_path(path, stamp);
+                if let Err(e) = fs::write(&backup, original) {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(io(e));
+                }
+                keep_permissions(&target, &backup);
+                Some(backup)
             }
-            keep_permissions(&target, &backup);
-            prune_backups(path, MAX_BACKUPS);
-        }
-        if let Err(e) = fs::rename(&tmp, &target) {
+            None => None,
+        };
+        if let Err(e) = rename(&tmp, &target) {
+            // Nothing changed, so leave the folder as it was: no temp file, no extra backup, no pruning.
             let _ = fs::remove_file(&tmp);
+            if let Some(b) = backup {
+                let _ = fs::remove_file(b);
+            }
             return Err(io(e));
         }
+        // Only once the new file is in place do the old backups go.
+        prune_backups(path, MAX_BACKUPS);
         return Ok(true);
     }
     Err(format!("{} kept changing while Perch was updating it. Try again in a moment.", path.display()))
 }
 
 fn update_file(path: &Path, stamp: i64, change: impl FnMut(Value) -> Result<Option<Value>, String>) -> Result<bool, String> {
-    update_file_with(path, stamp, change, || {})
+    update_file_with(path, stamp, change, || {}, |from, to| fs::rename(from, to))
 }
 
 pub fn install_file(path: &Path, t: HookTarget, stamp: i64) -> Result<(), String> {
@@ -407,7 +480,7 @@ mod tests {
     }
 
     fn target(port: u16, exe: &Path) -> HookTarget<'_> {
-        HookTarget { port, token: TOKEN, exe }
+        HookTarget { port, token: TOKEN, exe: Some(exe) }
     }
 
     fn foreign() -> Value {
@@ -466,11 +539,93 @@ mod tests {
             relay_command(Path::new(r"C:\Program Files\Perch App\perch.exe"), 1, TOKEN),
             format!("\"C:\\Program Files\\Perch App\\perch.exe\" --hook-relay 1 {TOKEN}")
         );
-        #[cfg(not(windows))]
-        assert_eq!(
-            relay_command(Path::new("/home/a \"b\"/$x`y`\\z/perch"), 1, TOKEN),
-            format!("\"/home/a \\\"b\\\"/\\$x\\`y\\`\\\\z/perch\" --hook-relay 1 {TOKEN}")
-        );
+    }
+
+    #[test]
+    fn relay_paths_with_shell_characters_are_not_used() {
+        for bad in ["/opt/a$b/perch", "/opt/a`b`/perch", "/opt/a\"b/perch", "/opt/100%/perch", "/opt/hi!/perch", "/opt/a\nb/perch"] {
+            assert!(!is_relay_safe(Path::new(bad)), "{bad}");
+            assert_eq!(RelayExe::classify(PathBuf::from(bad)), RelayExe::Unsafe(PathBuf::from(bad)));
+        }
+        for good in ["/opt/Perch App/perch", "/home/jane/.local/bin/perch", "/opt/(x) [y] & 'z'/perch"] {
+            assert!(is_relay_safe(Path::new(good)), "{good}");
+        }
+        assert!(is_relay_safe(Path::new(r"C:\Users\Jane Doe\AppData\Local\Perch\perch.exe")) == cfg!(windows));
+        let usable = RelayExe::classify(exe());
+        assert_eq!(usable.usable(), Some(exe().as_path()));
+    }
+
+    #[test]
+    fn ephemeral_paths_are_not_used() {
+        for gone in [
+            "/private/var/folders/xy/T/AppTranslocation/0A1B/d/Perch.app/Contents/MacOS/perch",
+            "/Volumes/Perch 1.0.0/Perch.app/Contents/MacOS/perch",
+        ] {
+            assert!(is_ephemeral(Path::new(gone)), "{gone}");
+            assert_eq!(RelayExe::classify(PathBuf::from(gone)).usable(), None);
+            assert!(matches!(RelayExe::classify(PathBuf::from(gone)), RelayExe::Ephemeral(_)));
+        }
+        for stays in ["/Applications/Perch.app/Contents/MacOS/perch", "/Users/jane/Applications/Perch.app/Contents/MacOS/perch", "/opt/Volumes/perch"] {
+            assert!(!is_ephemeral(Path::new(stays)), "{stays}");
+        }
+    }
+
+    #[test]
+    fn only_an_ephemeral_path_asks_the_user_to_move_perch() {
+        let hint = RelayExe::Ephemeral(PathBuf::from("/Volumes/Perch/Perch.app/Contents/MacOS/perch")).setup_hint().unwrap();
+        assert!(hint.contains("Move Perch to Applications"), "{hint}");
+        assert_eq!(RelayExe::Usable(exe()).setup_hint(), None);
+        assert_eq!(RelayExe::Unsafe(PathBuf::from("/opt/a$b/perch")).setup_hint(), None);
+    }
+
+    #[test]
+    fn without_a_usable_relay_the_async_events_use_http() {
+        let exe = exe();
+        let t = HookTarget { port: 4545, token: TOKEN, exe: None };
+        let v = install(json!({}), t).unwrap();
+        let url = hook_url(4545, TOKEN);
+        for ev in RELAY_EVENTS {
+            assert_eq!(v["hooks"][ev], json!([{ "hooks": [ { "type": "http", "url": url, "timeout": 2 } ] }]), "{ev}");
+        }
+        assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 75);
+        assert!(!v.to_string().contains("--hook-relay"));
+        assert_eq!(status(&v, t), HookStatus::Current);
+        // Once a usable path exists (Perch moved to Applications), the HTTP fallback is outdated, and back.
+        assert_eq!(status(&v, target(4545, &exe)), HookStatus::Outdated);
+        assert_eq!(status(&install(json!({}), target(4545, &exe)).unwrap(), t), HookStatus::Outdated);
+        assert_eq!(uninstall(v), json!({}));
+    }
+
+    #[test]
+    fn status_compares_entries_by_meaning() {
+        let exe = exe();
+        let t = target(4545, &exe);
+        let url = hook_url(4545, TOKEN);
+        let cmd = relay_command(&exe, 4545, TOKEN);
+        let mut hooks = serde_json::Map::new();
+        for ev in HTTP_EVENTS {
+            // Other key order, 2.0 instead of 2, an explicit "async": false and an extra field.
+            hooks.insert(ev.into(), json!([{ "hooks": [ { "timeout": 2.0, "url": url, "async": false, "statusMessage": "x", "type": "http" } ] }]));
+        }
+        hooks.insert("PermissionRequest".into(), json!([{ "hooks": [ { "url": url, "type": "http", "timeout": 75 } ] }]));
+        for ev in RELAY_EVENTS {
+            hooks.insert(ev.into(), json!([{ "hooks": [ { "async": true, "command": cmd, "type": "command", "extra": [1] } ] }]));
+        }
+        let v = json!({ "hooks": hooks });
+        assert_eq!(status(&v, t), HookStatus::Current);
+
+        let mut not_async = v.clone();
+        not_async["hooks"]["Stop"][0]["hooks"][0].as_object_mut().unwrap().remove("async");
+        assert_eq!(status(&not_async, t), HookStatus::Outdated);
+        let mut other_timeout = v.clone();
+        other_timeout["hooks"]["SessionStart"][0]["hooks"][0]["timeout"] = json!(2.5);
+        assert_eq!(status(&other_timeout, t), HookStatus::Outdated);
+        let mut missing_timeout = v.clone();
+        missing_timeout["hooks"]["SessionStart"][0]["hooks"][0].as_object_mut().unwrap().remove("timeout");
+        assert_eq!(status(&missing_timeout, t), HookStatus::Outdated);
+        let mut wrong_type = v;
+        wrong_type["hooks"]["SessionStart"][0]["hooks"][0]["type"] = json!("command");
+        assert_eq!(status(&wrong_type, t), HookStatus::Outdated);
     }
 
     #[test]
@@ -509,7 +664,7 @@ mod tests {
         assert_eq!(status(&current, t), HookStatus::Current);
 
         let moved = Path::new("/elsewhere/perch");
-        assert_eq!(status(&current, HookTarget { exe: moved, ..t }), HookStatus::Outdated);
+        assert_eq!(status(&current, HookTarget { exe: Some(moved), ..t }), HookStatus::Outdated);
         assert_eq!(status(&current, HookTarget { token: OTHER, ..t }), HookStatus::Outdated);
 
         let mut missing_one = current.clone();
@@ -675,6 +830,30 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_commit_leaves_the_folder_as_it_was() {
+        let exe = exe();
+        let t = target(4545, &exe);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"model":"opus"}"#).unwrap();
+        let old: Vec<String> = (1..=7).map(|n| format!("{BACKUP_PREFIX}{n}")).collect();
+        for name in &old {
+            std::fs::write(dir.path().join(name), "{}").unwrap();
+        }
+        let failing_rename = |_: &Path, _: &Path| Err(std::io::Error::other("disk full"));
+        let err = update_file_with(&path, 100, |v| install(v, t).map(Some), || {}, failing_rename).unwrap_err();
+        assert!(err.contains("disk full"), "{err}");
+        let mut names: Vec<String> =
+            std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+        names.sort();
+        let mut want = old.clone();
+        want.push("settings.json".into());
+        want.sort();
+        assert_eq!(names, want, "no pruning, no new backup, no temp file");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), r#"{"model":"opus"}"#);
+    }
+
+    #[test]
     fn retries_when_the_file_changes_underneath() {
         let exe = exe();
         let t = target(4545, &exe);
@@ -682,12 +861,18 @@ mod tests {
         let path = dir.path().join("settings.json");
         std::fs::write(&path, r#"{"model":"opus"}"#).unwrap();
         let mut races = 0;
-        let changed = update_file_with(&path, 5, |v| install(v, t).map(Some), || {
-            if races == 0 {
-                std::fs::write(&path, r#"{"model":"sonnet"}"#).unwrap();
-            }
-            races += 1;
-        })
+        let changed = update_file_with(
+            &path,
+            5,
+            |v| install(v, t).map(Some),
+            || {
+                if races == 0 {
+                    std::fs::write(&path, r#"{"model":"sonnet"}"#).unwrap();
+                }
+                races += 1;
+            },
+            |a, b| std::fs::rename(a, b),
+        )
         .unwrap();
         assert!(changed);
         assert_eq!(races, 2);
@@ -698,10 +883,16 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.path().join("settings.json.perch-backup-5")).unwrap(), r#"{"model":"sonnet"}"#);
 
         let mut n = 0;
-        let err = update_file_with(&path, 6, |v| install(v, t).map(Some), || {
-            n += 1;
-            std::fs::write(&path, format!(r#"{{"model":"m{n}"}}"#)).unwrap();
-        })
+        let err = update_file_with(
+            &path,
+            6,
+            |v| install(v, t).map(Some),
+            || {
+                n += 1;
+                std::fs::write(&path, format!(r#"{{"model":"m{n}"}}"#)).unwrap();
+            },
+            |a, b| std::fs::rename(a, b),
+        )
         .unwrap_err();
         assert_eq!(n, 3);
         assert!(err.contains("kept changing"), "{err}");
@@ -740,7 +931,7 @@ mod tests {
 
         // A moved executable counts as outdated.
         let moved = Path::new("/new/home/perch");
-        assert_eq!(migrate_file(&path, HookTarget { exe: moved, ..t }, 4).unwrap(), Migration::Migrated);
+        assert_eq!(migrate_file(&path, HookTarget { exe: Some(moved), ..t }, 4).unwrap(), Migration::Migrated);
         assert!(read_settings(&path).unwrap().to_string().contains("/new/home/perch"));
     }
 

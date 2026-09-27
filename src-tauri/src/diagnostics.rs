@@ -11,7 +11,7 @@ use tauri::{plugin::TauriPlugin, AppHandle, Manager, Runtime};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 use crate::{
-    hooks_installer::{self, HookStatus},
+    hooks_installer::{self, HookStatus, RelayExe},
     locator,
     locks::lock,
     money_guard::AuthVerdict,
@@ -236,6 +236,13 @@ fn hooks_text(app: &AppHandle, declined: bool) -> String {
         Some(Ok(HookStatus::NotInstalled)) => "not installed".to_string(),
         Some(Err(e)) => format!("unknown ({e})"),
     };
+    let relay = match hooks_installer::relay_exe() {
+        Ok(RelayExe::Usable(_)) => "relay command",
+        Ok(RelayExe::Ephemeral(_)) => "HTTP for Stop/StopFailure/SessionEnd (Perch runs from a temporary location)",
+        Ok(RelayExe::Unsafe(_)) => "HTTP for Stop/StopFailure/SessionEnd (Perch's path has shell characters)",
+        Err(_) => "unknown",
+    };
+    let status = format!("{status}; async events via {relay}");
     if declined { format!("{status}; declined in Perch") } else { status }
 }
 

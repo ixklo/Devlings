@@ -5,7 +5,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
     diagnostics,
-    hooks_installer::{self, HookTarget},
+    hooks_installer::{self, HookTarget, RelayExe},
     locks::lock,
     money_guard::AuthVerdict,
     overlay::{self, HitRect},
@@ -46,7 +46,16 @@ pub fn set_pet_name(app: AppHandle, name: String) -> CmdResult<Snapshot> {
 
 fn install_on_port(app: &AppHandle, new_port: bool) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
-    let exe = hooks_installer::relay_exe()?;
+    let relay = hooks_installer::relay_exe()?;
+    match &relay {
+        RelayExe::Usable(_) => {}
+        RelayExe::Ephemeral(exe) => {
+            log::warn!("Perch runs from a temporary location, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+        }
+        RelayExe::Unsafe(exe) => {
+            log::warn!("Perch's path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+        }
+    }
     let (port, token) = {
         let mut c = lock(&s.config);
         let port = match c.hook_port {
@@ -61,7 +70,8 @@ fn install_on_port(app: &AppHandle, new_port: bool) -> CmdResult<Snapshot> {
     };
     s.save_config();
     let path = hooks_installer::settings_path();
-    if let Err(e) = hooks_installer::install_file(&path, HookTarget { port, token: &token, exe: &exe }, now_ms() / 1000) {
+    let target = HookTarget { port, token: &token, exe: relay.usable() };
+    if let Err(e) = hooks_installer::install_file(&path, target, now_ms() / 1000) {
         log::error!("Installing hooks failed: {e}");
         return Err(e);
     }

@@ -18,7 +18,7 @@ use tauri_plugin_notification::NotificationExt;
 use crate::{
     events::{Kind, PetEvent, Source},
     hook_server::{HookServer, EMPTY_ANSWER},
-    hooks_installer::{self, HookStatus, HookTarget, Migration},
+    hooks_installer::{self, HookStatus, HookTarget, Migration, RelayExe},
     locator::{self, Located},
     locks::lock,
     money_guard::AuthVerdict,
@@ -107,6 +107,8 @@ pub struct SetupStatus {
     pub hooks_installed: bool,
     pub auth: Option<AuthVerdict>,
     pub hook_server_error: Option<String>,
+    /// Something the user should do that doesn't block setup, e.g. "Move Perch to Applications…".
+    pub setup_hint: Option<String>,
     pub needs_setup: bool,
 }
 
@@ -139,6 +141,7 @@ fn setup_status(s: &AppState) -> SetupStatus {
         hooks_installed,
         auth,
         hook_server_error,
+        setup_hint: hooks_installer::relay_exe().ok().and_then(|r| r.setup_hint()),
         needs_setup,
     }
 }
@@ -300,9 +303,9 @@ pub fn hook_status(app: &AppHandle) -> Option<Result<HookStatus, String>> {
         (c.hook_port, c.hook_token.clone())
     };
     let (port, token) = (port?, token?);
-    Some(hooks_installer::relay_exe().and_then(|exe| {
+    Some(hooks_installer::relay_exe().and_then(|relay| {
         let settings = hooks_installer::read_settings(&hooks_installer::settings_path())?;
-        Ok(hooks_installer::status(&settings, HookTarget { port, token: &token, exe: &exe }))
+        Ok(hooks_installer::status(&settings, HookTarget { port, token: &token, exe: relay.usable() }))
     }))
 }
 
@@ -314,15 +317,24 @@ fn migrate_hooks(app: &AppHandle) {
         (c.hook_port, c.hook_token.clone())
     };
     let (Some(port), Some(token)) = (port, token) else { return };
-    let exe = match hooks_installer::relay_exe() {
-        Ok(exe) => exe,
+    let relay = match hooks_installer::relay_exe() {
+        Ok(RelayExe::Ephemeral(exe)) => {
+            // Writing this path would leave hooks pointing at a program that is gone after this run.
+            log::warn!("Hook migration skipped: Perch is running from a temporary location ({})", exe.display());
+            return;
+        }
+        Ok(relay) => relay,
         Err(e) => {
             log::error!("Hook migration skipped: {e}");
             return;
         }
     };
+    if let RelayExe::Unsafe(exe) = &relay {
+        log::warn!("Perch's path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display());
+    }
     let path = hooks_installer::settings_path();
-    match hooks_installer::migrate_file(&path, HookTarget { port, token: &token, exe: &exe }, now_ms() / 1000) {
+    let target = HookTarget { port, token: &token, exe: relay.usable() };
+    match hooks_installer::migrate_file(&path, target, now_ms() / 1000) {
         Ok(Migration::Migrated) => log::info!("Hooks updated to this version's entries in {}", path.display()),
         Ok(Migration::UpToDate) => log::info!("Hooks are up to date"),
         Ok(Migration::NotInstalled) => log::info!("Hooks aren't installed"),
