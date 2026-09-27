@@ -73,6 +73,19 @@ describe("useHitRegions", () => {
     ]);
   });
 
+  it("re-reports as soon as a hidden page is shown again", async () => {
+    // A hidden window hides its page (design D17), whose timers are throttled; re-check on show.
+    const send = vi.fn();
+    const { container } = render(<Overlay send={send} />);
+    act(() => void vi.advanceTimersByTime(HIT_THROTTLE_MS));
+    const count = send.mock.calls.length;
+    box(container.querySelector("button"), rect(0, 480, 100, 120)); // moved without any DOM change
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    act(() => void vi.advanceTimersByTime(HIT_THROTTLE_MS));
+    expect(send.mock.calls.length).toBe(count + 1);
+    expect(send).toHaveBeenLastCalledWith([{ x: 0, y: 480, w: 100, h: 120 }]);
+  });
+
   it("skips sending an unchanged set", () => {
     const send = vi.fn();
     const { getByText } = render(<Overlay send={send} />);

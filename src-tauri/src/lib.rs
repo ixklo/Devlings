@@ -54,6 +54,7 @@ pub fn run() {
             let handle = app.handle().clone();
             shell::setup_tray(&handle)?;
             shell::register_shortcut(&handle);
+            shell::hide_settings_page_at_startup(&handle);
             overlay::place_pet(&handle);
             overlay::start_click_through(handle.clone());
             updater::start(handle.clone());

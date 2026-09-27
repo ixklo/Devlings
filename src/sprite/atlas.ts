@@ -60,12 +60,17 @@ export function frameAt(durations: readonly number[], elapsed: number, loop: boo
   return { frame: 0, done: false, nextIn: durations[0] };
 }
 
+/** CSS `background-position` that shows one cell at scale `s`. */
+export function cellPosition(row: number, frame: number, s: number): string {
+  return `${-frame * CELL_W * s}px ${-row * CELL_H * s}px`;
+}
+
+/** A cell's box and the sheet's size at scale `s`: everything but which cell shows. */
+export function cellBox(s: number) {
+  return { width: CELL_W * s, height: CELL_H * s, backgroundSize: `${ATLAS_W * s}px ${ATLAS_H * s}px` };
+}
+
 /** CSS background geometry for one cell at scale `s`. */
 export function cellStyle(row: number, frame: number, s: number) {
-  return {
-    width: CELL_W * s,
-    height: CELL_H * s,
-    backgroundSize: `${ATLAS_W * s}px ${ATLAS_H * s}px`,
-    backgroundPosition: `${-frame * CELL_W * s}px ${-row * CELL_H * s}px`,
-  };
+  return { ...cellBox(s), backgroundPosition: cellPosition(row, frame, s) };
 }
