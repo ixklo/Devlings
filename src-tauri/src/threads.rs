@@ -168,6 +168,10 @@ impl Threads {
 
     fn apply_live(&mut self, e: &PetEvent) -> Applied {
         let Some(status) = status_for(e.kind) else {
+            // A result the user hasn't seen stays until they have: a headless run ends right after it finishes.
+            if self.map.get(&e.session_id).is_some_and(|en| en.info.unread && is_result(en.info.status)) {
+                return Applied::default();
+            }
             return Applied { changed: self.map.remove(&e.session_id).is_some(), alert: None };
         };
         let before = self.map.get(&e.session_id).map(|en| en.info.clone());
@@ -355,6 +359,23 @@ mod tests {
         assert!(t.apply(&ev("a", Kind::Ended, 1)).changed);
         assert!(t.get("a").is_none());
         assert!(!t.apply(&ev("a", Kind::Ended, 2)).changed);
+    }
+
+    /// A headless run ends right after it finishes; its result must stay until the user has seen it.
+    #[test]
+    fn ending_keeps_an_unseen_result() {
+        for (kind, status) in [(Kind::Done, ThreadStatus::Ready), (Kind::Failed, ThreadStatus::Blocked)] {
+            let mut t = Threads::default();
+            t.apply(&ev("a", Kind::Step, 0));
+            t.apply(&ev("a", kind, 1));
+            assert!(!t.apply(&ev("a", Kind::Ended, 2)).changed, "{kind:?}");
+            let kept = t.get("a").unwrap();
+            assert_eq!((kept.status, kept.unread), (status, true), "{kind:?}");
+            // Once seen, the next end removes it as usual.
+            t.mark_viewed("a");
+            t.apply(&ev("a", Kind::Ended, 3));
+            assert!(t.get("a").is_none(), "{kind:?}");
+        }
     }
 
     /// Stop and SessionEnd arrive through separate relay processes, so a Stop can land after its SessionEnd.
