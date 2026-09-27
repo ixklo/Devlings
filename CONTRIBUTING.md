@@ -31,7 +31,7 @@ Design docs live in `docs/specs/`; release gates and evidence live in `docs/rele
 ## Before opening a pull request
 
 - `npm test`, `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml` and `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings` should all pass locally — CI runs the same checks on Windows, macOS and Linux and will block on any of them.
-- If you touched a dependency, `cargo deny check` and `npm audit --omit=dev` run in CI too; a new license or advisory needs a documented exception in `deny.toml`, not a silent pass.
+- If you touched a dependency, CI also runs `cargo deny check` (Linux only, but it checks the whole dependency graph for every target, including Windows- and macOS-only crates) and `npm audit --omit=dev` (all three OSes); a new license or advisory needs a documented exception in `deny.toml`, not a silent pass.
 - If you added or changed a shipped dependency (a Rust crate in `src-tauri/Cargo.toml`'s `[dependencies]`, or an npm package in `package.json`'s `dependencies`), regenerate the notices: `npm run notices:generate` (needs `cargo install cargo-about --locked --features cli` once), and commit the updated `THIRD_PARTY_NOTICES.md`.
 - Keep `src/` and `src-tauri/src/` changes covered by tests where practical; CI's smoke-test job only checks that the app launches and doesn't panic, it isn't a substitute for unit tests.
 - Add a line to `CHANGELOG.md` under `[Unreleased]` for anything a user would notice.

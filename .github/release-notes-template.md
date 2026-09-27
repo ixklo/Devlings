@@ -27,7 +27,7 @@ Perch checks GitHub for updates at launch and once a day, and installs signed up
 | Windows 10/11 | `Perch_[X.Y.Z]_x64-setup.exe` |
 | macOS (Apple Silicon and Intel) | `Perch_[X.Y.Z]_universal.dmg` |
 | Linux (AppImage) | `Perch_[X.Y.Z]_amd64.AppImage` |
-| Linux (.deb) | `perch_[X.Y.Z]_amd64.deb` |
+| Linux (.deb) | `Perch_[X.Y.Z]_amd64.deb` |
 
 ## Checksums and provenance
 

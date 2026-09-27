@@ -2,7 +2,11 @@
 # ships in the installers, not this repo's dev tooling).
 #
 # Run locally:   cargo deny --manifest-path src-tauri/Cargo.toml check
-# CI runs this via EmbarkStudios/cargo-deny-action on every OS in the matrix.
+# CI runs this via EmbarkStudios/cargo-deny-action on the Linux leg of the
+# test matrix only (it's a container action, so it can't run on Windows or
+# macOS runners); `cargo metadata` still reports the whole dependency graph
+# for every target from there, including Windows- and macOS-only crates, so
+# nothing platform-specific is skipped.
 # Docs: https://embarkstudios.github.io/cargo-deny/
 
 [graph]

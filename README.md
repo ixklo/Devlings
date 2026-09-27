@@ -40,7 +40,7 @@ The installers aren't code-signed by a paid certificate, so each OS shows an unf
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info**, then **Run anyway**.
 - **macOS:** Gatekeeper blocks the first launch. Since macOS 15, Control-click → Open no longer bypasses this, so instead: open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway** next to Perch, then confirm in the dialog that follows. macOS builds are ad-hoc signed (not notarized), which is why this step is needed.
 - **Linux (AppImage):** make it executable first — `chmod +x Perch_*.AppImage` — then run it.
-- **Linux (.deb):** `sudo apt install ./perch_*.deb` (or double-click it in a graphical package installer).
+- **Linux (.deb):** `sudo apt install ./Perch_*.deb` (or double-click it in a graphical package installer).
 
 ## Updates
 

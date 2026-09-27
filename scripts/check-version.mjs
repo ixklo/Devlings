@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { getCargoTomlVersion, getCargoLockPackageVersion } from "./lib/cargo-files.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -23,21 +24,42 @@ for (let i = 0; i < args.length; i++) {
 
 const versions = {};
 
-const pkg = readJson(path.join(root, "package.json"));
-versions["package.json"] = pkg.version;
+try {
+  const pkg = readJson(path.join(root, "package.json"));
+  versions["package.json"] = pkg.version;
+} catch (e) {
+  versions["package.json"] = null;
+}
 
-const lock = readJson(path.join(root, "package-lock.json"));
-versions["package-lock.json (root)"] = lock.version;
-versions['package-lock.json (packages[""])'] = lock.packages?.[""]?.version;
+try {
+  const lock = readJson(path.join(root, "package-lock.json"));
+  versions["package-lock.json (root)"] = lock.version;
+  versions['package-lock.json (packages[""])'] = lock.packages?.[""]?.version;
+} catch (e) {
+  versions["package-lock.json (root)"] = null;
+  versions['package-lock.json (packages[""])'] = null;
+}
 
-const cargoToml = readFileSync(path.join(root, "src-tauri", "Cargo.toml"), "utf8");
-versions["src-tauri/Cargo.toml"] = cargoToml.match(/\[package\][^[]*?\r?\nversion\s*=\s*"([^"]*)"/)?.[1];
+try {
+  const cargoToml = readFileSync(path.join(root, "src-tauri", "Cargo.toml"), "utf8");
+  versions["src-tauri/Cargo.toml"] = getCargoTomlVersion(cargoToml);
+} catch (e) {
+  versions["src-tauri/Cargo.toml"] = null;
+}
 
-const cargoLock = readFileSync(path.join(root, "src-tauri", "Cargo.lock"), "utf8");
-versions["src-tauri/Cargo.lock"] = cargoLock.match(/\[\[package\]\]\r?\nname = "perch"\r?\nversion = "([^"]*)"/)?.[1];
+try {
+  const cargoLock = readFileSync(path.join(root, "src-tauri", "Cargo.lock"), "utf8");
+  versions["src-tauri/Cargo.lock"] = getCargoLockPackageVersion(cargoLock, "perch");
+} catch (e) {
+  versions["src-tauri/Cargo.lock"] = null;
+}
 
-const tauriConf = readJson(path.join(root, "src-tauri", "tauri.conf.json"));
-versions["src-tauri/tauri.conf.json"] = tauriConf.version;
+try {
+  const tauriConf = readJson(path.join(root, "src-tauri", "tauri.conf.json"));
+  versions["src-tauri/tauri.conf.json"] = tauriConf.version;
+} catch (e) {
+  versions["src-tauri/tauri.conf.json"] = null;
+}
 
 if (tag) {
   const m = tag.match(/^v(\d+\.\d+\.\d+(?:-rc\.\d+)?)$/);

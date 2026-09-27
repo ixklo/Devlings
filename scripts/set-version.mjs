@@ -3,10 +3,16 @@
 // src-tauri/Cargo.toml, src-tauri/Cargo.lock (the `perch` entry) and
 // src-tauri/tauri.conf.json. Run `npm run version:check` after to confirm.
 //
+// Every file is read and validated (the version line/field is confirmed to
+// exist) before anything is written, so a file this script doesn't
+// recognize aborts the whole run rather than leaving the version bumped in
+// some files and not others.
+//
 // Usage: node scripts/set-version.mjs <x.y.z[-rc.N]>
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { getCargoTomlVersion, setCargoTomlVersion, getCargoLockPackageVersion, setCargoLockPackageVersion } from "./lib/cargo-files.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,44 +37,49 @@ function writeJson(file, data) {
   writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 }
 
-const touched = [];
-
-// package.json
 const pkgPath = path.join(root, "package.json");
-const pkg = readJson(pkgPath);
+const lockPath = path.join(root, "package-lock.json");
+const cargoTomlPath = path.join(root, "src-tauri", "Cargo.toml");
+const cargoLockPath = path.join(root, "src-tauri", "Cargo.lock");
+const tauriConfPath = path.join(root, "src-tauri", "tauri.conf.json");
+
+// --- Validate every file first. Nothing is written until every read below
+// has succeeded, so a missing file or section aborts before any file is
+// touched, rather than leaving the version bumped in some files and not
+// others. ---
+
+let pkg, lock, cargoTomlText, cargoLockText, tauriConf;
+try {
+  pkg = readJson(pkgPath);
+  lock = readJson(lockPath);
+  if (!lock.packages?.[""]) throw new Error(`package-lock.json: packages[""] entry not found`);
+
+  cargoTomlText = readFileSync(cargoTomlPath, "utf8");
+  getCargoTomlVersion(cargoTomlText); // throws if [package] version isn't found
+
+  cargoLockText = readFileSync(cargoLockPath, "utf8");
+  getCargoLockPackageVersion(cargoLockText, "perch"); // throws if the perch entry isn't found
+
+  tauriConf = readJson(tauriConfPath);
+} catch (e) {
+  fail(`validation failed, nothing was written: ${e.message}`);
+}
+
+// --- Everything validated: now write every file. ---
+
 pkg.version = version;
 writeJson(pkgPath, pkg);
-touched.push("package.json");
 
-// package-lock.json: the root version and the packages[""] entry
-const lockPath = path.join(root, "package-lock.json");
-const lock = readJson(lockPath);
 lock.version = version;
-if (lock.packages?.[""]) lock.packages[""].version = version;
+lock.packages[""].version = version;
 writeJson(lockPath, lock);
-touched.push("package-lock.json");
 
-// src-tauri/Cargo.toml: the [package] version
-const cargoTomlPath = path.join(root, "src-tauri", "Cargo.toml");
-const cargoToml = readFileSync(cargoTomlPath, "utf8");
-const cargoTomlRe = /(\[package\][^[]*?\r?\nversion\s*=\s*)"[^"]*"/;
-if (!cargoTomlRe.test(cargoToml)) fail("couldn't find [package] version in src-tauri/Cargo.toml");
-writeFileSync(cargoTomlPath, cargoToml.replace(cargoTomlRe, (_m, pre) => `${pre}"${version}"`));
-touched.push("src-tauri/Cargo.toml");
+writeFileSync(cargoTomlPath, setCargoTomlVersion(cargoTomlText, version));
+writeFileSync(cargoLockPath, setCargoLockPackageVersion(cargoLockText, "perch", version));
 
-// src-tauri/Cargo.lock: the `perch` package entry
-const cargoLockPath = path.join(root, "src-tauri", "Cargo.lock");
-const cargoLock = readFileSync(cargoLockPath, "utf8");
-const cargoLockRe = /(\[\[package\]\]\r?\nname = "perch"\r?\nversion = )"[^"]*"/;
-if (!cargoLockRe.test(cargoLock)) fail("couldn't find the perch entry in src-tauri/Cargo.lock");
-writeFileSync(cargoLockPath, cargoLock.replace(cargoLockRe, (_m, pre) => `${pre}"${version}"`));
-touched.push("src-tauri/Cargo.lock");
-
-// src-tauri/tauri.conf.json
-const tauriConfPath = path.join(root, "src-tauri", "tauri.conf.json");
-const tauriConf = readJson(tauriConfPath);
 tauriConf.version = version;
 writeJson(tauriConfPath, tauriConf);
-touched.push("src-tauri/tauri.conf.json");
 
-console.log(`set-version: ${version} written to:\n  ${touched.join("\n  ")}`);
+console.log(
+  `set-version: ${version} written to:\n  package.json\n  package-lock.json\n  src-tauri/Cargo.toml\n  src-tauri/Cargo.lock\n  src-tauri/tauri.conf.json`,
+);

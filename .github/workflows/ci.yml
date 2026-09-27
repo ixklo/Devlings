@@ -16,13 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+        uses: ./.github/actions/linux-deps
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -40,7 +34,10 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: cargo-deny
-        # A container action, so Linux runners only; the dependency graph is checked for every target from there.
+        # A container action, so Linux runners only. cargo-deny reads the
+        # whole dependency graph from Cargo.lock either way (every target,
+        # not just the host's), so Windows/macOS-only crates are still
+        # covered from here — see deny.toml's header comment.
         if: runner.os == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -58,15 +55,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            xvfb \
-            imagemagick
+        uses: ./.github/actions/linux-deps
+        with:
+          extra-packages: "xvfb imagemagick"
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -78,60 +69,8 @@ jobs:
       - run: npm ci
       - name: Build debug binary (embedded frontend, no installer)
         run: npm run tauri build -- --debug --no-bundle
-      - name: Launch, wait, screenshot (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          set -e
-          BIN=src-tauri/target/debug/perch
-          chmod +x "$BIN"
-          Xvfb :99 -screen 0 1920x1080x24 &
-          XVFB_PID=$!
-          sleep 2
-          export DISPLAY=:99
-          "$BIN" > smoke.log 2>&1 &
-          APP_PID=$!
-          sleep 60
-          if ! kill -0 "$APP_PID" 2>/dev/null; then
-            echo "::error::app exited before the 60s smoke window ended"
-            cat smoke.log
-            exit 1
-          fi
-          if grep -iq "panic" smoke.log; then
-            echo "::error::panic found in app output"
-            cat smoke.log
-            exit 1
-          fi
-          import -window root smoke-screenshot.png
-          kill "$APP_PID" 2>/dev/null || true
-          kill "$XVFB_PID" 2>/dev/null || true
-      - name: Launch, wait, screenshot (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          set -e
-          BIN=src-tauri/target/debug/perch
-          chmod +x "$BIN"
-          "$BIN" > smoke.log 2>&1 &
-          APP_PID=$!
-          sleep 60
-          if ! kill -0 "$APP_PID" 2>/dev/null; then
-            echo "::error::app exited before the 60s smoke window ended"
-            cat smoke.log
-            exit 1
-          fi
-          if grep -iq "panic" smoke.log; then
-            echo "::error::panic found in app output"
-            cat smoke.log
-            exit 1
-          fi
-          # Best-effort: GitHub's macOS runners can refuse screencapture over
-          # a TCC (Screen Recording) permission prompt that CI can't answer.
-          # That doesn't affect the pass/fail result above, which is what
-          # gate G4.1 actually requires; a missing screenshot here is noted
-          # in the job summary instead of failing the job.
-          if ! screencapture -x smoke-screenshot.png; then
-            echo "::warning::screencapture failed (likely a CI Screen Recording permission gap); app itself ran fine for 60s with no panic"
-          fi
-          kill "$APP_PID" 2>/dev/null || true
+      - name: Launch, wait, screenshot
+        run: bash .github/scripts/smoke-test.sh
       - name: Upload smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4

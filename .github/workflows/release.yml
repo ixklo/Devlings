@@ -7,17 +7,65 @@ permissions:
 jobs:
   version-check:
     runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: node scripts/check-version.mjs --tag ${{ github.ref_name }}
+      - run: node scripts/check-version.mjs --tag "$TAG"
 
-  build:
+  # Creates the (always draft) release up front, so the three platform
+  # builds below attach assets to one release by id instead of each trying
+  # to find-or-create a release by tag name, which raced (duplicate drafts,
+  # and a latest.json read-modify-write race across the three parallel
+  # jobs).
+  create-release:
     needs: version-check
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    env:
+      TAG: ${{ github.ref_name }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create draft release
+        id: create
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            --title "Perch $TAG" \
+            --draft \
+            --notes "$(cat <<'EOF'
+          Draft release, still being built.
+
+          Before hitting "Publish":
+
+          1. Wait for this tag's release workflow run to finish. It attaches
+             `SHA256SUMS.txt`, `latest.json` and a build-provenance
+             attestation for every asset once all three platform builds
+             succeed.
+          2. Write the real notes using `.github/release-notes-template.md`
+             and this version's entry in `CHANGELOG.md`.
+
+          (An `-rc` tag publishes itself automatically as a pre-release,
+          with a short placeholder body, once its build finishes — this
+          draft-with-instructions text is only what non-`-rc` tags keep
+          until a person publishes them.)
+          EOF
+          )"
+          id=$(gh release view "$TAG" --repo "$REPO" --json databaseId --jq .databaseId)
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -33,13 +81,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
+        uses: ./.github/actions/linux-deps
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -57,20 +99,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Perch ${{ github.ref_name }}"
-          releaseBody: |
-            Draft release, not yet published. Before hitting "Publish":
-
-            1. Write the real notes using `.github/release-notes-template.md`
-               and this version's entry in `CHANGELOG.md`.
-            2. Confirm `SHA256SUMS.txt` and the build-provenance attestations
-               were attached by the follow-up job on this tag's workflow run.
-            3. Confirm this is meant to go out as Latest (or as a pre-release,
-               for an `-rc` tag) before publishing.
-          releaseDraft: ${{ !contains(github.ref_name, '-rc') }}
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
-          includeUpdaterJson: true
+          # Upload to the release created above rather than creating/finding
+          # one by tag: three parallel jobs each doing the latter is exactly
+          # what raced before. includeUpdaterJson is off here for the same
+          # reason — the finalize job below builds latest.json once, after
+          # every platform's .sig files are already uploaded.
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
       - name: Verify macOS ad-hoc signature
         if: matrix.platform == 'macos-latest'
@@ -82,20 +117,43 @@ jobs:
             exit 1
           fi
           echo "Verifying ad-hoc signature on $APP"
-          codesign -dv --verbose=2 "$APP"
+          codesign --verify --deep --strict "$APP"
+          DV_OUTPUT=$(codesign -dv --verbose=2 "$APP" 2>&1)
+          echo "$DV_OUTPUT"
+          if ! echo "$DV_OUTPUT" | grep -q "Signature=adhoc"; then
+            echo "::error::expected an ad-hoc signature (Signature=adhoc) but didn't find one"
+            exit 1
+          fi
 
-  provenance:
+  # Runs only once all three platform builds succeeded (a bad macOS
+  # signature, for instance, blocks this and the release stays an
+  # incomplete draft rather than getting published).
+  finalize:
     needs: build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
       id-token: write
       attestations: write
+    env:
+      TAG: ${{ github.ref_name }}
+      REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Download release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --dir release-assets --skip-existing
+        run: gh release download "$TAG" --repo "$REPO" --dir release-assets --skip-existing
+      - name: Fetch asset URLs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/$REPO/releases/tags/$TAG" --jq '{assets: [.assets[] | {name, url: .browser_download_url}]}' > release-assets.json
+      - name: Build latest.json
+        run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json
       - name: Write SHA256SUMS.txt
         run: |
           set -e
@@ -103,11 +161,22 @@ jobs:
           rm -f SHA256SUMS.txt
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Upload SHA256SUMS.txt to the release
+      - name: Upload latest.json and SHA256SUMS.txt to the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.ref_name }}" release-assets/SHA256SUMS.txt --repo "${{ github.repository }}" --clobber
+        run: gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS.txt --repo "$REPO" --clobber
       - name: Attest build provenance for every asset
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: "release-assets/*"
+      - name: Publish an -rc tag as a pre-release
+        if: contains(env.TAG, '-rc')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release edit "$TAG" \
+            --repo "$REPO" \
+            --draft=false \
+            --prerelease \
+            --notes "Pre-release build $TAG, for QA. Not the final release notes — see CHANGELOG.md once this version reaches a non-rc tag."

@@ -6,7 +6,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 ### Added
 
-- CI on Windows, macOS and Linux for every pull request and push to `main`: frontend tests and typecheck, Rust tests, clippy, `cargo deny check` and `npm audit`.
+- CI on Windows, macOS and Linux for every pull request and push to `main`: frontend tests and typecheck, Rust tests and clippy on all three, plus `cargo deny check` (Linux only, checking the whole dependency graph for every target) and `npm audit` (all three).
 - A macOS and Linux smoke-test job that builds Perch, launches it under Xvfb (Linux) or natively (macOS), confirms it survives 60 seconds with no panic, and uploads a screenshot.
 - `scripts/set-version.mjs` and `scripts/check-version.mjs` (`npm run version:set` / `version:check`) to keep the version in sync across `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` and `src-tauri/tauri.conf.json`.
 - A release workflow that builds signed, updater-ready installers for all three platforms on a version tag (NSIS, a universal macOS DMG, an AppImage and a `.deb`), ad-hoc signs the macOS build, and publishes `SHA256SUMS.txt` plus a GitHub build-provenance attestation for every asset.

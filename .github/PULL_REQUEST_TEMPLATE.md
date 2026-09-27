@@ -4,7 +4,8 @@
 
 ## How was this tested?
 
-<!-- CI runs tests/typecheck/build/clippy/cargo-deny/npm-audit on Windows, macOS and Linux automatically.
+<!-- CI runs tests/typecheck/build/clippy on Windows, macOS and Linux automatically, plus
+     cargo-deny (Linux only, whole dependency graph) and npm-audit (all three).
      Note anything CI can't cover: manual QA steps, screenshots, platforms you checked by hand. -->
 
 ## Checklist
