@@ -18,6 +18,8 @@ const components: Components = {
       {children}
     </a>
   ),
+  // No remote content in the webview (the CSP blocks it too); show what the image was.
+  img: ({ alt }) => <span className="md-img-alt">{alt ? `[image: ${alt}]` : "[image]"}</span>,
 };
 
 const Markdown = memo(function Markdown({ text }: { text: string }) {

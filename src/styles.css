@@ -322,6 +322,11 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.md .md-img-alt {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
 .md p,
 .md ul,
 .md ol,

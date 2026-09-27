@@ -3,11 +3,20 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+      - name: Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: ./.github/actions/linux-deps
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -21,5 +30,53 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npm run version:check
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: cargo-deny
+        # A container action, so Linux runners only. cargo-deny reads the
+        # whole dependency graph from Cargo.lock either way (every target,
+        # not just the host's), so Windows/macOS-only crates are still
+        # covered from here — see deny.toml's header comment.
+        if: runner.os == 'Linux'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+      - name: npm audit (production dependencies)
+        run: npm audit --omit=dev
+
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: ./.github/actions/linux-deps
+        with:
+          extra-packages: "xvfb imagemagick"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Build debug binary (embedded frontend, no installer)
+        run: npm run tauri build -- --debug --no-bundle
+      - name: Launch, wait, screenshot
+        run: bash .github/scripts/smoke-test.sh
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.platform }}
+          path: |
+            smoke-screenshot.png
+            smoke.log
+          if-no-files-found: warn
