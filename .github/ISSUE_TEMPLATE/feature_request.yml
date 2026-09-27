@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea for Perch.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the scenario?
+      description: What are you doing when you run into this, and what happens (or doesn't happen) that you'd want to be different?
+      placeholder: "When I ..., I'd want Perch to ..., because ..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you've already tried or considered?
+      description: Optional, but it saves back-and-forth.
+    validations:
+      required: false

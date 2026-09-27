@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
@@ -205,11 +205,32 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     s.save_projects();
     log::info!("Ask in {project} (mode {}, {})", mode.flag(), if resume.is_some() { "follow-up" } else { "new chat" });
     let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
-    let child = runner::spawn(&req).map_err(|e| {
-        log::error!("Ask in {project} couldn't start Claude Code: {e}");
-        format!("Couldn't start Claude Code: {e}")
-    })?;
-    lock(&s.running).insert(project.clone(), child.id());
+    // Check and reserve in one short lock (an update install claims itself before reading `running`),
+    // then start the process outside it.
+    {
+        let mut running = lock(&s.running);
+        crate::updater::ensure_not_installing(&app)?;
+        reserve_run(&mut running, &project)?;
+        // No run exists for this project, so a stop request left from the last one is stale.
+        lock(&s.stop_requested).retain(|p| !store::same_path(p, &project));
+    }
+    let child = match runner::spawn(&req) {
+        Ok(child) => child,
+        Err(e) => {
+            lock(&s.running).remove(&project);
+            log::error!("Ask in {project} couldn't start Claude Code: {e}");
+            return Err(format!("Couldn't start Claude Code: {e}"));
+        }
+    };
+    let stopped_while_starting = {
+        let mut running = lock(&s.running);
+        running.insert(project.clone(), child.id());
+        lock(&s.stop_requested).iter().any(|p| store::same_path(p, &project))
+    };
+    if stopped_while_starting {
+        log::info!("Ask in {project} was stopped while it started");
+        runner::kill_tree(child.id());
+    }
     state::emit_snapshot(&app);
     let handle = app.clone();
     std::thread::spawn(move || state::run_ask(handle, project, child));
@@ -219,15 +240,32 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
 #[tauri::command]
 pub fn stop_ask(app: AppHandle, project: String) {
     let s = app.state::<AppState>();
-    let pid = lock(&s.running)
-        .iter()
-        .find(|(p, _)| store::same_path(p, &project))
-        .map(|(_, pid)| *pid);
-    if let Some(pid) = pid {
-        log::info!("Stop requested for the Ask in {project}");
-        lock(&s.stop_requested).insert(project);
+    let pid = {
+        let running = lock(&s.running);
+        let pid = running.iter().find(|(p, _)| store::same_path(p, &project)).map(|(_, pid)| *pid);
+        if pid.is_some() {
+            log::info!("Stop requested for the Ask in {project}");
+            lock(&s.stop_requested).insert(project);
+        }
+        pid
+    };
+    // A run that is still starting has no process yet (and `kill` of pid 0 would hit Perch's own
+    // process group); `ask` stops it as soon as it has one.
+    if let Some(pid) = pid.filter(|&pid| pid != STARTING) {
         runner::kill_tree(pid);
     }
+}
+
+/// The PID recorded for an Ask whose process is still starting.
+const STARTING: u32 = 0;
+
+/// Claims `project` for a new Ask run. The caller holds the `running` lock.
+fn reserve_run(running: &mut HashMap<String, u32>, project: &str) -> CmdResult<()> {
+    if running.keys().any(|p| store::same_path(p, project)) {
+        return Err("Already working on this project.".into());
+    }
+    running.insert(project.to_string(), STARTING);
+    Ok(())
 }
 
 #[tauri::command]
@@ -392,4 +430,20 @@ pub fn save_pet_position(app: AppHandle, x: i32, y: i32) {
     let s = app.state::<AppState>();
     lock(&s.config).pet_position = Some((x, y));
     s.save_config();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_ask_reserves_its_project_until_the_process_starts() {
+        let mut running = HashMap::from([("C:\\code\\api".to_string(), 42)]);
+        assert_eq!(reserve_run(&mut running, "C:\\code\\app"), Ok(()));
+        assert_eq!(running.get("C:\\code\\app"), Some(&STARTING));
+        // A second submit for the same project is refused, reserved or running.
+        assert_eq!(reserve_run(&mut running, "C:\\code\\app\\"), Err("Already working on this project.".to_string()));
+        assert_eq!(reserve_run(&mut running, "C:\\code\\api"), Err("Already working on this project.".to_string()));
+        assert_eq!(running.len(), 2);
+    }
 }

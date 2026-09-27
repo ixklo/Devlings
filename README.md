@@ -28,15 +28,25 @@ Free and open source (MIT). Perch is not affiliated with Anthropic.
 ## Requirements
 
 - [Claude Code](https://code.claude.com) 2.1.259 or newer, logged in with a Claude subscription (Pro, Max, Team or Enterprise). The binary bundled with the VS Code extension works too.
-- Windows 10/11 (primary), macOS or Linux (best effort).
+- **Windows 11** (verified). Windows 10 isn't tested yet, but there's no known reason it wouldn't work.
+- **macOS and Linux** (beta): the installers build and launch in CI on every change, but haven't been tested on real hardware yet. If you try one, an [issue](../../issues/new/choose) reporting how it went (or what broke) is genuinely useful.
 
 ## Install
 
 Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run: pick and name your pet, let it watch your sessions, and check Claude Code.
 
-The installers aren't code-signed yet:
-- **Windows:** SmartScreen may say "Windows protected your PC". Click **More info → Run anyway**.
-- **macOS:** right-click the app, choose **Open**, then **Open** again.
+The installers aren't code-signed by a paid certificate, so each OS shows an unfamiliar-software warning the first time:
+
+- **Windows:** SmartScreen says "Windows protected your PC". Click **More info**, then **Run anyway**.
+- **macOS:** Gatekeeper blocks the first launch. Since macOS 15, Control-click → Open no longer bypasses this, so instead: open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway** next to Perch, then confirm in the dialog that follows. macOS builds are ad-hoc signed (not notarized), which is why this step is needed.
+- **Linux (AppImage):** make it executable first — `chmod +x Perch_*.AppImage` — then run it.
+- **Linux (.deb):** `sudo apt install ./Perch_*.deb` (or double-click it in a graphical package installer).
+
+## Updates
+
+Perch checks GitHub for a new release at launch and once a day, and installs signed updates in-app — no need to redownload an installer. Turn this off in **Settings → About**.
+
+Upgrading from a 0.x release needs one manual install of the new version; after that, in-app updates take over.
 
 ## Using it
 
@@ -57,10 +67,51 @@ The installers aren't code-signed yet:
 
 Perch uses the same sprite format as Codex pets: a 1536×1872 PNG or WebP atlas with 8 columns and 9 rows of 192×208 cells, plus a `pet.json`. Perch loads pets from:
 
-- its own pets folder (**Settings → About → Open pets folder**)
+- its own pets folder (**Settings → About → Open folder**, next to "More pets")
 - `~/.codex/pets` (or `$CODEX_HOME/pets`), so pets you already have in Codex show up in Perch too
 
 Each pet is a folder with `pet.json` (`id`, `displayName`, `description`, `spritesheetPath`) and the sprite sheet. The built-in pets are generated from pixel maps in [`scripts/pets`](scripts/pets).
+
+### Making your own pet
+
+A pet is a folder containing:
+
+- **`pet.json`** — a small manifest:
+  - `id`: a short, unique, lowercase identifier (used internally; not shown).
+  - `displayName`: the name shown in the picker before you rename it.
+  - `description`: a line shown in the pet picker.
+  - `spritesheetPath` (optional): the atlas file's name, relative to the folder. Defaults to `spritesheet.png` or `spritesheet.webp` if omitted.
+- **The atlas image** — a single PNG or WebP, exactly **1536×1872**, laid out as an 8-column × 9-row grid of **192×208** cells (20 MiB max). Each row is a fixed animation, read left to right; unused cells at the end of a row are simply not drawn, but the row itself must exist. In row order:
+
+  | Row | Animation | Frames |
+  |---|---|---|
+  | 0 | Idle | 6 |
+  | 1 | Running right | 8 |
+  | 2 | Running left | 8 |
+  | 3 | Waving (on hover) | 4 |
+  | 4 | Jumping | 5 |
+  | 5 | Failed (storm cloud) | 8 |
+  | 6 | Waiting (needs input) | 6 |
+  | 7 | Working | 6 |
+  | 8 | Reviewing a result | 6 |
+
+  Frame timing is fixed by Perch (it follows the Codex pet contract), so you only need to draw the art — not configure durations.
+
+Drop the folder into Perch's pets folder or `~/.codex/pets`, then pick it from the right-click menu or Settings. Perch validates the manifest and image dimensions and will tell you what's wrong if a pet doesn't load.
+
+## Uninstall
+
+- **Windows:** run the uninstaller (from the Start menu or Settings → Apps). It removes exactly the hooks Perch added to Claude Code's `settings.json`, along with the start-at-login entry, before removing the app itself.
+- **macOS / Linux:** there's no uninstaller, so do this first: open **Settings → Watching → Remove**, which removes exactly Perch's hook entries from `settings.json` (a backup is kept alongside it). Then delete the app (drag it out of Applications on macOS, or remove the AppImage/`.deb` on Linux).
+
+## Troubleshooting
+
+- **Hooks aren't firing** (cards never update). Confirm **Settings → Watching** shows "Hooks installed" — if not, click **Install**. If it is installed and sessions still don't show up, restart the Claude Code session (hooks are read when a session starts), and check that nothing else has since edited `~/.claude/settings.json` and removed Perch's entries.
+- **"Port in use" under Settings → Watching.** Something else on your machine is bound to Perch's hook port. Click **Move port** — Perch picks a new one and reinstalls its hooks pointing at it.
+- **"Claude Code not found"** in setup. Click **Choose file…** and point it at your `claude` (or `claude.exe`) binary, or **Auto-detect** to have Perch look again. The VS Code extension's bundled binary works too.
+- **Windows SmartScreen or macOS Gatekeeper** blocking install or launch: see [Install](#install) above.
+
+Still stuck? Open an [issue](../../issues/new/choose) with **Settings → About → Copy diagnostics** attached.
 
 ## Cost
 
@@ -68,15 +119,19 @@ Perch never uses an API key and has no login of its own. Asks run on your Claude
 
 ## How watching works
 
-On first run, Perch asks to add a few `http` hooks to your Claude Code `settings.json`. Each hook sends session events to `http://127.0.0.1:<port>/hook/<random token>` with a 2-second timeout. If Perch isn't running, the hook fails fast and Claude Code carries on. A backup of `settings.json` is saved before every change. **Settings → Remove hooks** removes exactly Perch's entries and nothing else.
+On first run, Perch asks to add a few `http` hooks to your Claude Code `settings.json`. Each hook sends session events to `http://127.0.0.1:<port>/hook/<random token>` with a short timeout. If Perch isn't running, the hook fails fast and Claude Code carries on. A backup of `settings.json` is saved before every change. **Settings → Watching → Remove** removes exactly Perch's entries and nothing else.
 
 ## Privacy
 
-Perch sends nothing anywhere itself. Its only network traffic is on localhost. Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal.
+Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a daily check against GitHub's release API for updates (Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
+
+## Third-party notices
+
+Perch bundles open-source Rust crates and npm packages; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list and license texts (also linked from **Settings → About**).
 
 ## Develop
 
-Needs Node.js 24 and stable Rust.
+Needs Node.js 24 and stable Rust. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, including what CI checks and when to regenerate third-party notices.
 
 ```bash
 npm install
@@ -89,4 +144,4 @@ Opening `npm run dev` in a normal browser shows the pet (`/?window=pet`) and set
 
 To rebuild the built-in pets: `cd scripts/pets && npm install && node build.mjs && node validate.mjs`.
 
-Design docs: [v0.1](docs/specs/2026-09-25-perch-design.md), [v0.2 redesign](docs/specs/2026-09-26-perch-v0.2-design.md).
+Design docs: [v0.1](docs/specs/2026-09-25-perch-design.md), [v0.2 redesign](docs/specs/2026-09-26-perch-v0.2-design.md), [v1.0](docs/specs/2026-09-26-perch-v1.0-design.md). Release gates: [docs/release/v1.0.0.md](docs/release/v1.0.0.md).

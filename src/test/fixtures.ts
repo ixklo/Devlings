@@ -15,6 +15,8 @@ export function makeConfig(over: Partial<Config> = {}): Config {
     petId: "perch",
     petScale: 0.6,
     threadsCollapsed: false,
+    autoUpdate: true,
+    lastUpdateCheck: null,
     ...over,
   };
 }
@@ -58,6 +60,7 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
     ],
     running: [],
     setup: makeSetup(),
+    update: { state: "idle" },
     ...over,
   };
 }

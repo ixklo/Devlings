@@ -43,6 +43,7 @@ pub fn build_args(req: &AskRequest) -> Vec<String> {
 
 /// A child process that never opens a console window.
 pub fn background_command(program: &Path) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {

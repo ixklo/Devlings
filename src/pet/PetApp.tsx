@@ -17,6 +17,7 @@ import { ComposerCard } from "./ComposerCard";
 import { ControlBar } from "./ControlBar";
 import { PetSprite, type Badge } from "./PetSprite";
 import { ThreadView } from "./ThreadView";
+import { visibleUpdate } from "./UpdateCard";
 import { useConversation } from "./useConversation";
 import { useHitRegions } from "./useHitRegions";
 import "./pet.css";
@@ -77,6 +78,8 @@ export function PetApp() {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [hover, setHover] = useState(false);
+  // "Later" on the update card: hidden until the next launch or a newer version.
+  const [laterUpdate, setLaterUpdate] = useState<string | null>(null);
   const [anim, dispatch] = useReducer(animReducer, initialAnim);
   const src = usePetSprite(snap ? snap.config.petId : null);
 
@@ -208,7 +211,7 @@ export function PetApp() {
 
   useEffect(() => {
     refreshHits();
-  }, [view, expanded, hover, snap, src, refreshHits]);
+  }, [view, expanded, hover, snap, src, laterUpdate, refreshHits]);
 
   const onClipDone = useCallback(() => dispatch({ type: "clipDone" }), []);
 
@@ -230,6 +233,7 @@ export function PetApp() {
   };
 
   const openSetup = () => api.openSettings(config.onboarded ? "settings" : "onboarding").catch(() => {});
+  const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
     <main className="overlay" data-pet-state={snap.petState}>
@@ -265,6 +269,11 @@ export function PetApp() {
             onToggleExpanded={() => setExpanded((x) => !x)}
             onOpenThread={(t) => openThread(t.project, t.sessionId)}
             setup={snap.setup.needsSetup ? { detail: setupDetail(snap), onOpen: openSetup } : null}
+            update={
+              updateVersion
+                ? { version: updateVersion, onRestart: api.installUpdate, onLater: () => setLaterUpdate(updateVersion) }
+                : null
+            }
           />
         )}
       </div>

@@ -30,6 +30,10 @@ export interface Config {
   petId: string;
   petScale: number;
   threadsCollapsed: boolean;
+  /** Check for updates at launch and daily. */
+  autoUpdate: boolean;
+  /** Epoch ms of the last update check. */
+  lastUpdateCheck: number | null;
 }
 
 export type PetState = "idle" | "running" | "needs_input" | "ready" | "blocked" | "setup";
@@ -83,6 +87,19 @@ export interface Snapshot {
   /** Projects with an active Ask run. */
   running: string[];
   setup: SetupStatus;
+  update: UpdateStatus;
+}
+
+export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "disabled";
+
+/** In-app update progress (v1.0 spec section 4). Unset fields are absent. */
+export interface UpdateStatus {
+  state: UpdateState;
+  version?: string;
+  notes?: string;
+  /** Whole percent, 0-100, while downloading; absent when the size is unknown. */
+  progress?: number;
+  error?: string;
 }
 
 export interface PetInfo {

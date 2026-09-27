@@ -1,0 +1,87 @@
+# cargo-deny configuration for Perch's Rust dependency graph (the app that
+# ships in the installers, not this repo's dev tooling).
+#
+# Run locally:   cargo deny --manifest-path src-tauri/Cargo.toml check
+# CI runs this via EmbarkStudios/cargo-deny-action on the Linux leg of the
+# test matrix only (it's a container action, so it can't run on Windows or
+# macOS runners); `cargo metadata` still reports the whole dependency graph
+# for every target from there, including Windows- and macOS-only crates, so
+# nothing platform-specific is skipped.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+# RUSTSEC ids to ignore, each with a one-line reason. All six below are
+# "unmaintained" notices (no CVE, no known vulnerability), pulled in
+# transitively by tauri-utils/wry and not addressable from this repo: fixing
+# them means Tauri or the Linux GTK bindings moving off these crates
+# upstream. Re-check on each tauri/wry bump.
+ignore = [
+    { id = "RUSTSEC-2025-0075", reason = "unic-char-range: unmaintained, transitive via tauri-utils's urlpattern dep; no upstream fix yet" },
+    { id = "RUSTSEC-2025-0080", reason = "unic-common: unmaintained, transitive via tauri-utils's urlpattern dep; no upstream fix yet" },
+    { id = "RUSTSEC-2025-0081", reason = "unic-char-property: unmaintained, transitive via tauri-utils's urlpattern dep; no upstream fix yet" },
+    { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: unmaintained, transitive via tauri-utils's urlpattern dep; no upstream fix yet" },
+    { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: unmaintained, transitive via tauri-utils's urlpattern dep; no upstream fix yet" },
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: unmaintained, compile-time-only proc macro pulled in by the Linux GTK bindings (glib-macros/gtk3-macros); not present in the shipped binary" },
+]
+
+# Perch ships under MIT, so every dependency's license has to be compatible
+# with MIT distribution. This is the exact allow-list from the release brief.
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0", # file-level copyleft: fine to link against, no obligation on our own code
+    "CC0-1.0",
+    "0BSD",
+    "BSL-1.0",
+]
+confidence-threshold = 0.8
+exceptions = [
+    # Mozilla's root certificate list (data), pulled in by the updater's HTTPS client. CDLA-Permissive-2.0
+    # permits redistribution and places no obligations on our code; scoped to this one crate.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
+]
+
+[licenses.private]
+ignore = false
+
+[bans]
+# Duplicate versions of a crate are common in a dependency graph this size
+# (tauri, its plugins and their own deps pull in different semver-major
+# versions of things like `windows-sys` or `syn`); it's noise, not a defect,
+# so it warns instead of failing the build.
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow-workspace = true
+allow = []
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+gitlab = []
+bitbucket = []

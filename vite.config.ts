@@ -14,5 +14,6 @@ export default defineConfig({
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
   },
-  test: { environment: "jsdom", setupFiles: ["./src/test-setup.ts"] },
+  // Threads, not forks: forked workers time out starting up on a busy machine and the run reports "no tests".
+  test: { environment: "jsdom", setupFiles: ["./src/test-setup.ts"], pool: "threads" },
 });

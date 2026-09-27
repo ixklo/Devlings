@@ -16,6 +16,7 @@ mod state;
 mod store;
 mod threads;
 mod transcript;
+mod updater;
 
 pub fn run() {
     // Headless modes (the hook relay and the uninstaller's cleanup) come before anything else, so they stay fast
@@ -35,6 +36,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(app_state)
+        .manage(updater::Updates::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| shell::show_pet(app)))
         .plugin(diagnostics::log_plugin(log_level))
         .plugin(tauri_plugin_opener::init())
@@ -42,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let info = app.package_info();
             log::info!("{} {} starting on {} {}", info.name, info.version, std::env::consts::OS, std::env::consts::ARCH);
@@ -50,6 +53,7 @@ pub fn run() {
             shell::register_shortcut(&handle);
             overlay::place_pet(&handle);
             overlay::start_click_through(handle.clone());
+            updater::start(handle.clone());
             state::boot(handle);
             Ok(())
         })
@@ -74,6 +78,9 @@ pub fn run() {
             commands::finish_onboarding,
             commands::set_notifications,
             commands::set_launch_at_login,
+            updater::check_for_update,
+            updater::install_update,
+            updater::set_auto_update,
             commands::mark_viewed,
             commands::set_focused_thread,
             commands::set_threads_collapsed,

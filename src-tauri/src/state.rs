@@ -121,6 +121,7 @@ pub struct Snapshot {
     pub projects: Vec<ProjectEntry>,
     pub running: Vec<String>,
     pub setup: SetupStatus,
+    pub update: crate::updater::UpdateStatus,
 }
 
 fn setup_status(s: &AppState) -> SetupStatus {
@@ -162,7 +163,7 @@ pub fn snapshot(app: &AppHandle) -> Snapshot {
     if let Some(pet) = pets::resolve(&lock(&s.pets), &config.pet_id) {
         config.pet_id = pet.info.id.clone();
     }
-    Snapshot { config, pet_state, threads, projects, running, setup }
+    Snapshot { config, pet_state, threads, projects, running, setup, update: crate::updater::status(app) }
 }
 
 /// Rescans every pet folder and caches the result. Also returns whether the shown pet changed.
