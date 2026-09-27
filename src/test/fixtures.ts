@@ -10,6 +10,7 @@ export function makeConfig(over: Partial<Config> = {}): Config {
     hookToken: "t",
     claudePath: null,
     petPosition: null,
+    petPositionMigrated: true,
     notifications: true,
     launchAtLogin: false,
     petId: "perch",

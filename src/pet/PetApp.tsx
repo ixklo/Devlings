@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api } from "../shared/api";
 import { useNow } from "../shared/time";
-import type { PetState, ProjectEntry, Snapshot, ThreadInfo } from "../shared/types";
+import type { Placement, PetState, ProjectEntry, Snapshot, ThreadInfo } from "../shared/types";
 import { useSnapshot } from "../shared/useSnapshot";
 import {
   animReducer,
@@ -80,6 +80,8 @@ export function PetApp() {
   const [hover, setHover] = useState(false);
   // "Later" on the update card: hidden until the next launch or a newer version.
   const [laterUpdate, setLaterUpdate] = useState<string | null>(null);
+  // How `.stage` lays out for the sprite's current on-screen spot (design D9).
+  const [placement, setPlacement] = useState<Placement>({ cardsBelow: false, shiftX: 0 });
   const [anim, dispatch] = useReducer(animReducer, initialAnim);
   const src = usePetSprite(snap ? snap.config.petId : null);
 
@@ -128,6 +130,14 @@ export function PetApp() {
       unlisten.then((f) => f());
       window.clearTimeout(settle);
       window.clearTimeout(save);
+    };
+  }, []);
+
+  // The backend flips/shifts `.stage` as the sprite's on-screen spot changes (design D9).
+  useEffect(() => {
+    const unlisten = api.onPetPlacement(setPlacement);
+    return () => {
+      unlisten.then((f) => f());
     };
   }, []);
 
@@ -236,8 +246,11 @@ export function PetApp() {
   const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
-    <main className="overlay" data-pet-state={snap.petState}>
-      <div className="stage">
+    <main className="overlay" data-pet-state={snap.petState} data-cards-below={placement.cardsBelow}>
+      <div
+        className="stage"
+        style={placement.shiftX ? { transform: `translateX(${placement.shiftX}px)` } : undefined}
+      >
         {view.kind === "compose" && (
           <ComposerCard
             snap={snap}

@@ -27,6 +27,46 @@ body[data-window="pet"] {
   align-items: center;
 }
 
+/* ---- Design D9: cards flip below the sprite when there isn't room above it ----
+   The backend reports `cardsBelow`/`shiftX` from the sprite's on-screen spot (overlay.rs's
+   `place_sprite`); the frontend only ever moves `.stage` as a whole, so any card that renders
+   there (bubbles, composer, mini chat, setup/update/approval cards) flips and shifts for free. */
+
+.overlay[data-cards-below="true"] .dock {
+  order: -1;
+}
+
+.overlay[data-cards-below="true"] .stage {
+  justify-content: flex-start;
+}
+
+.overlay[data-cards-below="true"] .stage .bubbles {
+  flex-direction: column;
+}
+
+.overlay[data-cards-below="true"] .stage .bubbles:has(> [aria-expanded="true"]) {
+  padding-top: 0;
+  padding-bottom: 12px;
+  mask-image: linear-gradient(to top, transparent 0, #000 16px);
+}
+
+.overlay[data-cards-below="true"] .stage .view-enter,
+.overlay[data-cards-below="true"] .stage .bubble-slot {
+  transform-origin: 50% 0%;
+}
+
+/* The speech-bubble tail: points up at the sprite above instead of down at it below. */
+.overlay[data-cards-below="true"] .stage .has-tail::after {
+  top: -6px;
+  bottom: auto;
+  border-right: none;
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-bottom-right-radius: 0;
+  border-top-left-radius: 2px;
+}
+
 /* ---- Cards ---- */
 
 .card {

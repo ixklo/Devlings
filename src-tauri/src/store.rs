@@ -22,6 +22,9 @@ pub struct Config {
     pub hook_token: Option<String>,
     pub claude_path: Option<String>,
     pub pet_position: Option<(i32, i32)>,
+    /// Whether `pet_position` is already in the sprite-anchor format (design D9). False for a
+    /// v0.2 config file, so `overlay::place_pet` migrates it once, then sets this and re-saves.
+    pub pet_position_migrated: bool,
     pub notifications: bool,
     pub launch_at_login: bool,
     pub pet_id: String,
@@ -72,6 +75,7 @@ impl Default for Config {
             hook_token: None,
             claude_path: None,
             pet_position: None,
+            pet_position_migrated: false,
             notifications: true,
             launch_at_login: false,
             pet_id: DEFAULT_PET_ID.to_string(),

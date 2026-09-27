@@ -62,6 +62,9 @@ pub struct AppState {
     /// Interactive rects of the pet window; None until the frontend first reports them.
     pub hit_regions: Mutex<Option<Vec<HitRect>>>,
     pub pet_visibility_gen: AtomicU64,
+    /// Whether cards currently open below the sprite instead of above it (design D9). Runtime
+    /// only, for the flip's hysteresis; not persisted, so a restart re-derives it from scratch.
+    pub cards_below: AtomicBool,
 }
 
 impl AppState {
@@ -87,6 +90,7 @@ impl AppState {
             pets: Mutex::new(Vec::new()),
             hit_regions: Mutex::new(None),
             pet_visibility_gen: AtomicU64::new(0),
+            cards_below: AtomicBool::new(false),
         })
     }
 
