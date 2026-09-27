@@ -2715,6 +2715,7 @@ dependencies = [
  "dirs 5.0.1",
  "log",
  "rand 0.8.8",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

@@ -3,6 +3,7 @@
 //! when the user clicks Restart. Everything runs in Rust; the webview has no
 //! updater permissions and only sees `Snapshot.update`.
 
+use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex, MutexGuard,
@@ -20,11 +21,15 @@ use crate::state::{self, now_ms, AppState, Snapshot};
 pub const ENDPOINT_ENV: &str = "PERCH_UPDATE_ENDPOINT";
 /// Check this often while auto-update is on (after the launch check).
 pub const CHECK_EVERY_MS: i64 = 24 * 60 * 60 * 1000;
+/// After a failed check or download, retry this soon, doubling per failure up to `CHECK_EVERY_MS`.
+pub const RETRY_FIRST_MS: i64 = 60 * 60 * 1000;
 const LAUNCH_DELAY: Duration = Duration::from_secs(30);
 const POLL_EVERY: Duration = Duration::from_secs(10 * 60);
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const NOTES_MAX_CHARS: usize = 2000;
+const BUNDLE_PREFIX: &str = "perch-";
+const BUNDLE_SUFFIX: &str = ".update";
 
 pub const ASK_RUNNING: &str = "Finish or stop the running ask first.";
 pub const NOT_READY: &str = "No update is ready to install yet.";
@@ -70,7 +75,7 @@ pub enum Step {
     UpToDate,
     Found { version: String, notes: Option<String> },
     Progress { received: u64, total: Option<u64> },
-    Downloaded,
+    Downloaded { version: String, notes: Option<String> },
     CheckFailed { manual: bool },
     DownloadFailed { manual: bool, bad_signature: bool },
 }
@@ -84,37 +89,34 @@ impl UpdateStatus {
         Self { error: Some(reason.to_string()), ..Self::with_state(UpdateState::Disabled) }
     }
 
-    /// True when a check must not start: one is running, an update is on its way or waiting, or updates are off.
-    pub fn is_busy(&self) -> bool {
-        use UpdateState::*;
-        matches!(self.state, Checking | Available | Downloading | Ready | Disabled)
+    fn failed(message: &str) -> Self {
+        Self { error: Some(message.to_string()), ..Self::with_state(UpdateState::Error) }
     }
 
     pub fn apply(&self, step: Step) -> UpdateStatus {
         use UpdateState::*;
-        match step {
-            Step::CheckStarted if self.is_busy() => self.clone(),
-            Step::CheckStarted => Self::with_state(Checking),
-            Step::UpToDate => Self::with_state(Idle),
-            Step::Found { version, notes } => {
-                Self { version: Some(version), notes, ..Self::with_state(Available) }
-            }
-            Step::Progress { received, total } => Self {
+        match (self.state, step) {
+            (Disabled, _) => self.clone(),
+            // A ready update stays offered while later checks run; only a newer, fully
+            // downloaded and verified update replaces it. Failures meanwhile are logged only.
+            (Ready, Step::Downloaded { version, notes }) => Self { version: Some(version), notes, ..Self::with_state(Ready) },
+            (Ready, _) => self.clone(),
+            (Checking | Available | Downloading, Step::CheckStarted) => self.clone(),
+            (_, Step::CheckStarted) => Self::with_state(Checking),
+            (_, Step::UpToDate) => Self::with_state(Idle),
+            (_, Step::Found { version, notes }) => Self { version: Some(version), notes, ..Self::with_state(Available) },
+            (_, Step::Progress { received, total }) => Self {
                 state: Downloading,
                 progress: percent(received, total),
                 error: None,
                 ..self.clone()
             },
-            Step::Downloaded => Self { state: Ready, progress: None, error: None, ..self.clone() },
-            Step::DownloadFailed { bad_signature: true, .. } => Self::failed(BAD_SIGNATURE),
-            Step::CheckFailed { manual: true } => Self::failed(CHECK_FAILED),
-            Step::DownloadFailed { manual: true, .. } => Self::failed(DOWNLOAD_FAILED),
-            Step::CheckFailed { manual: false } | Step::DownloadFailed { manual: false, .. } => Self::with_state(Idle),
+            (_, Step::Downloaded { version, notes }) => Self { version: Some(version), notes, ..Self::with_state(Ready) },
+            (_, Step::DownloadFailed { bad_signature: true, .. }) => Self::failed(BAD_SIGNATURE),
+            (_, Step::CheckFailed { manual: true }) => Self::failed(CHECK_FAILED),
+            (_, Step::DownloadFailed { manual: true, .. }) => Self::failed(DOWNLOAD_FAILED),
+            (_, Step::CheckFailed { manual: false } | Step::DownloadFailed { manual: false, .. }) => Self::with_state(Idle),
         }
-    }
-
-    fn failed(message: &str) -> Self {
-        Self { error: Some(message.to_string()), ..Self::with_state(UpdateState::Error) }
     }
 }
 
@@ -125,16 +127,47 @@ pub fn percent(received: u64, total: Option<u64>) -> Option<u8> {
     }
 }
 
-/// Whether the scheduler should check now. `first` is the check ~30 s after launch.
-pub fn check_due(auto: bool, first: bool, last: Option<i64>, now: i64) -> bool {
+/// Consecutive failed checks or downloads since the last success (in memory; every launch checks anyway).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Backoff {
+    pub failures: u32,
+    pub last_failure: Option<i64>,
+}
+
+impl Backoff {
+    pub fn failed(self, now: i64) -> Self {
+        Self { failures: self.failures.saturating_add(1), last_failure: Some(now) }
+    }
+
+    /// 1 h after the first failure, then 2 h, 4 h, … up to a day.
+    pub fn retry_delay_ms(&self) -> i64 {
+        let doublings = self.failures.saturating_sub(1).min(16);
+        RETRY_FIRST_MS.saturating_mul(1 << doublings).min(CHECK_EVERY_MS)
+    }
+}
+
+/// Whether the scheduler should check now. `first` is the check ~30 s after launch;
+/// `last_success` is `lastUpdateCheck`, stamped only when a check succeeds.
+pub fn check_due(auto: bool, first: bool, last_success: Option<i64>, backoff: Backoff, now: i64) -> bool {
     if !auto {
         return false;
     }
-    match last {
-        _ if first => true,
-        None => true,
-        // A last check "in the future" means the clock moved back; check rather than wait it out.
-        Some(at) => now < at || now - at >= CHECK_EVERY_MS,
+    if first {
+        return true;
+    }
+    // A time "in the future" means the clock moved back; check rather than wait it out.
+    let elapsed = |at: i64, wait: i64| now < at || now - at >= wait;
+    match (backoff.failures, backoff.last_failure) {
+        (1.., Some(at)) => elapsed(at, backoff.retry_delay_ms()),
+        _ => last_success.is_none_or(|at| elapsed(at, CHECK_EVERY_MS)),
+    }
+}
+
+/// True when `found` is a newer version than `ready` (semver). Unparseable versions never replace anything.
+pub fn is_newer(found: &str, ready: &str) -> bool {
+    match (semver::Version::parse(found), semver::Version::parse(ready)) {
+        (Ok(f), Ok(r)) => f > r,
+        _ => false,
     }
 }
 
@@ -162,6 +195,30 @@ pub fn install_refusal(status: &UpdateStatus, ask_running: bool) -> Option<&'sta
     }
 }
 
+/// Writes a verified update bundle to `dir` as `perch-<version>.update`.
+pub fn save_bundle(dir: &Path, version: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let safe: String =
+        version.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-') { c } else { '_' }).collect();
+    let path = dir.join(format!("{BUNDLE_PREFIX}{safe}{BUNDLE_SUFFIX}"));
+    std::fs::write(&path, bytes)?;
+    Ok(path)
+}
+
+/// Deletes Perch's update bundles in `dir`, except `keep`. Other files are left alone.
+pub fn remove_bundles(dir: &Path, keep: Option<&Path>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for path in entries.flatten().map(|e| e.path()) {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let ours = name.starts_with(BUNDLE_PREFIX) && name.ends_with(BUNDLE_SUFFIX);
+        if ours && Some(path.as_path()) != keep {
+            if let Err(e) = std::fs::remove_file(&path) {
+                log::warn!("update: couldn't remove {}: {e}", path.display());
+            }
+        }
+    }
+}
+
 // ---- Runtime ----
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -172,10 +229,19 @@ fn endpoint_var() -> Option<String> {
     std::env::var(ENDPOINT_ENV).ok()
 }
 
-/// Managed state: the status the UI sees, plus the downloaded update waiting for a restart.
+/// A downloaded, signature-verified update waiting on disk for a restart.
+struct ReadyUpdate {
+    update: Update,
+    path: PathBuf,
+}
+
+/// Managed state: the status the UI sees, the ready update, and the scheduler's bookkeeping.
 pub struct Updates {
     status: Mutex<UpdateStatus>,
-    ready: Mutex<Option<(Update, Vec<u8>)>>,
+    ready: Mutex<Option<ReadyUpdate>>,
+    backoff: Mutex<Backoff>,
+    /// A check or its download is running; only one at a time.
+    working: AtomicBool,
     /// Set once Restart was clicked; `ask` refuses from then on.
     installing: AtomicBool,
 }
@@ -188,12 +254,31 @@ impl Default for Updates {
         } else {
             UpdateStatus::disabled(DEV_BUILD)
         };
-        Self { status: Mutex::new(status), ready: Mutex::new(None), installing: AtomicBool::new(false) }
+        Self {
+            status: Mutex::new(status),
+            ready: Mutex::new(None),
+            backoff: Mutex::new(Backoff::default()),
+            working: AtomicBool::new(false),
+            installing: AtomicBool::new(false),
+        }
+    }
+}
+
+/// Clears `Updates::working` when the check (or the download it started) ends, however it ends.
+struct Working(AppHandle);
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        self.0.state::<Updates>().working.store(false, Ordering::SeqCst);
     }
 }
 
 pub fn status(app: &AppHandle) -> UpdateStatus {
     lock(&app.state::<Updates>().status).clone()
+}
+
+fn bundles_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_cache_dir().ok().map(|d| d.join("updates"))
 }
 
 /// Applies a step and publishes a snapshot if anything the UI shows changed.
@@ -212,8 +297,27 @@ fn advance(app: &AppHandle, step: Step) -> UpdateStatus {
     next
 }
 
-/// Checks ~30 s after launch, then whenever the last check is a day old, while auto-update is on.
+/// A check found an update or confirmed there's none: stamp `lastUpdateCheck` and reset the backoff.
+fn record_success(app: &AppHandle) {
+    *lock(&app.state::<Updates>().backoff) = Backoff::default();
+    let s = app.state::<AppState>();
+    lock(&s.config).last_update_check = Some(now_ms());
+    s.save_config();
+}
+
+fn record_failure(app: &AppHandle) {
+    let updates = app.state::<Updates>();
+    let mut backoff = lock(&updates.backoff);
+    *backoff = backoff.failed(now_ms());
+    log::info!("update: next attempt in about {} min", backoff.retry_delay_ms() / 60_000);
+}
+
+/// Clears bundles left by earlier runs, then checks ~30 s after launch and again when due
+/// (a day after the last success, sooner after a failure) while auto-update is on.
 pub fn start(app: AppHandle) {
+    if let Some(dir) = bundles_dir(&app) {
+        remove_bundles(&dir, None);
+    }
     std::thread::spawn(move || {
         std::thread::sleep(LAUNCH_DELAY);
         let mut first = true;
@@ -223,7 +327,8 @@ pub fn start(app: AppHandle) {
                 let config = lock(&s.config);
                 (config.auto_update, config.last_update_check)
             };
-            if check_due(auto, first, last, now_ms()) {
+            let backoff = *lock(&app.state::<Updates>().backoff);
+            if check_due(auto, first, last, backoff, now_ms()) {
                 tauri::async_runtime::block_on(check(&app, false));
             }
             first = false;
@@ -232,40 +337,38 @@ pub fn start(app: AppHandle) {
     });
 }
 
-/// Looks for an update and, when there is one, starts downloading it in the background.
-/// Returns the status once the check itself is done. Background failures stay quiet (logged only).
+/// Looks for an update and, when there is one (newer than any ready one), downloads it in the
+/// background. Returns the status once the check itself is done. Background failures stay quiet.
 pub async fn check(app: &AppHandle, manual: bool) -> UpdateStatus {
-    {
-        // Test and set under one lock, so a manual check and the scheduler never both start.
-        let updates = app.state::<Updates>();
-        let mut status = lock(&updates.status);
-        if status.is_busy() {
-            return status.clone();
-        }
-        *status = status.apply(Step::CheckStarted);
+    let updates = app.state::<Updates>();
+    if status(app).state == UpdateState::Disabled || updates.working.swap(true, Ordering::SeqCst) {
+        return status(app);
     }
-    state::emit_snapshot(app);
-    {
-        let s = app.state::<AppState>();
-        lock(&s.config).last_update_check = Some(now_ms());
-        s.save_config();
-    }
+    let working = Working(app.clone());
+    advance(app, Step::CheckStarted);
+    let ready_version = lock(&updates.ready).as_ref().map(|r| r.update.version.clone());
     match find(app).await {
-        Ok(None) => {
-            log::info!("update check: Perch is up to date");
-            advance(app, Step::UpToDate)
-        }
-        Ok(Some(update)) => {
+        Ok(Some(update)) if ready_version.as_deref().is_none_or(|r| is_newer(&update.version, r)) => {
             log::info!("update check: Perch {} is available", update.version);
+            record_success(app);
             let notes = update.body.as_deref().map(|n| n.chars().take(NOTES_MAX_CHARS).collect());
             let found = advance(app, Step::Found { version: update.version.clone(), notes });
             let handle = app.clone();
-            tauri::async_runtime::spawn(async move { download(&handle, update, manual).await });
+            tauri::async_runtime::spawn(async move {
+                download(&handle, update, manual).await;
+                drop(working);
+            });
             found
+        }
+        Ok(_) => {
+            log::info!("update check: nothing newer than {}", ready_version.as_deref().unwrap_or("this version"));
+            record_success(app);
+            advance(app, Step::UpToDate)
         }
         Err(e) => {
             // Offline, a 404 (e.g. a latest release without latest.json) or a bad response.
             log::warn!("update check failed: {e}");
+            record_failure(app);
             advance(app, Step::CheckFailed { manual })
         }
     }
@@ -293,25 +396,47 @@ async fn download(app: &AppHandle, mut update: Update, manual: bool) {
             },
             || {},
         )
-        .await;
-    match result {
-        Ok(bytes) => {
-            // The plugin verified the minisign signature against tauri.conf.json's pubkey before returning.
-            log::info!("update: Perch {} downloaded and verified ({} bytes)", update.version, bytes.len());
-            *lock(&app.state::<Updates>().ready) = Some((update, bytes));
-            advance(app, Step::Downloaded);
-        }
-        Err(e) => {
+        .await
+        .map_err(|e| {
             use tauri_plugin_updater::Error::{Base64, Minisign, SignatureUtf8};
-            let bad_signature = matches!(e, Minisign(_) | Base64(_) | SignatureUtf8(_));
+            (matches!(e, Minisign(_) | Base64(_) | SignatureUtf8(_)), e.to_string())
+        })
+        .and_then(|bytes| {
+            // The plugin verified the minisign signature against tauri.conf.json's pubkey before returning.
+            let dir = bundles_dir(app).ok_or((false, "no cache folder".to_string()))?;
+            save_bundle(&dir, &update.version, &bytes).map_err(|e| (false, format!("couldn't save it: {e}")))
+        });
+    match result {
+        Ok(path) => {
+            log::info!("update: Perch {} downloaded and verified to {}", update.version, path.display());
+            keep_ready(app, update, path);
+        }
+        Err((bad_signature, e)) => {
             if bad_signature {
                 log::error!("update: Perch {} failed signature verification: {e}", update.version);
             } else {
                 log::warn!("update: downloading Perch {} failed: {e}", update.version);
             }
+            record_failure(app);
             advance(app, Step::DownloadFailed { manual, bad_signature });
         }
     }
+}
+
+/// Makes a freshly downloaded update the ready one and deletes any older bundle.
+fn keep_ready(app: &AppHandle, update: Update, path: PathBuf) {
+    let updates = app.state::<Updates>();
+    if updates.installing.load(Ordering::SeqCst) {
+        // A restart for the previous update is under way; this one is fetched again next launch.
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    let (version, notes) = (update.version.clone(), update.body.as_deref().map(|n| n.chars().take(NOTES_MAX_CHARS).collect()));
+    *lock(&updates.ready) = Some(ReadyUpdate { update, path: path.clone() });
+    if let Some(dir) = path.parent() {
+        remove_bundles(dir, Some(&path));
+    }
+    advance(app, Step::Downloaded { version, notes });
 }
 
 /// Installs the downloaded update and restarts Perch. Refused while an Ask run is active.
@@ -321,38 +446,46 @@ async fn download(app: &AppHandle, mut update: Update, manual: bool) {
 /// is replaced in place, then Perch restarts itself.
 pub fn install(app: &AppHandle) -> Result<(), String> {
     let updates = app.state::<Updates>();
-    // Claim the install before looking for Asks, so an Ask can't slip in between.
+    // Claim the install before looking for Asks; `ask` checks the claim under the same lock it reserves with.
     if updates.installing.swap(true, Ordering::SeqCst) {
         return Err(RESTARTING.into());
     }
+    let result = install_claimed(app, &updates);
+    if result.is_err() {
+        updates.installing.store(false, Ordering::SeqCst);
+    }
+    result
+}
+
+fn install_claimed(app: &AppHandle, updates: &Updates) -> Result<(), String> {
     let asks_running = !lock(&app.state::<AppState>().running).is_empty();
-    let taken = match install_refusal(&status(app), asks_running) {
-        Some(reason) => Err(reason),
-        None => lock(&updates.ready).take().ok_or(NOT_READY),
-    };
-    let (update, bytes) = match taken {
-        Ok(ready) => ready,
-        Err(reason) => {
-            updates.installing.store(false, Ordering::SeqCst);
-            return Err(reason.into());
+    if let Some(reason) = install_refusal(&status(app), asks_running) {
+        return Err(reason.into());
+    }
+    let ready = lock(&updates.ready).take().ok_or(NOT_READY)?;
+    let bytes = match std::fs::read(&ready.path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::error!("update: couldn't read {}: {e}", ready.path.display());
+            *lock(&updates.ready) = Some(ready);
+            return Err(format!("Couldn't read the downloaded update: {e}"));
         }
     };
-    log::info!("update: installing Perch {} and restarting", update.version);
-    match update.install(&bytes) {
+    log::info!("update: installing Perch {} and restarting", ready.update.version);
+    match ready.update.install(&bytes) {
         Ok(()) => {
             app.request_restart();
             Ok(())
         }
         Err(e) => {
-            log::error!("update: installing Perch {} failed: {e}", update.version);
-            *lock(&updates.ready) = Some((update, bytes));
-            updates.installing.store(false, Ordering::SeqCst);
+            log::error!("update: installing Perch {} failed: {e}", ready.update.version);
+            *lock(&updates.ready) = Some(ready);
             Err(format!("Couldn't install the update: {e}"))
         }
     }
 }
 
-/// For `ask`: no new Ask once a restart to update has begun.
+/// For `ask`, called under the `running` lock: no new Ask once a restart to update has begun.
 pub fn ensure_not_installing(app: &AppHandle) -> Result<(), String> {
     if app.state::<Updates>().installing.load(Ordering::SeqCst) {
         Err(RESTARTING.into())
@@ -390,6 +523,7 @@ mod tests {
 
     const HOUR: i64 = 60 * 60 * 1000;
     const NOW: i64 = 1_800_000_000_000;
+    const NO_FAILURES: Backoff = Backoff { failures: 0, last_failure: None };
 
     fn st(state: UpdateState) -> UpdateStatus {
         UpdateStatus::with_state(state)
@@ -399,27 +533,63 @@ mod tests {
         Step::Found { version: v.into(), notes: Some("Fixes".into()) }
     }
 
-    #[test]
-    fn launch_check_runs_whenever_auto_update_is_on() {
-        assert!(check_due(true, true, None, NOW));
-        assert!(check_due(true, true, Some(NOW - HOUR), NOW));
-        assert!(!check_due(false, true, None, NOW));
+    fn downloaded(v: &str) -> Step {
+        Step::Downloaded { version: v.into(), notes: Some("Fixes".into()) }
+    }
+
+    fn ready(v: &str) -> UpdateStatus {
+        st(UpdateState::Checking).apply(found(v)).apply(downloaded(v))
+    }
+
+    fn failed_times(n: u32, last: i64) -> Backoff {
+        (0..n).fold(NO_FAILURES, |b, _| b.failed(last))
     }
 
     #[test]
-    fn later_checks_wait_a_day_since_the_last_one() {
-        assert!(check_due(true, false, None, NOW));
-        assert!(!check_due(true, false, Some(NOW - 23 * HOUR), NOW));
-        assert!(check_due(true, false, Some(NOW - 24 * HOUR), NOW));
-        assert!(check_due(true, false, Some(NOW - 30 * 24 * HOUR), NOW));
-        assert!(!check_due(false, false, Some(NOW - 30 * 24 * HOUR), NOW));
-        assert!(!check_due(false, false, None, NOW));
+    fn launch_check_runs_whenever_auto_update_is_on() {
+        assert!(check_due(true, true, None, NO_FAILURES, NOW));
+        assert!(check_due(true, true, Some(NOW - HOUR), NO_FAILURES, NOW));
+        assert!(check_due(true, true, Some(NOW - HOUR), failed_times(3, NOW - 60_000), NOW));
+        assert!(!check_due(false, true, None, NO_FAILURES, NOW));
+    }
+
+    #[test]
+    fn later_checks_wait_a_day_since_the_last_successful_one() {
+        assert!(check_due(true, false, None, NO_FAILURES, NOW));
+        assert!(!check_due(true, false, Some(NOW - 23 * HOUR), NO_FAILURES, NOW));
+        assert!(check_due(true, false, Some(NOW - 24 * HOUR), NO_FAILURES, NOW));
+        assert!(check_due(true, false, Some(NOW - 30 * 24 * HOUR), NO_FAILURES, NOW));
+        assert!(!check_due(false, false, Some(NOW - 30 * 24 * HOUR), NO_FAILURES, NOW));
+        assert!(!check_due(false, false, None, NO_FAILURES, NOW));
     }
 
     #[test]
     fn a_last_check_in_the_future_counts_as_due() {
         // The clock was set back after the last check.
-        assert!(check_due(true, false, Some(NOW + HOUR), NOW));
+        assert!(check_due(true, false, Some(NOW + HOUR), NO_FAILURES, NOW));
+        assert!(check_due(true, false, Some(NOW - HOUR), failed_times(1, NOW + HOUR), NOW));
+    }
+
+    #[test]
+    fn failed_checks_retry_after_an_hour_then_back_off_to_a_day() {
+        let last_ok = Some(NOW - 3 * 24 * HOUR);
+        let once = failed_times(1, NOW);
+        assert!(!check_due(true, false, last_ok, once, NOW + 59 * 60_000));
+        assert!(check_due(true, false, last_ok, once, NOW + HOUR));
+        let twice = failed_times(2, NOW);
+        assert!(!check_due(true, false, last_ok, twice, NOW + HOUR));
+        assert!(check_due(true, false, last_ok, twice, NOW + 2 * HOUR));
+        assert_eq!(failed_times(3, NOW).retry_delay_ms(), 4 * HOUR);
+        assert_eq!(failed_times(6, NOW).retry_delay_ms(), CHECK_EVERY_MS);
+        assert_eq!(failed_times(500, NOW).retry_delay_ms(), CHECK_EVERY_MS);
+        assert!(!check_due(false, false, last_ok, once, NOW + 2 * HOUR));
+    }
+
+    #[test]
+    fn backoff_counts_consecutive_failures() {
+        let b = NO_FAILURES.failed(NOW).failed(NOW + HOUR);
+        assert_eq!(b, Backoff { failures: 2, last_failure: Some(NOW + HOUR) });
+        assert_eq!(Backoff { failures: u32::MAX, last_failure: None }.failed(NOW).failures, u32::MAX);
     }
 
     #[test]
@@ -480,7 +650,7 @@ mod tests {
         assert_eq!((s.state, s.progress), (UpdateState::Downloading, None));
         let s = s.apply(Step::Progress { received: 250, total: Some(1000) });
         assert_eq!((s.state, s.progress, s.version.as_deref()), (UpdateState::Downloading, Some(25), Some("1.0.1")));
-        let s = s.apply(Step::Downloaded);
+        let s = s.apply(downloaded("1.0.1"));
         assert_eq!(
             s,
             UpdateStatus {
@@ -517,18 +687,47 @@ mod tests {
     }
 
     #[test]
-    fn checks_do_not_restart_a_download_or_replace_a_ready_update() {
-        for state in [UpdateState::Checking, UpdateState::Available, UpdateState::Downloading, UpdateState::Ready] {
-            assert!(st(state).is_busy(), "{state:?}");
+    fn a_check_in_progress_is_not_restarted() {
+        for state in [UpdateState::Checking, UpdateState::Available, UpdateState::Downloading] {
+            let s = st(state).apply(found("1.0.1"));
+            assert_eq!(s.apply(Step::CheckStarted), s, "{state:?}");
         }
-        assert!(UpdateStatus::disabled(DEV_BUILD).is_busy());
-        let ready = st(UpdateState::Checking).apply(found("1.0.1")).apply(Step::Downloaded);
-        assert_eq!(ready.apply(Step::CheckStarted), ready);
-        // A failed or idle state can check again.
-        assert!(!st(UpdateState::Idle).is_busy());
+        let off = UpdateStatus::disabled(DEV_BUILD);
+        assert_eq!(off.apply(Step::CheckStarted), off);
+        // A failed or idle state checks again.
         let failed = st(UpdateState::Checking).apply(Step::CheckFailed { manual: true });
-        assert!(!failed.is_busy());
         assert_eq!(failed.apply(Step::CheckStarted), st(UpdateState::Checking));
+    }
+
+    #[test]
+    fn a_ready_update_stays_offered_until_a_newer_one_is_downloaded() {
+        let r = ready("1.0.1");
+        // Checks keep running while an update is ready, without hiding the card.
+        for step in [
+            Step::CheckStarted,
+            Step::UpToDate,
+            found("1.0.2"),
+            Step::Progress { received: 5, total: Some(10) },
+            Step::CheckFailed { manual: true },
+            Step::DownloadFailed { manual: true, bad_signature: false },
+            Step::DownloadFailed { manual: false, bad_signature: true },
+        ] {
+            assert_eq!(r.apply(step.clone()), r, "{step:?}");
+        }
+        let newer = r.apply(Step::Downloaded { version: "1.0.2".into(), notes: None });
+        assert_eq!(newer, UpdateStatus { version: Some("1.0.2".into()), ..st(UpdateState::Ready) });
+    }
+
+    #[test]
+    fn only_a_newer_version_replaces_a_ready_one() {
+        assert!(is_newer("1.0.2", "1.0.1"));
+        assert!(is_newer("1.1.0", "1.0.9"));
+        assert!(is_newer("1.0.0-rc.2", "1.0.0-rc.1"));
+        assert!(is_newer("1.0.0", "1.0.0-rc.3"));
+        assert!(!is_newer("1.0.1", "1.0.1"));
+        assert!(!is_newer("1.0.0", "1.0.1"));
+        assert!(!is_newer("garbage", "1.0.1"));
+        assert!(!is_newer("1.0.2", "garbage"));
     }
 
     #[test]
@@ -544,12 +743,41 @@ mod tests {
 
     #[test]
     fn install_is_refused_during_an_ask_or_before_an_update_is_ready() {
-        let ready = st(UpdateState::Checking).apply(found("1.0.1")).apply(Step::Downloaded);
-        assert_eq!(install_refusal(&ready, true), Some(ASK_RUNNING));
-        assert_eq!(install_refusal(&ready, false), None);
+        let r = ready("1.0.1");
+        assert_eq!(install_refusal(&r, true), Some(ASK_RUNNING));
+        assert_eq!(install_refusal(&r, false), None);
         for state in [UpdateState::Idle, UpdateState::Checking, UpdateState::Downloading, UpdateState::Error] {
             assert_eq!(install_refusal(&st(state), false), Some(NOT_READY), "{state:?}");
         }
         assert_eq!(ASK_RUNNING, "Finish or stop the running ask first.");
+    }
+
+    #[test]
+    fn downloaded_bundles_are_saved_to_disk_and_read_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let updates = dir.path().join("updates");
+        let path = save_bundle(&updates, "1.0.1", b"installer bytes").unwrap();
+        assert_eq!(path, updates.join("perch-1.0.1.update"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"installer bytes");
+        // A version can't escape the folder.
+        let odd = save_bundle(&updates, "1.0.0+../../x", b"x").unwrap();
+        assert_eq!(odd.parent(), Some(updates.as_path()));
+        assert_eq!(odd.file_name().unwrap(), "perch-1.0.0_.._.._x.update");
+    }
+
+    #[test]
+    fn stale_bundles_are_removed_except_the_one_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = save_bundle(dir.path(), "1.0.1", b"old").unwrap();
+        let new = save_bundle(dir.path(), "1.0.2", b"new").unwrap();
+        std::fs::write(dir.path().join("other.txt"), "not ours").unwrap();
+        remove_bundles(dir.path(), Some(&new));
+        assert!(!old.exists());
+        assert!(new.exists());
+        assert!(dir.path().join("other.txt").exists());
+        remove_bundles(dir.path(), None);
+        assert!(!new.exists());
+        // A missing folder is fine.
+        remove_bundles(&dir.path().join("missing"), None);
     }
 }
