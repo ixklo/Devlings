@@ -123,11 +123,17 @@ Perch never uses an API key and has no login of its own.
 
 ## How watching works
 
-On first run, Perch asks to add a few `http` hooks to your Claude Code `settings.json`. Each hook sends session events to `http://127.0.0.1:<port>/hook/<random token>` with a short timeout. If Perch isn't running, the hook fails fast and Claude Code carries on. A backup of `settings.json` is saved before every change. **Settings → Watching → Remove** removes exactly Perch's entries and nothing else.
+On first run, Perch asks to add a few hooks to your Claude Code `settings.json`:
+
+- Most events are `http` hooks that send the session's event to `http://127.0.0.1:<port>/hook/<random token>` with a short timeout. If Perch isn't running, they fail fast and silently, and Claude Code carries on.
+- `Stop`, `StopFailure` and `SessionEnd` run Perch itself as a tiny background relay (`perch --hook-relay …`) instead, because Claude Code shows an error for those events when an `http` hook can't connect. The relay always exits within about a second, so quitting Perch never adds noise or delay to Claude Code.
+- The `PermissionRequest` hook waits for an answer only while you have **Settings → Approvals** turned on; otherwise Perch replies "no decision" at once and Claude Code's own prompt carries on (see [Permission prompts](#permission-prompts)).
+
+A backup of `settings.json` is saved before every change, and Perch never rewrites the file on start or quit. **Settings → Watching → Remove** removes exactly Perch's entries and nothing else.
 
 ## Privacy
 
-Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a daily check against GitHub's release API for updates (Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
+Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a check for a newer version at launch and once a day, which downloads a small `latest.json` file from this repository's latest GitHub release (turn it off in Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
 
 ### Untrusted folders
 
