@@ -69,13 +69,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-            args: ""
-          - platform: macos-latest
-            args: "--target universal-apple-darwin"
-          - platform: ubuntu-22.04
-            args: ""
+        # While the repo is private, macOS (10x minutes) is skipped; public releases build all three.
+        include: ${{ fromJSON(github.event.repository.private && '[{"platform":"windows-latest","args":""},{"platform":"ubuntu-22.04","args":""}]' || '[{"platform":"windows-latest","args":""},{"platform":"macos-latest","args":"--target universal-apple-darwin"},{"platform":"ubuntu-22.04","args":""}]') }}
     runs-on: ${{ matrix.platform }}
     # tauri-action uploads the installers and updater bundles to the draft.
     permissions:
@@ -164,7 +159,7 @@ jobs:
             '{assets: [.[] | {name, url: ($base + (.name | @uri))}]}' assets-raw.json > release-assets.json
           cat release-assets.json
       - name: Build latest.json
-        run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json
+        run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json ${{ github.event.repository.private && '--require windows-x86_64,linux-x86_64,linux-x86_64-deb' || '' }}
       - name: Write SHA256SUMS.txt
         run: |
           set -e
@@ -176,7 +171,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS.txt --repo "$REPO" --clobber
+      # Artifact attestations aren't available for private repositories on GitHub's free plan.
       - name: Attest build provenance for every asset
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: "release-assets/*"

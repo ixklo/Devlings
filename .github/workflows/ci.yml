@@ -10,7 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-22.04]
+        # macOS minutes count 10x against the free allowance, so while the repo is private it's left out.
+        platform: ${{ fromJSON(github.event.repository.private && '["windows-latest","ubuntu-22.04"]' || '["windows-latest","macos-latest","ubuntu-22.04"]') }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [macos-latest, ubuntu-22.04]
+        platform: ${{ fromJSON(github.event.repository.private && '["ubuntu-22.04"]' || '["macos-latest","ubuntu-22.04"]') }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4

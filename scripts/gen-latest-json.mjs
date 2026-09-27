@@ -88,7 +88,9 @@ if (unrecognized.length > 0) {
   fail(`couldn't classify these signature files by platform: ${unrecognized.join(", ")}`);
 }
 
-const REQUIRED_KEYS = ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64", "linux-x86_64-deb"];
+const ALL_KEYS = ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64", "linux-x86_64-deb"];
+// --require a,b,c narrows the check (private-repo builds skip macOS); by default every platform is required.
+const REQUIRED_KEYS = args.require ? args.require.split(",").map((k) => k.trim()).filter(Boolean) : ALL_KEYS;
 const missing = REQUIRED_KEYS.filter((k) => !platforms[k]);
 if (missing.length > 0) {
   fail(`missing updater platform(s): ${missing.join(", ")} (found sig files: ${sigFiles.join(", ")})`);
