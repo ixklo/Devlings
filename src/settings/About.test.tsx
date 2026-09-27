@@ -56,6 +56,28 @@ describe("Settings → About", () => {
     expect(await within(about()).findByText("Perch is up to date.")).toBeInTheDocument();
   });
 
+  it("stops saying up to date once the status moves on", async () => {
+    const { about, rerender } = renderAbout(makeSnapshot(), { check_for_update: () => ({ state: "idle" }) });
+    await userEvent.click(within(about()).getByRole("button", { name: "Check for updates" }));
+    expect(await within(about()).findByText("Perch is up to date.")).toBeInTheDocument();
+    // A later background check that fails quietly lands back on idle; that isn't "up to date".
+    rerender(<Settings snap={makeSnapshot({ update: { state: "checking" } })} />);
+    rerender(<Settings snap={makeSnapshot({ update: { state: "idle" } })} />);
+    expect(within(about()).queryByText("Perch is up to date.")).not.toBeInTheDocument();
+  });
+
+  it("keeps up to date when the check's own snapshot arrives after its result", async () => {
+    let finish: (s: UpdateStatus) => void = () => {};
+    const { about, rerender } = renderAbout(makeSnapshot(), {
+      check_for_update: () => new Promise<UpdateStatus>((resolve) => (finish = resolve)),
+    });
+    await userEvent.click(within(about()).getByRole("button", { name: "Check for updates" }));
+    rerender(<Settings snap={makeSnapshot({ update: { state: "checking" } })} />);
+    await act(async () => finish({ state: "idle" }));
+    rerender(<Settings snap={makeSnapshot({ update: { state: "idle" } })} />);
+    expect(within(about()).getByText("Perch is up to date.")).toBeInTheDocument();
+  });
+
   it("says when it couldn't check", async () => {
     const { about, rerender } = renderAbout(makeSnapshot(), {
       check_for_update: () => ({ state: "error", error: "Couldn't check for updates." }),

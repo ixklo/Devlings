@@ -29,6 +29,8 @@ export function updateLine(u: UpdateStatus, upToDate: boolean): string | null {
   }
 }
 
+const statusKey = (u: UpdateStatus) => `${u.state}|${u.version ?? ""}|${u.error ?? ""}`;
+
 interface Props {
   snap: Snapshot;
   action: ReturnType<typeof useAction>;
@@ -38,24 +40,40 @@ interface Props {
 export function About({ snap, action }: Props) {
   const { config, update } = snap;
   const [version, setVersion] = useState<string | null>(null);
-  // Set when a manual check comes back with nothing new; cleared by the next check.
-  const [upToDate, setUpToDate] = useState(false);
+  // The status a manual check ended on when it found nothing new. "Up to date" shows only while the
+  // live status is still that one; once the status has matched it and moved on, it's dropped.
+  const [upToDate, setUpToDate] = useState<{ key: string; seen: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | undefined>(undefined);
+  const key = statusKey(update);
+  const keyRef = useRef(key);
+  keyRef.current = key;
 
   useEffect(() => {
     api.appVersion().then(setVersion, () => setVersion(null));
     return () => window.clearTimeout(copiedTimer.current);
   }, []);
 
+  // The check's result and its snapshot can arrive in either order, so wait to see the status first.
+  useEffect(() => {
+    setUpToDate((u) => {
+      if (!u) return u;
+      if (key === u.key) return u.seen ? u : { ...u, seen: true };
+      return u.seen ? null : u;
+    });
+  }, [key]);
+
   const busy = update.state === "checking" || update.state === "available" || update.state === "downloading";
-  const line = updateLine(update, upToDate);
+  const line = updateLine(update, upToDate?.key === key);
 
   const check = () =>
     void action.run(async () => {
-      setUpToDate(false);
+      setUpToDate(null);
       const result = await api.checkForUpdate();
-      setUpToDate(result.state === "idle");
+      if (result.state === "idle") {
+        const resultKey = statusKey(result);
+        setUpToDate({ key: resultKey, seen: keyRef.current === resultKey });
+      }
     });
 
   const copyDiagnostics = () =>
