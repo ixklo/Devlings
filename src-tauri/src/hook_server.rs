@@ -40,6 +40,9 @@ pub struct HookServer {
     pub port: u16,
     server: Arc<tiny_http::Server>,
     handle: Option<JoinHandle<()>>,
+    /// Requests currently being read, so tests can wait until one is in flight.
+    #[cfg(test)]
+    in_flight: Arc<AtomicUsize>,
 }
 
 /// Compares two byte strings in time that depends only on their lengths.
@@ -251,6 +254,8 @@ impl HookServer {
         let token: Arc<str> = token.into();
         let on_permission: Arc<PermissionHandler> = Arc::new(on_permission);
         let in_flight = Arc::new(AtomicUsize::new(0));
+        #[cfg(test)]
+        let counter = in_flight.clone();
         let handle = std::thread::spawn(move || {
             for (seq, req) in (0u64..).zip(listener.incoming_requests()) {
                 let ticket = Ticket { seq, queue: Some(queue.clone()) };
@@ -270,7 +275,18 @@ impl HookServer {
                 }
             }
         });
-        Ok(Self { port, server, handle: Some(handle) })
+        Ok(Self {
+            port,
+            server,
+            handle: Some(handle),
+            #[cfg(test)]
+            in_flight: counter,
+        })
+    }
+
+    #[cfg(test)]
+    fn in_flight(&self) -> usize {
+        self.in_flight.load(Ordering::SeqCst)
     }
 
     pub fn stop(mut self) {
@@ -466,15 +482,8 @@ mod tests {
 
     #[test]
     fn a_stalled_request_does_not_hold_up_later_events() {
-        use std::io::Write;
         let (server, base, rx) = channel_server();
-        // Headers promise a body that never finishes arriving, so this request's worker waits on it. (Bodies under
-        // a few KB are read by tiny_http before the request is handed over, so only a large one can stall here.)
-        let mut stalled = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
-        stalled
-            .write_all(b"POST /hook/abc HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n{\"hook")
-            .unwrap();
-        std::thread::sleep(Duration::from_millis(200));
+        let stalled = stalled_request(&server);
         let t0 = Instant::now();
         assert_eq!(post(&base, "/hook/abc", r#"{"hook_event_name":"Stop","n":1}"#).0, 200);
         let got = rx.recv_timeout(REORDER_WAIT + Duration::from_secs(3)).expect("a later event was held up for good");
@@ -487,13 +496,15 @@ mod tests {
     #[test]
     fn a_held_permission_request_does_not_block_events() {
         let (release_tx, release_rx) = mpsc::channel::<()>();
-        let release_rx = Mutex::new(release_rx);
+        let (entered_tx, entered_rx) = mpsc::channel::<()>();
+        let (release_rx, entered_tx) = (Mutex::new(release_rx), Mutex::new(entered_tx));
         let (tx, rx) = mpsc::channel();
         let server = HookServer::start(
             0,
             TOKEN.into(),
             move |v| tx.send(v).unwrap(),
             move |_| {
+                entered_tx.lock().unwrap().send(()).unwrap();
                 let _ = release_rx.lock().unwrap().recv_timeout(Duration::from_secs(10));
                 r#"{"held":true}"#.to_string()
             },
@@ -502,7 +513,7 @@ mod tests {
         let base = format!("http://127.0.0.1:{}", server.port);
         let held_base = base.clone();
         let held = std::thread::spawn(move || post(&held_base, "/hook/abc", r#"{"hook_event_name":"PermissionRequest"}"#).2);
-        std::thread::sleep(Duration::from_millis(150));
+        entered_rx.recv_timeout(Duration::from_secs(5)).expect("the request never reached the handler");
         let t0 = Instant::now();
         assert_eq!(post(&base, "/hook/abc", r#"{"hook_event_name":"PreToolUse"}"#).0, 200);
         assert!(t0.elapsed() < Duration::from_secs(2), "blocked for {:?}", t0.elapsed());
@@ -514,13 +525,14 @@ mod tests {
         server.stop();
     }
 
-    /// Opens a request whose body never finishes arriving, so its worker keeps its slot.
-    fn stalled_request(port: u16) -> std::net::TcpStream {
+    /// Opens a request whose body never finishes arriving, so its worker keeps its slot. (Bodies under a few KB
+    /// are read by tiny_http before the request is handed over, so only a large one can stall.)
+    fn stalled_request(server: &HookServer) -> std::net::TcpStream {
         use std::io::Write;
-        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
         s.write_all(b"POST /hook/abc HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n{\"hook")
             .unwrap();
-        std::thread::sleep(Duration::from_millis(200));
+        eventually("the stalled request never reached a worker", || server.in_flight() == 1);
         s
     }
 
@@ -537,15 +549,12 @@ mod tests {
     fn answers_503_when_too_many_are_in_flight() {
         let server = HookServer::start_with_limit(0, TOKEN.into(), 1, |_| {}, |_| EMPTY_ANSWER.to_string()).unwrap();
         let base = format!("http://127.0.0.1:{}", server.port);
-        let stalled = stalled_request(server.port);
+        let stalled = stalled_request(&server);
         // The stalled request holds the only slot, so others are refused at once, as JSON.
-        eventually("never answered 503", || {
-            let t0 = Instant::now();
-            let (status, ct, _) = post(&base, "/hook/abc", "{}");
-            assert_eq!(ct, "application/json");
-            assert!(t0.elapsed() < Duration::from_secs(2));
-            status == 503
-        });
+        let t0 = Instant::now();
+        let (status, ct, _) = post(&base, "/hook/abc", "{}");
+        assert_eq!((status, ct.as_str()), (503, "application/json"));
+        assert!(t0.elapsed() < Duration::from_secs(2));
         // Capacity comes back once the stalled request ends.
         drop(stalled);
         eventually("the slot never came back", || post(&base, "/hook/abc", "{}").0 == 200);

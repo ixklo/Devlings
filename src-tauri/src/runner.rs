@@ -314,6 +314,17 @@ mod tests {
         assert_eq!(build_args(&req(Some("abc")))[11..].to_vec(), vec!["--resume", "abc"]);
         // Permission prompts come to Perch over stdin now; nothing turns them off.
         assert!(!build_args(&req(None)).contains(&"--permission-prompts".to_string()));
+        // An untrusted folder's extra flags still come after everything, host protocol included.
+        let mut untrusted = req(Some("abc"));
+        untrusted.extra_args = vec!["--setting-sources".into(), "user".into()];
+        assert_eq!(
+            build_args(&untrusted),
+            vec![
+                "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+                "--input-format", "stream-json", "--permission-prompt-tool", "stdio",
+                "--permission-mode", "acceptEdits", "--resume", "abc", "--setting-sources", "user"
+            ]
+        );
     }
 
     #[test]
