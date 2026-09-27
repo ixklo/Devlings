@@ -4,6 +4,7 @@ import { IconAlert, IconSquarePen, IconX } from "../shared/icons";
 import { projectName, samePath } from "../shared/paths";
 import { STATUS_TEXT } from "../shared/threads";
 import type { Snapshot, ThreadStatus } from "../shared/types";
+import { ApprovalCard } from "./ApprovalCard";
 import { ComposerInput } from "./ComposerInput";
 import { CreditsNotice } from "./CreditsNotice";
 import { Messages } from "./Messages";
@@ -41,7 +42,9 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
   useEffect(() => {
     if (thread) setLastStatus(thread.status);
   }, [thread?.status]);
-  const status: ThreadStatus = running ? "running" : (thread?.status ?? lastStatus);
+  // This run's permission requests, answered inline (design v1.0 D4). Stop and New chat deny them in the backend.
+  const approvals = snap.approvals.filter((a) => a.source === "ask" && samePath(a.project, project));
+  const status: ThreadStatus = approvals.length ? "needs_input" : running ? "running" : (thread?.status ?? lastStatus);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -75,7 +78,13 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
   }, [initialPrompt]);
 
   const statusText = status === "idle" ? "" : STATUS_TEXT[status];
-  const activity = running ? (thread?.status === "running" && thread.label ? thread.label : "Thinking…") : null;
+  const activity = !running
+    ? null
+    : approvals.length
+      ? "Waiting for your answer"
+      : thread?.status === "running" && thread.label
+        ? thread.label
+        : "Thinking…";
 
   return (
     <section className="card thread-view view-enter" data-hit="" aria-label={`Conversation in ${name}`}>
@@ -126,6 +135,13 @@ export function ThreadView({ snap, project, initialSessionId, initialPrompt, con
         )}
       />
       <footer className="thread-foot">
+        {approvals.length > 0 && (
+          <div className="approval-rows">
+            {approvals.map((a) => (
+              <ApprovalCard key={a.id} approval={a} holdMs={snap.config.approvalHoldSecs * 1000} variant="row" />
+            ))}
+          </div>
+        )}
         {gate.pending !== null && (
           <CreditsNotice
             petName={snap.config.petName}

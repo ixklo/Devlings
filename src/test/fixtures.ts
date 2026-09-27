@@ -1,4 +1,4 @@
-import type { Config, SetupStatus, Snapshot, ThreadInfo } from "../shared/types";
+import type { Config, PendingApproval, SetupStatus, Snapshot, ThreadInfo } from "../shared/types";
 
 export function makeConfig(over: Partial<Config> = {}): Config {
   return {
@@ -17,6 +17,9 @@ export function makeConfig(over: Partial<Config> = {}): Config {
     threadsCollapsed: false,
     autoUpdate: true,
     lastUpdateCheck: null,
+    watchApprovals: false,
+    approvalHoldSecs: 60,
+    approvalsIntroSeen: true,
     ...over,
   };
 }
@@ -63,6 +66,27 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
     running: [],
     setup: makeSetup(),
     update: { state: "idle" },
+    approvals: [],
+    ...over,
+  };
+}
+
+let approvalSeq = 0;
+export function makeApproval(over: Partial<PendingApproval> = {}): PendingApproval {
+  approvalSeq += 1;
+  return {
+    id: `a${approvalSeq}`,
+    sessionId: `s-approval-${approvalSeq}`,
+    project: "C:\\code\\app",
+    projectName: "app",
+    source: "watch",
+    toolName: "Bash",
+    summary: "npm test -- --watch=false",
+    description: "Run the test suite",
+    canAlwaysAllow: true,
+    alwaysLabel: "Always allow",
+    alwaysDetail: "Adds the rule Bash(npm test:*) to this project's local settings",
+    expiresAt: null,
     ...over,
   };
 }

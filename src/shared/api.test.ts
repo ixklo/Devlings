@@ -66,6 +66,24 @@ describe("api contract", () => {
     ]);
   });
 
+  it("sends the v1.0 approval commands", async () => {
+    const { calls } = fakeTransport();
+    await api.answerApproval("a1", "allow");
+    await api.answerApproval("a2", "deny");
+    await api.answerApproval("a3", "always");
+    await api.setWatchApprovals(true);
+    await api.setApprovalHold(120);
+    await api.markApprovalsIntroSeen();
+    expect(calls).toEqual([
+      ["answer_approval", { id: "a1", decision: "allow" }],
+      ["answer_approval", { id: "a2", decision: "deny" }],
+      ["answer_approval", { id: "a3", decision: "always" }],
+      ["set_watch_approvals", { enabled: true }],
+      ["set_approval_hold", { secs: 120 }],
+      ["mark_approvals_intro_seen", undefined],
+    ]);
+  });
+
   it("keeps the v0.1 commands unchanged", async () => {
     const { calls } = fakeTransport();
     await api.ask("p", "hi");

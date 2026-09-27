@@ -48,6 +48,12 @@ export interface Config {
   autoUpdate: boolean;
   /** Epoch ms of the last update check. */
   lastUpdateCheck: number | null;
+  /** Answer permission requests of watched sessions from the pet. Off by default. */
+  watchApprovals: boolean;
+  /** How long a watched request is held for an answer in the pet: 30, 60, 120 or 240. */
+  approvalHoldSecs: number;
+  /** The one-time "answer permission prompts" intro card was answered. */
+  approvalsIntroSeen: boolean;
 }
 
 export type PetState = "idle" | "running" | "needs_input" | "ready" | "blocked" | "setup";
@@ -104,6 +110,31 @@ export interface Snapshot {
   running: string[];
   setup: SetupStatus;
   update: UpdateStatus;
+  /** Permission requests the user can answer from the pet, oldest first. */
+  approvals: PendingApproval[];
+}
+
+export type ApprovalDecision = "allow" | "deny" | "always";
+
+/** A Claude Code permission request waiting for an answer (v1.0 spec section 4). */
+export interface PendingApproval {
+  id: string;
+  sessionId: string;
+  project: string;
+  projectName: string;
+  /** "watch": another Claude Code session; "ask": one of the pet's own Ask runs. */
+  source: Source;
+  toolName: string;
+  /** The exact command, file path or URL; otherwise the input as compact JSON. */
+  summary: string;
+  description: string | null;
+  canAlwaysAllow: boolean;
+  /** "Allow for this session" or "Always allow"; null without canAlwaysAllow. */
+  alwaysLabel: string | null;
+  /** One line saying what the always button does. */
+  alwaysDetail: string | null;
+  /** Epoch ms when a watched request's hold ends; null for Ask requests. */
+  expiresAt: number | null;
 }
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "disabled";

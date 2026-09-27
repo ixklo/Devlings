@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeTransport } from "../test/fakeTransport";
-import { makeThread } from "../test/fixtures";
+import { makeApproval, makeThread } from "../test/fixtures";
 import type { ThreadInfo } from "../shared/types";
 import { BubbleStack } from "./BubbleStack";
 
@@ -73,5 +73,62 @@ describe("BubbleStack", () => {
   it("marks every card as a hit region", () => {
     render(<Harness threads={threads} />);
     document.querySelectorAll(".thread-card, .more-pill").forEach((el) => expect(el).toHaveAttribute("data-hit"));
+  });
+});
+
+describe("BubbleStack with approvals", () => {
+  beforeEach(() => {
+    fakeTransport();
+  });
+
+  const stack = (props: Partial<Parameters<typeof BubbleStack>[0]>) => (
+    <BubbleStack threads={[]} now={60_000} expanded={false} onToggleExpanded={() => {}} onOpenThread={() => {}} holdMs={60_000} {...props} />
+  );
+
+  it("shows one approval card per request, nearest the pet, with the tail", () => {
+    const threads = [makeThread({ projectName: "other", status: "ready" })];
+    render(stack({ threads, approvals: [makeApproval({ id: "a", projectName: "app" }), makeApproval({ id: "b", projectName: "api" })] }));
+    const cards = screen.getAllByRole("group", { name: /request in/ });
+    expect(cards.map((c) => within(c).getByText(/^(app|api)$/).textContent)).toEqual(["app", "api"]);
+    expect(cards[0]).toHaveClass("has-tail");
+    expect(document.querySelectorAll(".has-tail")).toHaveLength(1);
+    expect(projectNames()).toContain("other");
+  });
+
+  it("replaces the thread card of a session that has a request", () => {
+    const waiting = makeThread({ sessionId: "s-wait", projectName: "waiting", status: "needs_input" });
+    const approval = makeApproval({ sessionId: "s-wait", projectName: "waiting" });
+    const { rerender } = render(stack({ threads: [waiting], approvals: [approval] }));
+    expect(document.querySelectorAll(".thread-card:not(.approval-card)")).toHaveLength(0);
+    // After the hold ends, the plain "needs input" card comes back.
+    rerender(stack({ threads: [waiting], approvals: [] }));
+    expect(projectNames()).toEqual(["waiting"]);
+  });
+
+  it("keeps the stack short and folds the rest into +N more", async () => {
+    const threads = [makeThread({ projectName: "t1" }), makeThread({ projectName: "t2" }), makeThread({ projectName: "t3" })];
+    const approvals = [makeApproval({ id: "x" }), makeApproval({ id: "y" }), makeApproval({ id: "z" })];
+    function Expandable() {
+      const [expanded, setExpanded] = useState(false);
+      return stack({ threads, approvals, expanded, onToggleExpanded: () => setExpanded((x) => !x) });
+    }
+    render(<Expandable />);
+    expect(screen.getAllByRole("group", { name: /request in/ })).toHaveLength(2);
+    expect(document.querySelectorAll(".thread-card:not(.approval-card)")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "+3 more" }));
+    expect(screen.getAllByRole("group", { name: /request in/ })).toHaveLength(3);
+    expect(document.querySelectorAll(".thread-card:not(.approval-card)")).toHaveLength(3);
+    await userEvent.click(screen.getByRole("button", { name: "Show less" }));
+    expect(screen.getAllByRole("group", { name: /request in/ })).toHaveLength(2);
+  });
+
+  it("shows the intro card, which takes the tail when it's alone", () => {
+    render(stack({ intro: { petName: "Mochi" } }));
+    expect(screen.getByRole("group", { name: "Answer permission prompts" })).toHaveClass("has-tail");
+  });
+
+  it("marks approval and intro cards as hit regions", () => {
+    render(stack({ approvals: [makeApproval()], intro: { petName: "Mochi" } }));
+    for (const el of screen.getAllByRole("group")) expect(el).toHaveAttribute("data-hit");
   });
 });
