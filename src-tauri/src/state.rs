@@ -69,6 +69,9 @@ pub struct AppState {
     /// Whether cards currently open below the sprite instead of above it (design D9). Runtime
     /// only, for the flip's hysteresis; not persisted, so a restart re-derives it from scratch.
     pub cards_below: AtomicBool,
+    /// The last `.stage` layout sent to the pet. The first one is sent at startup, before the pet's page
+    /// listens, so the page also asks for it once it's ready (`get_pet_placement`).
+    pub placement: Mutex<Option<crate::overlay::Placement>>,
     /// Design D17: whether Perch has hidden the pet window (tray, Ctrl+Alt+P, "Hide for 1 hour"),
     /// and whether the pet or settings window is minimized (from its resize events). Kept here so
     /// the cursor poll can pause without asking the main thread.
@@ -110,6 +113,7 @@ impl AppState {
             hit_regions: Mutex::new(None),
             pet_visibility_gen: AtomicU64::new(0),
             cards_below: AtomicBool::new(false),
+            placement: Mutex::new(None),
             pet_hidden: AtomicBool::new(false),
             pet_minimized: AtomicBool::new(false),
             settings_minimized: AtomicBool::new(false),
@@ -493,10 +497,30 @@ pub fn ensure_claude_located(app: &AppHandle) -> Result<PathBuf, String> {
     lock(&app.state::<AppState>().claude).clone().map(|l| l.path)
 }
 
+/// Whether to put the start-at-login entry back: the config says it's on but the entry is gone (an uninstall
+/// then a reinstall that kept the settings, or a cleanup tool). Never from a dev build, which shares the app
+/// data folder and would point the entry at the dev executable.
+pub fn should_restore_launch_at_login(config_on: bool, entry_present: Option<bool>, dev_build: bool) -> bool {
+    config_on && entry_present == Some(false) && !dev_build
+}
+
+fn restore_launch_at_login(app: &AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+    let on = lock(&app.state::<AppState>().config).launch_at_login;
+    let launcher = app.autolaunch();
+    if should_restore_launch_at_login(on, launcher.is_enabled().ok(), cfg!(debug_assertions)) {
+        match launcher.enable() {
+            Ok(()) => log::info!("Start-at-login was on in Perch's settings but missing; restored it"),
+            Err(e) => log::warn!("Couldn't restore start-at-login: {e}"),
+        }
+    }
+}
+
 pub fn boot(app: AppHandle) {
     std::thread::spawn(move || {
         scan_pets(&app);
         migrate_hooks(&app);
+        restore_launch_at_login(&app);
         recheck_setup(&app);
         start_hook_server(&app);
         emit_snapshot(&app);
@@ -783,5 +807,14 @@ mod tests {
         assert!(outcome.located.is_err());
         assert!(outcome.auth.is_none());
         assert_eq!(calls.load(Ordering::SeqCst), 0, "auth status is only worth checking once a binary was found");
+    }
+
+    #[test]
+    fn restores_launch_at_login_only_when_it_went_missing() {
+        assert!(should_restore_launch_at_login(true, Some(false), false));
+        assert!(!should_restore_launch_at_login(true, Some(true), false), "already there");
+        assert!(!should_restore_launch_at_login(false, Some(false), false), "the user turned it off");
+        assert!(!should_restore_launch_at_login(true, None, false), "couldn't tell: leave it alone");
+        assert!(!should_restore_launch_at_login(true, Some(false), true), "never from a dev build");
     }
 }

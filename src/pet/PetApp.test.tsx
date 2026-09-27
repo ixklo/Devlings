@@ -22,6 +22,33 @@ async function setup() {
 }
 
 describe("PetApp placement (design D9)", () => {
+  it("asks for the current layout on mount, since the startup event is sent before the page listens", async () => {
+    fakeTransport({
+      get_snapshot: () => makeSnapshot(),
+      get_pet_sprite: () => "data:image/png;base64,AAAA",
+      get_pet_placement: () => ({ cardsBelow: false, shiftX: -116, stageRoom: 300 }),
+    });
+    const { container } = render(<PetApp />);
+    await screen.findByRole("button", { name: /idle/ });
+    const stage = container.querySelector(".stage") as HTMLElement;
+    await vi.waitFor(() => expect(stage.style.transform).toBe("translateX(-116px)"));
+    expect(stage.style.getPropertyValue("--stage-room")).toBe("300px");
+  });
+
+  it("lets a live placement event win over a slower answer to that request", async () => {
+    let answer: (p: unknown) => void = () => {};
+    const { emit } = fakeTransport({
+      get_snapshot: () => makeSnapshot(),
+      get_pet_sprite: () => "data:image/png;base64,AAAA",
+      get_pet_placement: () => new Promise((r) => (answer = r)),
+    });
+    const { container } = render(<PetApp />);
+    await screen.findByRole("button", { name: /idle/ });
+    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 42, stageRoom: 400 }));
+    await act(async () => answer({ cardsBelow: false, shiftX: -116, stageRoom: 300 }));
+    expect((container.querySelector(".stage") as HTMLElement).style.transform).toBe("translateX(42px)");
+  });
+
   it("defaults to cards above the sprite, and flips via data-cards-below on .overlay", async () => {
     const { container, emit } = await setup();
     const overlay = container.querySelector(".overlay");
