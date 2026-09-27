@@ -26,10 +26,10 @@ describe("PetApp placement (design D9)", () => {
     const overlay = container.querySelector(".overlay");
     expect(overlay).toHaveAttribute("data-cards-below", "false");
 
-    act(() => emit("pet-placement", { cardsBelow: true, shiftX: 0 }));
+    act(() => emit("pet-placement", { cardsBelow: true, shiftX: 0, stageRoom: 400 }));
     expect(overlay).toHaveAttribute("data-cards-below", "true");
 
-    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 0 }));
+    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 0, stageRoom: 400 }));
     expect(overlay).toHaveAttribute("data-cards-below", "false");
   });
 
@@ -38,14 +38,26 @@ describe("PetApp placement (design D9)", () => {
     const stage = container.querySelector(".stage") as HTMLElement;
     expect(stage.style.transform).toBe("");
 
-    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 42 }));
+    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 42, stageRoom: 400 }));
     expect(stage.style.transform).toBe("translateX(42px)");
 
-    act(() => emit("pet-placement", { cardsBelow: true, shiftX: -18 }));
+    act(() => emit("pet-placement", { cardsBelow: true, shiftX: -18, stageRoom: 400 }));
     expect(stage.style.transform).toBe("translateX(-18px)");
 
-    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 0 }));
+    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 0, stageRoom: 400 }));
     expect(stage.style.transform).toBe("");
+  });
+
+  it("applies stageRoom as the --stage-room custom property on .stage, unset until the first placement", async () => {
+    const { container, emit } = await setup();
+    const stage = container.querySelector(".stage") as HTMLElement;
+    expect(stage.style.getPropertyValue("--stage-room")).toBe("");
+
+    act(() => emit("pet-placement", { cardsBelow: false, shiftX: 0, stageRoom: 344 }));
+    expect(stage.style.getPropertyValue("--stage-room")).toBe("344px");
+
+    act(() => emit("pet-placement", { cardsBelow: true, shiftX: 0, stageRoom: 131.2 }));
+    expect(stage.style.getPropertyValue("--stage-room")).toBe("131.2px");
   });
 
   it("keeps reporting hit regions after a placement flip", async () => {
@@ -57,7 +69,7 @@ describe("PetApp placement (design D9)", () => {
       expect(reports()).toBeGreaterThan(0);
 
       const before = reports();
-      act(() => emit("pet-placement", { cardsBelow: true, shiftX: 5 }));
+      act(() => emit("pet-placement", { cardsBelow: true, shiftX: 5, stageRoom: 400 }));
       act(() => void vi.advanceTimersByTime(HIT_THROTTLE_MS));
       expect(reports()).toBeGreaterThanOrEqual(before);
     } finally {

@@ -30,6 +30,9 @@ const OVERLAY_PAD_BOTTOM: f64 = 14.0;
 const DOCK_GAP: f64 = 2.0;
 /// `.control-bar`'s outer height: 28px icon buttons + 3px padding top/bottom + 1px border top/bottom.
 const BAR_HEIGHT: f64 = 36.0;
+/// `.overlay`'s own gap between `.stage` and `.dock` (pet.css) — distinct from `.dock`'s own
+/// `DOCK_GAP` between the sprite and the control bar.
+const OVERLAY_GAP: f64 = 6.0;
 /// Free space above the sprite needed to open cards upward; below this they open below it instead.
 /// Two thresholds (enter lower than exit) give the flip hysteresis, so a sprite parked right at the
 /// boundary doesn't flicker between layouts.
@@ -46,6 +49,11 @@ pub struct Placement {
     /// Logical px to shift `.stage` sideways (a CSS transform), so cards stay on screen near a
     /// left/right edge even though the window itself may extend past it.
     pub shift_x: f64,
+    /// Logical px `.stage` actually has on screen in this layout: at most its natural height, and
+    /// at least 0. The window's top or bottom edge can be off-screen even when the sprite itself
+    /// isn't (the flip only triggers once room drops below ~320-380px), so this is applied as
+    /// `.stage`'s `max-height`, letting content shrink or scroll instead of being cut off.
+    pub stage_room: f64,
 }
 
 /// The sprite's size in logical px at a given pet scale.
@@ -67,6 +75,15 @@ fn sprite_offset(cards_below: bool, pet_scale: f64, window: (f64, f64)) -> (f64,
 /// and the previous state (for hysteresis: entering "below" needs less room than leaving it).
 fn next_cards_below(previously_below: bool, room_above: f64) -> bool {
     if previously_below { room_above <= FLIP_EXIT } else { room_above < FLIP_ENTER }
+}
+
+/// The stage's height when nothing constrains it: the window's height minus its own padding, the
+/// gap to the dock, and the dock itself. Layout-independent — the flip only moves which end of the
+/// window the dock sits at, not the window's total height or the dock's own height.
+fn stage_natural_height(pet_scale: f64, window_h: f64) -> f64 {
+    let (_, sh) = sprite_size(pet_scale);
+    let dock_h = sh + DOCK_GAP + BAR_HEIGHT;
+    (window_h - OVERLAY_PAD_TOP - OVERLAY_PAD_BOTTOM - OVERLAY_GAP - dock_h).max(0.0)
 }
 
 /// An interactive rectangle reported by the frontend, in window-relative CSS px.
@@ -151,6 +168,19 @@ pub fn clamp_position(pos: (i32, i32), size: (i32, i32), areas: &[Area]) -> Opti
     best_area(pos, size, areas).map(|a| clamp_into(a, pos, size))
 }
 
+/// Resolves the sprite's anchor to actually use, and whether that meant falling back to
+/// `default` (a saved position whose monitor is gone, or no saved position at all) rather than
+/// keeping the saved one, clamped into whichever work area it still overlaps (gate G3.5: recovery
+/// from an off-screen saved position). Kept separate from `apply_sprite_position` so a caller like
+/// `drag_pet_by` can still do nothing when a drag itself goes off every monitor, instead of
+/// snapping to the default mid-drag.
+fn resolve_sprite_anchor(saved: Option<(i32, i32)>, sprite_size: (i32, i32), areas: &[Area], default: (i32, i32)) -> ((i32, i32), bool) {
+    match saved.and_then(|p| clamp_position(p, sprite_size, areas)) {
+        Some(p) => (p, false),
+        None => (default, true),
+    }
+}
+
 /// Where to put the window (physical top-left) so the sprite sits at `sprite_anchor` (physical,
 /// already clamped into `area`), and how `.stage` should lay out. `scale` converts pet.css's
 /// logical layout constants to this monitor's physical px. `window_size` is the window's own
@@ -171,7 +201,22 @@ fn place_sprite(
     let window_pos = (sprite_anchor.0 - (ox * scale).round() as i32, sprite_anchor.1 - (oy * scale).round() as i32);
     let shift_x_physical = clamp_axis_x(area.x, area.w, window_pos.0, window_size.0) - window_pos.0;
     let shift_x = f64::from(shift_x_physical) / scale;
-    (window_pos, Placement { cards_below, shift_x })
+
+    // How much of the stage's natural height is actually on screen: unflipped, from the work
+    // area's top edge down to the stage's bottom (just above the dock); flipped, from the stage's
+    // top (just below the dock) down to the work area's bottom edge.
+    let (_, sh) = sprite_size(pet_scale);
+    let natural = stage_natural_height(pet_scale, window_logical.1);
+    let room_physical = if cards_below {
+        let stage_top = f64::from(sprite_anchor.1) + (sh + DOCK_GAP + BAR_HEIGHT + OVERLAY_GAP) * scale;
+        f64::from(area.y + area.h) - stage_top
+    } else {
+        let stage_bottom = f64::from(sprite_anchor.1) - OVERLAY_GAP * scale;
+        stage_bottom - f64::from(area.y)
+    };
+    let stage_room = (room_physical / scale).clamp(0.0, natural);
+
+    (window_pos, Placement { cards_below, shift_x, stage_room })
 }
 
 /// Converts a v0.2-era saved position (the *window's* top-left) to what a saved position means from
@@ -267,7 +312,7 @@ pub fn place_pet(app: &AppHandle) {
         (c.pet_position, c.pet_position_migrated, c.pet_scale)
     };
     let mut just_migrated = false;
-    let target = match (saved, migrated) {
+    let saved = match (saved, migrated) {
         (Some(p), false) => match pet.scale_factor() {
             Ok(scale) => {
                 just_migrated = true;
@@ -278,9 +323,16 @@ pub fn place_pet(app: &AppHandle) {
         (Some(p), true) => Some(p),
         (None, _) => None,
     };
-    let Some(target) = target.or_else(|| default_sprite_anchor(&pet, pet_scale)) else { return };
+    let Some(default) = default_sprite_anchor(&pet, pet_scale) else { return };
+    let Ok(scale) = pet.scale_factor() else { return };
+    let sprite_size = sprite_size_physical(pet_scale, scale);
+    let areas = work_areas(&pet);
+    let (target, fell_back) = resolve_sprite_anchor(saved, sprite_size, &areas, default);
     if let Some(anchor) = apply_sprite_position(app, &pet, target) {
-        if just_migrated {
+        // A dead saved spot (its monitor is gone) is worth re-saving so the next launch doesn't
+        // retry it, same as a freshly-migrated value. Nothing saved at all is left alone, as
+        // before D9, so an untouched install keeps recomputing the default if the screen changes.
+        if just_migrated || (fell_back && saved.is_some()) {
             remember(app, Some(anchor));
         }
     }
@@ -463,8 +515,11 @@ mod tests {
 
     #[test]
     fn placement_serializes_for_the_frontend() {
-        let p = Placement { cards_below: true, shift_x: -12.5 };
-        assert_eq!(serde_json::to_value(p).unwrap(), serde_json::json!({"cardsBelow": true, "shiftX": -12.5}));
+        let p = Placement { cards_below: true, shift_x: -12.5, stage_room: 200.0 };
+        assert_eq!(
+            serde_json::to_value(p).unwrap(),
+            serde_json::json!({"cardsBelow": true, "shiftX": -12.5, "stageRoom": 200.0})
+        );
     }
 
     #[test]
@@ -569,5 +624,74 @@ mod tests {
         let (new_window_pos, placement) = place_sprite(anchor, D9_AREA, 1.0, D9_WINDOW, D9_PET_SCALE, false);
         assert!(!placement.cards_below);
         assert_eq!(new_window_pos, window_pos, "gate G2.2: the same visual spot as the old window-anchored save");
+    }
+
+    // ---- stageRoom: how much of the stage is actually on screen (review round 2) ----
+
+    #[test]
+    fn stage_room_is_capped_by_the_work_area_top_when_unflipped() {
+        // Room above is 350: inside the dead zone, so cards stay above (unflipped). The stage's
+        // actual bottom-up room on screen is that minus the gap to the dock, not its full height.
+        let (_, placement) = place_sprite((900, 350), D9_AREA, 1.0, D9_WINDOW, D9_PET_SCALE, false);
+        assert!(!placement.cards_below);
+        assert_eq!(placement.stage_room, 350.0 - OVERLAY_GAP);
+        assert!(placement.stage_room < stage_natural_height(D9_PET_SCALE, 600.0), "must be less than the full height");
+    }
+
+    #[test]
+    fn stage_room_is_capped_by_the_work_area_bottom_when_flipped() {
+        let small = Area { x: 0, y: 0, w: 1920, h: 300 };
+        let (_, placement) = place_sprite((900, 0), small, 1.0, D9_WINDOW, D9_PET_SCALE, false);
+        assert!(placement.cards_below);
+        let sh = sprite_size(D9_PET_SCALE).1;
+        let expected = 300.0 - (sh + DOCK_GAP + BAR_HEIGHT + OVERLAY_GAP);
+        assert_eq!(placement.stage_room, expected);
+    }
+
+    #[test]
+    fn stage_room_is_the_natural_height_with_room_to_spare() {
+        let (_, placement) = place_sprite((900, 500), D9_AREA, 1.0, D9_WINDOW, D9_PET_SCALE, false);
+        assert!(!placement.cards_below);
+        assert_eq!(placement.stage_room, stage_natural_height(D9_PET_SCALE, 600.0));
+    }
+
+    #[test]
+    fn stage_room_never_goes_negative() {
+        // A work area barely bigger than the dock: flipped, the dock alone almost fills it, so the
+        // stage's room below would go negative before clamping.
+        let tiny = Area { x: 0, y: 0, w: 1920, h: 40 };
+        let (_, placement) = place_sprite((900, 0), tiny, 1.0, D9_WINDOW, D9_PET_SCALE, false);
+        assert!(placement.cards_below, "no room above a 40px-tall area either, so it flips below");
+        assert_eq!(placement.stage_room, 0.0);
+    }
+
+    // ---- resolve_sprite_anchor: off-screen recovery (gate G3.5, review round 2) ----
+
+    #[test]
+    fn resolve_sprite_anchor_keeps_an_on_screen_saved_value_clamped() {
+        let sprite_size = sprite_size_physical(D9_PET_SCALE, 1.0);
+        let (anchor, fell_back) = resolve_sprite_anchor(Some((100, 100)), sprite_size, &[D9_AREA], (1700, 900));
+        assert_eq!(anchor, (100, 100));
+        assert!(!fell_back);
+    }
+
+    #[test]
+    fn resolve_sprite_anchor_falls_back_to_the_default_when_the_saved_monitor_is_gone() {
+        let sprite_size = sprite_size_physical(D9_PET_SCALE, 1.0);
+        // The saved spot was on a second monitor that doesn't exist anymore.
+        let vanished = (2500, 300);
+        let default = (1700, 900);
+        let (anchor, fell_back) = resolve_sprite_anchor(Some(vanished), sprite_size, &[D9_AREA], default);
+        assert_eq!(anchor, default);
+        assert!(fell_back);
+    }
+
+    #[test]
+    fn resolve_sprite_anchor_uses_the_default_when_nothing_is_saved() {
+        let sprite_size = sprite_size_physical(D9_PET_SCALE, 1.0);
+        let default = (1700, 900);
+        let (anchor, fell_back) = resolve_sprite_anchor(None, sprite_size, &[D9_AREA], default);
+        assert_eq!(anchor, default);
+        assert!(fell_back);
     }
 }

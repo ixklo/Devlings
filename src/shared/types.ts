@@ -130,6 +130,9 @@ export interface Placement {
   cardsBelow: boolean;
   /** Logical px to shift `.stage` sideways (a CSS transform) so cards stay on screen near an edge. */
   shiftX: number;
+  /** Logical px `.stage` actually has on screen; applied as its `max-height` so content shrinks or
+   *  scrolls instead of being cut off when the window's top or bottom edge is off-screen. */
+  stageRoom: number;
 }
 
 export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string };

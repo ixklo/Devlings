@@ -25,6 +25,12 @@ body[data-window="pet"] {
   flex-direction: column;
   justify-content: flex-end;
   align-items: center;
+  /* Set from the backend's `stageRoom` (design D9): how much of the stage is actually on screen.
+     Falls back to no limit until the first placement arrives. Content that doesn't manage its own
+     scrolling (e.g. `.bubbles`, `.messages`) already sizes itself off `.stage`'s height, so it
+     shrinks or scrolls here instead of being cut off at the work area's edge. */
+  max-height: var(--stage-room, none);
+  overflow-y: auto;
 }
 
 /* ---- Design D9: cards flip below the sprite when there isn't room above it ----
