@@ -2,7 +2,21 @@
 // docs/specs/2026-09-26-perch-v0.2-design.md is the contract; keep these
 // field names exactly as the backend serializes them (camelCase).
 
-export type Kind = "started" | "prompt" | "step" | "blocked" | "needs_you" | "reply_delta" | "done" | "failed" | "ended";
+/**
+ * `untrusted` (v1.0, Ask only): the run skips an untrusted folder's project settings. `label` is the notice's
+ * headline and `text` its "Skipped: …" line. It never changes a thread.
+ */
+export type Kind =
+  | "started"
+  | "prompt"
+  | "step"
+  | "blocked"
+  | "needs_you"
+  | "reply_delta"
+  | "done"
+  | "failed"
+  | "ended"
+  | "untrusted";
 export type Source = "watch" | "ask";
 export type PermissionMode = "read_only" | "edit_files" | "auto";
 
@@ -62,6 +76,8 @@ export interface ProjectEntry {
   permissionMode: PermissionMode;
   askSessionId: string | null;
   transcriptPath: string | null;
+  /** Trusted in Perch: Asks here use the folder's own Claude Code settings (v1.0 D6). */
+  trusted: boolean;
 }
 
 export type AuthVerdict = { status: "allowed"; subscription: string } | { status: "refused"; reason: string };
@@ -123,7 +139,9 @@ export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string 
 export type SettingsView = "settings" | "onboarding";
 
 export interface ChatTurn {
-  role: "user" | "assistant" | "note";
+  /** `untrusted`: the untrusted-folder notice (`text` is its headline, `detail` what was skipped). */
+  role: "user" | "assistant" | "note" | "untrusted";
   text: string;
+  detail?: string;
   pending?: boolean;
 }

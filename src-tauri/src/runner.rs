@@ -18,6 +18,8 @@ pub struct AskRequest {
     pub prompt: String,
     pub mode_flag: &'static str,
     pub resume: Option<String>,
+    /// Appended after every other flag, e.g. `--setting-sources user` for an untrusted folder (see `trust`).
+    pub extra_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +40,7 @@ pub fn build_args(req: &AskRequest) -> Vec<String> {
         args.push("--resume".into());
         args.push(id.clone());
     }
+    args.extend(req.extra_args.iter().cloned());
     args
 }
 
@@ -145,6 +148,7 @@ mod tests {
             prompt: "hi".into(),
             mode_flag: "acceptEdits",
             resume: resume.map(Into::into),
+            extra_args: vec![],
         }
     }
 
@@ -158,6 +162,17 @@ mod tests {
             ]
         );
         assert_eq!(build_args(&req(Some("abc")))[9..].to_vec(), vec!["--resume", "abc"]);
+    }
+
+    #[test]
+    fn extra_args_come_after_every_existing_flag() {
+        let plain = build_args(&req(Some("abc")));
+        assert!(!plain.iter().any(|a| a == "--setting-sources"));
+        let mut untrusted = req(Some("abc"));
+        untrusted.extra_args = crate::trust::SETTING_SOURCES_USER.iter().map(|s| s.to_string()).collect();
+        let args = build_args(&untrusted);
+        assert_eq!(args[..plain.len()], plain[..], "every existing flag is still there, in order");
+        assert_eq!(args[plain.len()..].to_vec(), vec!["--setting-sources", "user"]);
     }
 
     #[test]

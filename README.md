@@ -129,6 +129,10 @@ On first run, Perch asks to add a few `http` hooks to your Claude Code `settings
 
 Perch sends nothing anywhere itself except two things, both opt-outable: hook events and permission answers on `127.0.0.1` (never leaves your machine), and a daily check against GitHub's release API for updates (Settings → About). Your prompts go to Anthropic through your own Claude Code, exactly as they would from a terminal. See [SECURITY.md](SECURITY.md) for the full security scope and how to report an issue.
 
+### Untrusted folders
+
+Claude Code asks before it trusts a new folder, but the non-interactive runs Perch uses for Asks can't ask. So when you Ask in a folder you haven't trusted in Claude Code (inside a git repository, that means the repository itself or a folder in it; trusting a parent folder such as your home folder doesn't count, just as in Claude Code), and that folder has its own Claude Code setup (a `.claude` folder or a `.mcp.json`, in the folder or its git repository's root), Perch runs Claude Code without the folder's project settings: its hooks, environment variables, helper commands such as `apiKeyHelper`, MCP servers and project skills are all skipped. The chat says exactly what was skipped (environment variables by name only) and offers to trust the folder in Perch; after that, Asks there use the folder's settings. To undo it, use **Stop trusting** in the chat or under **Settings → Trusted folders**. Perch only reads Claude Code's own trust list (`~/.claude.json`) and never changes it.
+
 ## Third-party notices
 
 Perch bundles open-source Rust crates and npm packages; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list and license texts (also linked from **Settings → About**).

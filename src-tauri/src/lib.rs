@@ -16,6 +16,7 @@ mod state;
 mod store;
 mod threads;
 mod transcript;
+mod trust;
 mod updater;
 
 pub fn run() {
@@ -74,6 +75,8 @@ pub fn run() {
             commands::load_conversation,
             commands::ask,
             commands::stop_ask,
+            commands::trust_project,
+            commands::untrust_project,
             commands::mark_credits_notice_seen,
             commands::finish_onboarding,
             commands::set_notifications,

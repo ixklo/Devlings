@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "../shared/api";
@@ -36,10 +36,12 @@ interface Props {
   /** Shown as a live "working" line while a run is going and nothing is streaming yet. */
   activity: string | null;
   empty: ReactNode;
+  /** Draws an untrusted-folder notice row; without it the notice shows as a plain note. */
+  renderUntrusted?: (turn: ChatTurn) => ReactNode;
 }
 
 /** The scrolling conversation inside the thread view. */
-export function Messages({ turns, loading, activity, empty }: Props) {
+export function Messages({ turns, loading, activity, empty, renderUntrusted }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
@@ -72,10 +74,12 @@ export function Messages({ turns, loading, activity, empty }: Props) {
       )}
       {!loading && turns.length === 0 && !activity && <div className="messages-empty">{empty}</div>}
       {turns.map((t, i) =>
-        t.role === "note" ? (
+        t.role === "untrusted" && renderUntrusted ? (
+          <Fragment key={i}>{renderUntrusted(t)}</Fragment>
+        ) : t.role === "note" || t.role === "untrusted" ? (
           <p key={i} className="msg-note">
             <IconAlert size={13} />
-            <span>{t.text}</span>
+            <span>{t.detail ? `${t.text} ${t.detail}` : t.text}</span>
           </p>
         ) : t.role === "user" ? (
           <div key={i} className="msg-user">

@@ -15,6 +15,7 @@ use crate::{
     state::{self, now_ms, AppState, Snapshot},
     store::{self, PermissionMode},
     transcript::{self, ChatTurn},
+    trust,
 };
 
 type CmdResult<T> = Result<T, String>;
@@ -196,15 +197,32 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         state::emit_snapshot(&app);
         return Err(reason);
     }
-    let (mode, resume) = {
+    let (mode, resume, perch_trusted) = {
         let mut projects = lock(&s.projects);
         projects.touch(&project, now_ms());
         let p = projects.get(&project);
-        (p.map(|p| p.permission_mode).unwrap_or_default(), p.and_then(|p| p.ask_session_id.clone()))
+        (
+            p.map(|p| p.permission_mode).unwrap_or_default(),
+            p.and_then(|p| p.ask_session_id.clone()),
+            p.is_some_and(|p| p.trusted),
+        )
     };
     s.save_projects();
     log::info!("Ask in {project} (mode {}, {})", mode.flag(), if resume.is_some() { "follow-up" } else { "new chat" });
-    let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
+    // Checked fresh at every Ask: trust and the folder's files can change between runs (design v1.0 D6).
+    let policy = trust::ask_policy_here(Path::new(&project), perch_trusted);
+    if let Some(notice) = &policy.notice {
+        log::info!("Ask in {project}: untrusted folder, so it runs with --setting-sources user (found {})", notice.log);
+    }
+    let notice_session = resume.clone().unwrap_or_default();
+    let req = AskRequest {
+        bin,
+        project: project.clone(),
+        prompt,
+        mode_flag: mode.flag(),
+        resume,
+        extra_args: policy.extra_args(),
+    };
     // Check and reserve in one short lock (an update install claims itself before reading `running`),
     // then start the process outside it.
     {
@@ -231,6 +249,11 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         log::info!("Ask in {project} was stopped while it started");
         runner::kill_tree(child.id());
     }
+    // Sent before the output reader starts, so the notice comes before anything the run says.
+    if let Some(notice) = &policy.notice {
+        let pet = lock(&s.config).pet_name.clone();
+        state::emit_ask_notice(&app, &notice.event(&pet, &notice_session, &project, now_ms()));
+    }
     state::emit_snapshot(&app);
     let handle = app.clone();
     std::thread::spawn(move || state::run_ask(handle, project, child));
@@ -254,6 +277,36 @@ pub fn stop_ask(app: AppHandle, project: String) {
     if let Some(pid) = pid.filter(|&pid| pid != STARTING) {
         runner::kill_tree(pid);
     }
+}
+
+/// Trusts a project's folder in Perch: its next Ask uses the folder's own Claude Code settings (design v1.0 D6).
+#[tauri::command]
+pub fn trust_project(app: AppHandle, project: String) -> CmdResult<Snapshot> {
+    set_project_trust(&app, &project, true)
+}
+
+/// Undoes `trust_project`: the next Ask in that folder skips its project settings again, unless Claude Code trusts it.
+#[tauri::command]
+pub fn untrust_project(app: AppHandle, project: String) -> CmdResult<Snapshot> {
+    set_project_trust(&app, &project, false)
+}
+
+fn set_project_trust(app: &AppHandle, project: &str, trusted: bool) -> CmdResult<Snapshot> {
+    let s = app.state::<AppState>();
+    {
+        let mut projects = lock(&s.projects);
+        if projects.set_trusted(project, trusted)? {
+            // Saved atomically (temp file, then rename). A change that can't be saved is undone, so the UI never
+            // shows trust that would be lost on restart.
+            if let Err(e) = store::save(&s.data_dir.join("projects.json"), &*projects) {
+                let _ = projects.set_trusted(project, !trusted);
+                log::error!("Couldn't save projects.json: {e}");
+                return Err(format!("Couldn't save that: {e}"));
+            }
+            log::info!("{} {project} in Perch", if trusted { "Trusted" } else { "Stopped trusting" });
+        }
+    }
+    Ok(publish(app))
 }
 
 /// The PID recorded for an Ask whose process is still starting.

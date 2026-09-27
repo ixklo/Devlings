@@ -50,6 +50,27 @@ describe("applyAskEvent", () => {
     ]);
   });
 
+  it("adds the untrusted-folder notice as its own row, before the run's reply", () => {
+    const t = run([
+      ev("untrusted", {
+        sessionId: "",
+        label: "This folder isn't trusted in Claude Code yet, so Mochi ran without its project settings.",
+        text: "Skipped: hooks (Stop) · MCP servers (github).",
+      }),
+      ev("reply_delta", { text: "Hi" }),
+      ev("done", { text: "Hi" }),
+    ]);
+    expect(t).toEqual([
+      { role: "user", text: "hi" },
+      {
+        role: "untrusted",
+        text: "This folder isn't trusted in Claude Code yet, so Mochi ran without its project settings.",
+        detail: "Skipped: hooks (Stop) · MCP servers (github).",
+      },
+      { role: "assistant", text: "Hi" },
+    ]);
+  });
+
   it("ignores events that don't change the conversation", () => {
     const start: ChatTurn[] = [{ role: "user", text: "hi" }];
     expect(run([ev("started"), ev("prompt"), ev("needs_you")], start)).toBe(start);

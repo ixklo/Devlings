@@ -19,6 +19,9 @@ pub enum Kind {
     Done,
     Failed,
     Ended,
+    /// Ask only: the run skips an untrusted folder's project settings (design v1.0 D6). A mini-chat notice; it
+    /// never changes a thread.
+    Untrusted,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -29,6 +29,8 @@ export function applyAskEvent(turns: ChatTurn[], ev: PetEvent): ChatTurn[] {
       return [...finalize(turns), { role: "note", text: [ev.label, ev.text].filter(Boolean).join(" — ") }];
     case "ended":
       return ev.label ? [...finalize(turns), { role: "note", text: ev.label }] : finalize(turns);
+    case "untrusted":
+      return [...finalize(turns), { role: "untrusted", text: ev.label ?? "", detail: ev.text }];
     default:
       return turns;
   }

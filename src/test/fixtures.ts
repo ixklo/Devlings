@@ -48,6 +48,7 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
         permissionMode: "edit_files",
         askSessionId: null,
         transcriptPath: null,
+        trusted: false,
       },
       {
         path: "C:\\code\\api",
@@ -56,6 +57,7 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
         permissionMode: "read_only",
         askSessionId: null,
         transcriptPath: null,
+        trusted: false,
       },
     ],
     running: [],
