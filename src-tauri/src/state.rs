@@ -310,9 +310,7 @@ pub fn after_resolved(app: &AppHandle, resolved: Vec<Resolved>) {
         let waiting = lock(&s.approvals).waiting(&r.session_id);
         let needs_input = lock(&s.threads).get(&r.session_id).map(|t| t.status) == Some(ThreadStatus::NeedsInput);
         if !waiting && needs_input {
-            if let Some(ev) = r.event(now_ms()) {
-                handle_event(app, ev);
-            }
+            handle_event(app, r.event(now_ms()));
         }
     }
     emit_snapshot(app);

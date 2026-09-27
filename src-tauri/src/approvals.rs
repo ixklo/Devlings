@@ -293,13 +293,13 @@ pub struct Resolved {
 
 impl Resolved {
     /// The update that puts the thread back to work, applied once none of its session's requests wait any more.
-    pub fn event(&self, at: i64) -> Option<PetEvent> {
+    pub fn event(&self, at: i64) -> PetEvent {
         let (kind, label) = match self.outcome {
             Outcome::Allowed | Outcome::Cancelled => (Kind::Step, normalize::step_label(&self.raw_tool, &self.input)),
             Outcome::Denied => (Kind::Blocked, format!("Declined: {}", self.tool_name)),
             Outcome::NoAnswer => (Kind::Blocked, format!("No answer in Perch: {}", self.tool_name)),
         };
-        Some(PetEvent {
+        PetEvent {
             session_id: self.session_id.clone(),
             project: self.project.clone(),
             source: self.source,
@@ -307,7 +307,7 @@ impl Resolved {
             label: Some(label),
             text: None,
             at,
-        })
+        }
     }
 }
 
@@ -1067,12 +1067,12 @@ mod tests {
             input: json!({"command": "npm test", "description": "Run the tests"}),
             outcome,
         };
-        let e = r(Outcome::Allowed).event(5).unwrap();
+        let e = r(Outcome::Allowed).event(5);
         assert_eq!((e.kind, e.label.as_deref(), e.at), (Kind::Step, Some("Run the tests"), 5));
-        assert_eq!(r(Outcome::Cancelled).event(5).unwrap().kind, Kind::Step);
-        let d = r(Outcome::Denied).event(5).unwrap();
+        assert_eq!(r(Outcome::Cancelled).event(5).kind, Kind::Step);
+        let d = r(Outcome::Denied).event(5);
         assert_eq!((d.kind, d.label.as_deref()), (Kind::Blocked, Some("Declined: Bash")));
-        let n = r(Outcome::NoAnswer).event(5).unwrap();
+        let n = r(Outcome::NoAnswer).event(5);
         assert_eq!((n.kind, n.label.as_deref()), (Kind::Blocked, Some("No answer in Perch: Bash")));
     }
 
