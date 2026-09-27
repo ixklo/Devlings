@@ -12,6 +12,8 @@ pub const RUNNING_STALE_MS: i64 = 30 * 60_000;
 /// Threads are forgotten this long after their last update, unless they are unread.
 pub const KEEP_MS: i64 = 60 * 60_000;
 pub const EXCERPT_CHARS: usize = 200;
+/// After a session ends, its late events (a Stop relayed after SessionEnd) are ignored this long.
+pub const TOMBSTONE_MS: i64 = 10_000;
 const WRITING_LABEL: &str = "Writing a reply…";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -66,6 +68,8 @@ struct Entry {
 #[derive(Default)]
 pub struct Threads {
     map: HashMap<String, Entry>,
+    /// Sessions that ended recently, with when.
+    tombstones: HashMap<String, i64>,
 }
 
 fn status_for(kind: Kind) -> Option<ThreadStatus> {
@@ -136,6 +140,22 @@ pub fn pet_state(visible: &[ThreadInfo], setup: bool) -> PetState {
 
 impl Threads {
     pub fn apply(&mut self, e: &PetEvent) -> Applied {
+        if e.kind == Kind::Ended {
+            self.tombstones.insert(e.session_id.clone(), e.at);
+            return self.apply_live(e);
+        }
+        if let Some(&ended) = self.tombstones.get(&e.session_id) {
+            // A new prompt or a resumed session is real activity; anything else is a leftover of the ended run.
+            let fresh = e.at - ended >= TOMBSTONE_MS || matches!(e.kind, Kind::Started | Kind::Prompt);
+            if !fresh {
+                return Applied::default();
+            }
+            self.tombstones.remove(&e.session_id);
+        }
+        self.apply_live(e)
+    }
+
+    fn apply_live(&mut self, e: &PetEvent) -> Applied {
         let Some(status) = status_for(e.kind) else {
             return Applied { changed: self.map.remove(&e.session_id).is_some(), alert: None };
         };
@@ -211,6 +231,7 @@ impl Threads {
 
     /// Drops threads not updated for KEEP_MS unless they are unread. Returns whether any were dropped.
     pub fn prune(&mut self, now: i64) -> bool {
+        self.tombstones.retain(|_, ended| now - *ended < TOMBSTONE_MS);
         let before = self.map.len();
         self.map.retain(|_, e| e.info.unread || now - e.info.updated_at < KEEP_MS);
         self.map.len() != before
@@ -312,6 +333,46 @@ mod tests {
         assert!(t.apply(&ev("a", Kind::Ended, 1)).changed);
         assert!(t.get("a").is_none());
         assert!(!t.apply(&ev("a", Kind::Ended, 2)).changed);
+    }
+
+    /// Stop and SessionEnd arrive through separate relay processes, so a Stop can land after its SessionEnd.
+    #[test]
+    fn late_events_after_the_end_are_ignored_for_a_while() {
+        let mut t = Threads::default();
+        t.apply(&ev("a", Kind::Step, 0));
+        t.apply(&ev("a", Kind::Ended, 1_000));
+        for kind in [Kind::Done, Kind::Failed, Kind::Step, Kind::Blocked, Kind::ReplyDelta, Kind::NeedsYou] {
+            assert_eq!(t.apply(&ev("a", kind, 1_000 + TOMBSTONE_MS - 1)), Applied::default(), "{kind:?}");
+            assert!(t.get("a").is_none(), "{kind:?}");
+        }
+        // Other sessions are unaffected.
+        assert!(t.apply(&ev("b", Kind::Done, 2_000)).changed);
+        // After the tombstone expires, the session can come back.
+        assert!(t.apply(&ev("a", Kind::Done, 1_000 + TOMBSTONE_MS)).changed);
+        assert_eq!(t.get("a").unwrap().status, ThreadStatus::Ready);
+    }
+
+    #[test]
+    fn a_resumed_session_clears_its_tombstone() {
+        for kind in [Kind::Started, Kind::Prompt] {
+            let mut t = Threads::default();
+            t.apply(&ev("a", Kind::Step, 0));
+            t.apply(&ev("a", Kind::Ended, 10));
+            assert!(t.apply(&ev("a", kind, 20)).changed, "{kind:?}");
+            assert!(t.apply(&ev("a", Kind::Done, 30)).changed, "{kind:?}");
+            assert_eq!(t.get("a").unwrap().status, ThreadStatus::Ready);
+        }
+    }
+
+    #[test]
+    fn prune_forgets_old_tombstones() {
+        let mut t = Threads::default();
+        t.apply(&ev("a", Kind::Ended, 0));
+        assert_eq!(t.tombstones.len(), 1);
+        t.prune(TOMBSTONE_MS - 1);
+        assert_eq!(t.tombstones.len(), 1);
+        t.prune(TOMBSTONE_MS);
+        assert!(t.tombstones.is_empty());
     }
 
     #[test]

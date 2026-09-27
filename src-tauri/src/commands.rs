@@ -4,7 +4,9 @@ use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
-    hooks_installer,
+    diagnostics,
+    hooks_installer::{self, HookTarget, RelayExe},
+    locks::lock,
     money_guard::AuthVerdict,
     overlay::{self, HitRect},
     pets::{self, PetInfo},
@@ -37,26 +39,43 @@ pub async fn recheck_setup(app: AppHandle) -> Snapshot {
 pub fn set_pet_name(app: AppHandle, name: String) -> CmdResult<Snapshot> {
     let name = store::validate_pet_name(&name)?;
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_name = name;
+    lock(&s.config).pet_name = name;
     s.save_config();
     Ok(publish(&app))
 }
 
 fn install_on_port(app: &AppHandle, new_port: bool) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
+    let relay = hooks_installer::relay_exe()?;
+    match &relay {
+        RelayExe::Usable(_) => {}
+        RelayExe::Ephemeral(exe) => {
+            log::warn!("Perch runs from a temporary location, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+        }
+        RelayExe::Unsafe(exe) => {
+            log::warn!("Perch's path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+        }
+    }
     let (port, token) = {
-        let mut c = s.config.lock().unwrap();
-        if new_port || c.hook_port.is_none() {
-            c.hook_port = Some(hooks_installer::free_port().map_err(|e| e.to_string())?);
-        }
-        if c.hook_token.is_none() {
-            c.hook_token = Some(hooks_installer::new_token());
-        }
+        let mut c = lock(&s.config);
+        let port = match c.hook_port {
+            Some(p) if !new_port => p,
+            _ => hooks_installer::free_port().map_err(|e| e.to_string())?,
+        };
+        let token = c.hook_token.clone().unwrap_or_else(hooks_installer::new_token);
+        c.hook_port = Some(port);
+        c.hook_token = Some(token.clone());
         c.hooks_declined = false;
-        (c.hook_port.unwrap(), c.hook_token.clone().unwrap())
+        (port, token)
     };
     s.save_config();
-    hooks_installer::install_file(&hooks_installer::settings_path(), port, &token, now_ms() / 1000)?;
+    let path = hooks_installer::settings_path();
+    let target = HookTarget { port, token: &token, exe: relay.usable() };
+    if let Err(e) = hooks_installer::install_file(&path, target, now_ms() / 1000) {
+        log::error!("Installing hooks failed: {e}");
+        return Err(e);
+    }
+    log::info!("Hooks installed in {} for port {port}", path.display());
     state::start_hook_server(app);
     state::refresh_hooks_installed(app);
     Ok(publish(app))
@@ -74,12 +93,18 @@ pub async fn move_hooks_port(app: AppHandle) -> CmdResult<Snapshot> {
 
 #[tauri::command]
 pub fn uninstall_hooks(app: AppHandle) -> CmdResult<Snapshot> {
-    hooks_installer::uninstall_file(&hooks_installer::settings_path(), now_ms() / 1000)?;
+    match hooks_installer::uninstall_file(&hooks_installer::settings_path(), now_ms() / 1000) {
+        Ok(changed) => log::info!("Hooks removed (settings.json changed: {changed})"),
+        Err(e) => {
+            log::error!("Removing hooks failed: {e}");
+            return Err(e);
+        }
+    }
     let s = app.state::<AppState>();
-    if let Some(server) = s.hook_server.lock().unwrap().take() {
+    if let Some(server) = lock(&s.hook_server).take() {
         server.stop();
     }
-    s.config.lock().unwrap().hooks_declined = true;
+    lock(&s.config).hooks_declined = true;
     s.save_config();
     state::refresh_hooks_installed(&app);
     Ok(publish(&app))
@@ -88,7 +113,7 @@ pub fn uninstall_hooks(app: AppHandle) -> CmdResult<Snapshot> {
 #[tauri::command]
 pub fn decline_hooks(app: AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().hooks_declined = true;
+    lock(&s.config).hooks_declined = true;
     s.save_config();
     publish(&app)
 }
@@ -97,7 +122,7 @@ pub fn decline_hooks(app: AppHandle) -> Snapshot {
 pub async fn set_claude_path(app: AppHandle, path: Option<String>) -> Snapshot {
     {
         let s = app.state::<AppState>();
-        s.config.lock().unwrap().claude_path = path.filter(|p| !p.trim().is_empty());
+        lock(&s.config).claude_path = path.filter(|p| !p.trim().is_empty());
         s.save_config();
     }
     state::recheck_setup(&app);
@@ -110,7 +135,7 @@ pub fn add_project(app: AppHandle, path: String) -> CmdResult<Snapshot> {
         return Err("That folder doesn't exist.".into());
     }
     let s = app.state::<AppState>();
-    s.projects.lock().unwrap().touch(&path, now_ms());
+    lock(&s.projects).touch(&path, now_ms());
     s.save_projects();
     Ok(publish(&app))
 }
@@ -118,9 +143,7 @@ pub fn add_project(app: AppHandle, path: String) -> CmdResult<Snapshot> {
 #[tauri::command]
 pub fn set_permission_mode(app: AppHandle, project: String, mode: PermissionMode) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
-    s.projects
-        .lock()
-        .unwrap()
+    lock(&s.projects)
         .get_mut(&project)
         .ok_or("Unknown project.")?
         .permission_mode = mode;
@@ -132,7 +155,7 @@ pub fn set_permission_mode(app: AppHandle, project: String, mode: PermissionMode
 pub fn new_conversation(app: AppHandle, project: String) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
     {
-        let mut projects = s.projects.lock().unwrap();
+        let mut projects = lock(&s.projects);
         let p = projects.get_mut(&project).ok_or("Unknown project.")?;
         p.ask_session_id = None;
         p.transcript_path = None;
@@ -144,7 +167,7 @@ pub fn new_conversation(app: AppHandle, project: String) -> CmdResult<Snapshot> 
 #[tauri::command]
 pub fn load_conversation(app: AppHandle, project: String) -> Vec<ChatTurn> {
     let s = app.state::<AppState>();
-    let path = s.projects.lock().unwrap().get(&project).and_then(|p| p.transcript_path.clone());
+    let path = lock(&s.projects).get(&project).and_then(|p| p.transcript_path.clone());
     path.map(|p| transcript::load(Path::new(&p))).unwrap_or_default()
 }
 
@@ -154,55 +177,58 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     if prompt.trim().is_empty() {
         return Err("Type something first.".into());
     }
-    if !s.config.lock().unwrap().credits_notice_seen {
+    if !lock(&s.config).credits_notice_seen {
         return Err("credits_notice".into());
     }
-    if s.running.lock().unwrap().keys().any(|p| store::same_path(p, &project)) {
+    if lock(&s.running).keys().any(|p| store::same_path(p, &project)) {
         return Err("Already working on this project.".into());
     }
     if !Path::new(&project).is_dir() {
-        s.projects.lock().unwrap().remove(&project);
+        lock(&s.projects).remove(&project);
         s.save_projects();
         state::emit_snapshot(&app);
         return Err("That folder no longer exists, so it was removed from your projects.".into());
     }
-    let bin = s.claude.lock().unwrap().as_ref().map(|l| l.path.clone()).map_err(|e| e.clone())?;
+    let bin = lock(&s.claude).as_ref().map(|l| l.path.clone()).map_err(|e| e.clone())?;
     let verdict = runner::auth_status(&bin);
-    *s.auth.lock().unwrap() = Some(verdict.clone());
+    *lock(&s.auth) = Some(verdict.clone());
     if let AuthVerdict::Refused { reason } = verdict {
         state::emit_snapshot(&app);
         return Err(reason);
     }
     let (mode, resume) = {
-        let mut projects = s.projects.lock().unwrap();
+        let mut projects = lock(&s.projects);
         projects.touch(&project, now_ms());
-        let p = projects.get(&project).expect("project was just touched");
-        (p.permission_mode, p.ask_session_id.clone())
+        let p = projects.get(&project);
+        (p.map(|p| p.permission_mode).unwrap_or_default(), p.and_then(|p| p.ask_session_id.clone()))
     };
     s.save_projects();
+    log::info!("Ask in {project} (mode {}, {})", mode.flag(), if resume.is_some() { "follow-up" } else { "new chat" });
     let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
     // Check and reserve in one short lock (an update install claims itself before reading `running`),
     // then start the process outside it.
     {
-        let mut running = s.running.lock().unwrap();
+        let mut running = lock(&s.running);
         crate::updater::ensure_not_installing(&app)?;
         reserve_run(&mut running, &project)?;
         // No run exists for this project, so a stop request left from the last one is stale.
-        s.stop_requested.lock().unwrap().retain(|p| !store::same_path(p, &project));
+        lock(&s.stop_requested).retain(|p| !store::same_path(p, &project));
     }
     let child = match runner::spawn(&req) {
         Ok(child) => child,
         Err(e) => {
-            s.running.lock().unwrap().remove(&project);
+            lock(&s.running).remove(&project);
+            log::error!("Ask in {project} couldn't start Claude Code: {e}");
             return Err(format!("Couldn't start Claude Code: {e}"));
         }
     };
     let stopped_while_starting = {
-        let mut running = s.running.lock().unwrap();
+        let mut running = lock(&s.running);
         running.insert(project.clone(), child.id());
-        s.stop_requested.lock().unwrap().iter().any(|p| store::same_path(p, &project))
+        lock(&s.stop_requested).iter().any(|p| store::same_path(p, &project))
     };
     if stopped_while_starting {
+        log::info!("Ask in {project} was stopped while it started");
         runner::kill_tree(child.id());
     }
     state::emit_snapshot(&app);
@@ -215,10 +241,11 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
 pub fn stop_ask(app: AppHandle, project: String) {
     let s = app.state::<AppState>();
     let pid = {
-        let running = s.running.lock().unwrap();
+        let running = lock(&s.running);
         let pid = running.iter().find(|(p, _)| store::same_path(p, &project)).map(|(_, pid)| *pid);
         if pid.is_some() {
-            s.stop_requested.lock().unwrap().insert(project);
+            log::info!("Stop requested for the Ask in {project}");
+            lock(&s.stop_requested).insert(project);
         }
         pid
     };
@@ -244,7 +271,7 @@ fn reserve_run(running: &mut HashMap<String, u32>, project: &str) -> CmdResult<(
 #[tauri::command]
 pub fn mark_credits_notice_seen(app: AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().credits_notice_seen = true;
+    lock(&s.config).credits_notice_seen = true;
     s.save_config();
     publish(&app)
 }
@@ -252,7 +279,7 @@ pub fn mark_credits_notice_seen(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn finish_onboarding(app: AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().onboarded = true;
+    lock(&s.config).onboarded = true;
     s.save_config();
     publish(&app)
 }
@@ -260,7 +287,7 @@ pub fn finish_onboarding(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn set_notifications(app: AppHandle, enabled: bool) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().notifications = enabled;
+    lock(&s.config).notifications = enabled;
     s.save_config();
     publish(&app)
 }
@@ -271,21 +298,21 @@ pub fn set_launch_at_login(app: AppHandle, enabled: bool) -> CmdResult<Snapshot>
     let result = if enabled { launcher.enable() } else { launcher.disable() };
     result.map_err(|e| e.to_string())?;
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().launch_at_login = enabled;
+    lock(&s.config).launch_at_login = enabled;
     s.save_config();
     Ok(publish(&app))
 }
 
 #[tauri::command]
 pub fn mark_viewed(app: AppHandle, session_id: String) -> Snapshot {
-    app.state::<AppState>().threads.lock().unwrap().mark_viewed(&session_id);
+    lock(&app.state::<AppState>().threads).mark_viewed(&session_id);
     publish(&app)
 }
 
 #[tauri::command]
 pub fn set_threads_collapsed(app: AppHandle, collapsed: bool) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().threads_collapsed = collapsed;
+    lock(&s.config).threads_collapsed = collapsed;
     s.save_config();
     publish(&app)
 }
@@ -293,7 +320,7 @@ pub fn set_threads_collapsed(app: AppHandle, collapsed: bool) -> Snapshot {
 #[tauri::command]
 pub fn set_pet_scale(app: AppHandle, scale: f64) -> Snapshot {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_scale = store::clamp_pet_scale(scale);
+    lock(&s.config).pet_scale = store::clamp_pet_scale(scale);
     s.save_config();
     publish(&app)
 }
@@ -305,12 +332,12 @@ pub async fn list_pets(app: AppHandle) -> Vec<PetInfo> {
 
 #[tauri::command]
 pub async fn get_pet_sprite(app: AppHandle, id: String) -> CmdResult<String> {
-    let cached = app.state::<AppState>().pets.lock().unwrap().iter().find(|p| p.info.id == id).cloned();
+    let cached = lock(&app.state::<AppState>().pets).iter().find(|p| p.info.id == id).cloned();
     let pet = match cached {
         Some(p) => p,
         None => pets::resolve(&state::refresh_pets(&app), &id).cloned().ok_or("No pets found.")?,
     };
-    pets::sprite_data_url(&pet.sprite)
+    pets::sprite_data_url(&pet)
 }
 
 #[tauri::command]
@@ -324,19 +351,19 @@ pub fn choose_pet(app: &AppHandle, id: &str) -> CmdResult<()> {
         return Err("That pet wasn't found.".into());
     }
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_id = id.to_string();
+    lock(&s.config).pet_id = id.to_string();
     s.save_config();
     Ok(())
 }
 
 #[tauri::command]
 pub fn set_focused_thread(app: AppHandle, session_id: Option<String>) {
-    *app.state::<AppState>().focused_thread.lock().unwrap() = session_id;
+    *lock(&app.state::<AppState>().focused_thread) = session_id;
 }
 
 #[tauri::command]
 pub fn set_hit_regions(app: AppHandle, regions: Vec<HitRect>) {
-    *app.state::<AppState>().hit_regions.lock().unwrap() = Some(regions);
+    *lock(&app.state::<AppState>().hit_regions) = Some(regions);
 }
 
 #[tauri::command]
@@ -385,10 +412,23 @@ pub fn show_pet_menu(window: Window) -> CmdResult<()> {
     shell::show_pet_menu(&window).map_err(|e| e.to_string())
 }
 
+/// Redacted diagnostics for bug reports: versions, how Claude Code was found, hook status, and the log tail.
+#[tauri::command]
+pub async fn get_diagnostics(app: AppHandle) -> String {
+    diagnostics::collect(&app)
+}
+
+#[tauri::command]
+pub async fn open_log_folder(app: AppHandle) -> CmdResult<()> {
+    let dir = diagnostics::log_dir(&app);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Couldn't create {}: {e}", dir.display()))?;
+    shell::open_folder(&app, &dir)
+}
+
 #[tauri::command]
 pub fn save_pet_position(app: AppHandle, x: i32, y: i32) {
     let s = app.state::<AppState>();
-    s.config.lock().unwrap().pet_position = Some((x, y));
+    lock(&s.config).pet_position = Some((x, y));
     s.save_config();
 }
 

@@ -73,6 +73,8 @@ export interface SetupStatus {
   hooksInstalled: boolean;
   auth: AuthVerdict | null;
   hookServerError: string | null;
+  /** Advice that doesn't block setup, e.g. "Move Perch to Applications…" when it runs from a disk image. */
+  setupHint: string | null;
   needsSetup: boolean;
 }
 

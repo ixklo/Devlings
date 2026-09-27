@@ -117,6 +117,7 @@ function healthySetup(): SetupStatus {
     hooksInstalled: true,
     auth: { status: "allowed", subscription: "max" },
     hookServerError: null,
+    setupHint: null,
     needsSetup: false,
   };
 }

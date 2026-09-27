@@ -1,4 +1,6 @@
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, str::FromStr};
+
+use log::LevelFilter;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -7,6 +9,7 @@ pub const DEFAULT_PET_ID: &str = "perch";
 pub const DEFAULT_PET_SCALE: f64 = 0.6;
 pub const MIN_PET_SCALE: f64 = 0.4;
 pub const MAX_PET_SCALE: f64 = 1.0;
+pub const DEFAULT_DIAGNOSTICS_LEVEL: &str = "info";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -24,6 +27,8 @@ pub struct Config {
     pub pet_id: String,
     pub pet_scale: f64,
     pub threads_collapsed: bool,
+    /// Log level: "off", "error", "warn", "info", "debug" or "trace".
+    pub diagnostics_level: String,
     /// Check for updates at launch and daily (M1).
     pub auto_update: bool,
     /// Epoch ms of the last update check.
@@ -37,8 +42,19 @@ impl Config {
         if self.pet_id.trim().is_empty() {
             self.pet_id = DEFAULT_PET_ID.to_string();
         }
+        self.diagnostics_level = normalize_diagnostics_level(&self.diagnostics_level);
         self
     }
+}
+
+/// The log level a `diagnosticsLevel` value names. The one place levels are parsed; unknown values read as info.
+pub fn diagnostics_level_filter(level: &str) -> LevelFilter {
+    LevelFilter::from_str(level.trim()).unwrap_or(LevelFilter::Info)
+}
+
+/// The canonical lower-case spelling of a `diagnosticsLevel` value.
+pub fn normalize_diagnostics_level(level: &str) -> String {
+    diagnostics_level_filter(level).as_str().to_ascii_lowercase()
 }
 
 pub fn clamp_pet_scale(scale: f64) -> f64 {
@@ -61,6 +77,7 @@ impl Default for Config {
             pet_id: DEFAULT_PET_ID.to_string(),
             pet_scale: DEFAULT_PET_SCALE,
             threads_collapsed: false,
+            diagnostics_level: DEFAULT_DIAGNOSTICS_LEVEL.to_string(),
             auto_update: true,
             last_update_check: None,
         }
@@ -129,6 +146,17 @@ impl Projects {
 
     pub fn get_mut(&mut self, path: &str) -> Option<&mut ProjectEntry> {
         self.list.iter_mut().find(|p| same_path(&p.path, path))
+    }
+
+    /// Records an Ask conversation's transcript. Returns whether it changed, so callers save only then.
+    pub fn set_transcript_path(&mut self, project: &str, transcript: &str) -> bool {
+        match self.get_mut(project) {
+            Some(p) if p.transcript_path.as_deref() != Some(transcript) => {
+                p.transcript_path = Some(transcript.to_string());
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn retain_outside(&mut self, base: &str) {
@@ -227,6 +255,36 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_level_defaults_and_repairs() {
+        let c = Config::default();
+        assert_eq!(c.diagnostics_level, "info");
+        assert_eq!(serde_json::to_value(&c).unwrap()["diagnosticsLevel"], json!("info"));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        std::fs::write(&p, r#"{"diagnosticsLevel":" DEBUG "}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "debug");
+        std::fs::write(&p, r#"{"diagnosticsLevel":"loud"}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
+        std::fs::write(&p, r#"{"petName":"Bo"}"#).unwrap();
+        assert_eq!(load::<Config>(&p).normalized().diagnostics_level, "info");
+        for level in ["off", "error", "warn", "info", "debug", "trace"] {
+            assert_eq!(normalize_diagnostics_level(level), level);
+        }
+    }
+
+    #[test]
+    fn diagnostics_levels_parse_in_one_place() {
+        assert_eq!(diagnostics_level_filter("info"), LevelFilter::Info);
+        assert_eq!(diagnostics_level_filter(" DEBUG "), LevelFilter::Debug);
+        assert_eq!(diagnostics_level_filter("trace"), LevelFilter::Trace);
+        assert_eq!(diagnostics_level_filter("Warn"), LevelFilter::Warn);
+        assert_eq!(diagnostics_level_filter("error"), LevelFilter::Error);
+        assert_eq!(diagnostics_level_filter("off"), LevelFilter::Off);
+        assert_eq!(diagnostics_level_filter("chatty"), LevelFilter::Info);
+        assert_eq!(diagnostics_level_filter(""), LevelFilter::Info);
+    }
+
+    #[test]
     fn update_config_keys_default_for_old_files() {
         let c = Config::default();
         assert_eq!((c.auto_update, c.last_update_check), (true, None));
@@ -292,6 +350,17 @@ mod tests {
     #[test]
     fn detects_windows_temp_paths_ignoring_case() {
         assert!(is_under("C:\\Users\\Me\\AppData\\Local\\Temp\\claude\\tc", "c:\\users\\me\\appdata\\local\\temp\\"));
+    }
+
+    #[test]
+    fn transcript_path_changes_are_reported() {
+        let mut p = Projects::default();
+        assert!(!p.set_transcript_path("/home/u/proj", "/t/a.jsonl"), "unknown project");
+        p.touch("/home/u/proj", 1);
+        assert!(p.set_transcript_path("/home/u/proj", "/t/a.jsonl"));
+        assert!(!p.set_transcript_path("/home/u/proj/", "/t/a.jsonl"));
+        assert!(p.set_transcript_path("/home/u/proj", "/t/b.jsonl"));
+        assert_eq!(p.get("/home/u/proj").unwrap().transcript_path.as_deref(), Some("/t/b.jsonl"));
     }
 
     #[test]

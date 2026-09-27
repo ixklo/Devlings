@@ -17,7 +17,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::{
-    commands, overlay, pets, runner,
+    commands,
+    locks::lock,
+    overlay, pets, runner,
     state::{self, AppState, Snapshot},
     threads::PetState,
 };
@@ -80,7 +82,7 @@ pub fn register_shortcut(app: &AppHandle) {
         }
     });
     if let Err(e) = result {
-        eprintln!("Perch: couldn't register Ctrl+Alt+P: {e}");
+        log::warn!("Couldn't register Ctrl+Alt+P: {e}");
     }
 }
 
@@ -144,7 +146,7 @@ pub fn close_settings(app: &AppHandle) -> tauri::Result<()> {
 pub fn show_pet_menu(win: &Window) -> tauri::Result<()> {
     let app = win.app_handle();
     let all = state::refresh_pets(app);
-    let wanted = app.state::<AppState>().config.lock().unwrap().pet_id.clone();
+    let wanted = lock(&app.state::<AppState>().config).pet_id.clone();
     let current = pets::resolve(&all, &wanted).map(|p| p.info.id.clone());
     let change = Submenu::with_id(app, "change-pet", "Change pet", true)?;
     if all.is_empty() {

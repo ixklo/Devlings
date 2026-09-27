@@ -29,6 +29,7 @@ export function makeSetup(over: Partial<SetupStatus> = {}): SetupStatus {
     hooksInstalled: true,
     auth: { status: "allowed", subscription: "pro" },
     hookServerError: null,
+    setupHint: null,
     needsSetup: false,
     ...over,
   };

@@ -72,6 +72,32 @@ fn find_file(dir: &Path, name: &str, depth: u32) -> Option<PathBuf> {
     subdirs.iter().find_map(|d| find_file(d, name, depth - 1))
 }
 
+/// How a located binary was found, in words for logs and diagnostics.
+pub fn describe_source(path: &Path, override_path: Option<&Path>, path_env: Option<&OsStr>, home: &Path) -> String {
+    if override_path == Some(path) {
+        return "chosen in Settings".to_string();
+    }
+    let dir = path.parent();
+    if let (Some(pe), Some(dir)) = (path_env, dir) {
+        if std::env::split_paths(pe).any(|p| p == dir) {
+            return "PATH".to_string();
+        }
+    }
+    if dir == Some(home.join(".local").join("bin").as_path()) {
+        return "~/.local/bin".to_string();
+    }
+    if dir == Some(home.join(".claude").join("local").as_path()) {
+        return "~/.claude/local".to_string();
+    }
+    for (root, editor) in [(".vscode", "VS Code"), (".vscode-insiders", "VS Code Insiders"), (".cursor", "Cursor"), (".windsurf", "Windsurf")] {
+        if let Ok(rest) = path.strip_prefix(home.join(root).join("extensions")) {
+            let ext = rest.components().next().map(|c| c.as_os_str().to_string_lossy().to_string()).unwrap_or_default();
+            return format!("{editor} extension ({ext})");
+        }
+    }
+    "other location".to_string()
+}
+
 pub fn locate(cands: &[PathBuf], version_of: impl Fn(&Path) -> Option<String>) -> Result<Located, String> {
     let mut too_old: Option<String> = None;
     for c in cands {
@@ -126,6 +152,25 @@ mod tests {
         let c = candidates(Some(Path::new("/custom/claude")), None, home);
         assert_eq!(c[0], PathBuf::from("/custom/claude"));
         assert!(c.contains(&home.join(".local").join("bin").join(exe_name())));
+    }
+
+    #[test]
+    fn describes_where_a_binary_came_from() {
+        let home = Path::new("/h");
+        let custom = Path::new("/custom/claude");
+        assert_eq!(describe_source(custom, Some(custom), None, home), "chosen in Settings");
+        let on_path = std::env::join_paths([PathBuf::from("/usr/bin"), PathBuf::from("/opt/cc")]).unwrap();
+        let bin = Path::new("/opt/cc").join(exe_name());
+        assert_eq!(describe_source(&bin, None, Some(&on_path), home), "PATH");
+        let local = home.join(".local").join("bin").join(exe_name());
+        assert_eq!(describe_source(&local, None, None, home), "~/.local/bin");
+        let claude_local = home.join(".claude").join("local").join(exe_name());
+        assert_eq!(describe_source(&claude_local, None, None, home), "~/.claude/local");
+        let ext = home.join(".vscode").join("extensions").join("anthropic.claude-code-2.1.282-win32-x64").join("resources").join(exe_name());
+        assert_eq!(describe_source(&ext, None, None, home), "VS Code extension (anthropic.claude-code-2.1.282-win32-x64)");
+        let cursor = home.join(".cursor").join("extensions").join("anthropic.claude-code-2.1.1").join(exe_name());
+        assert_eq!(describe_source(&cursor, None, None, home), "Cursor extension (anthropic.claude-code-2.1.1)");
+        assert_eq!(describe_source(Path::new("/somewhere/claude"), None, None, home), "other location");
     }
 
     #[test]

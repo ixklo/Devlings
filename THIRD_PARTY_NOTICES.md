@@ -19,12 +19,14 @@ Perch; this is a format-compatibility note, not a dependency.
 
 ## Rust crates
 
-Compiled into Perch's Tauri backend (`src-tauri`), 508 normal (runtime) dependencies, generated with [cargo-about](https://github.com/EmbarkStudios/cargo-about) from `src-tauri/about.toml`:
+Compiled into Perch's Tauri backend (`src-tauri`), 514 normal (runtime) dependencies, generated with [cargo-about](https://github.com/EmbarkStudios/cargo-about) from `src-tauri/about.toml`:
 
 - adler2 2.0.1 — 0BSD OR MIT OR Apache-2.0
 - aho-corasick 1.1.5 — Unlicense OR MIT
 - alloc-no-stdlib 2.0.4 — BSD-3-Clause
 - alloc-stdlib 0.2.4 — BSD-3-Clause
+- android_log-sys 0.3.2 — MIT OR Apache-2.0
+- android_logger 0.15.1 — MIT OR Apache-2.0
 - anyhow 1.0.104 — MIT OR Apache-2.0
 - arbitrary 1.4.2 — MIT OR Apache-2.0
 - ascii 1.1.0 — Apache-2.0 OR MIT
@@ -113,6 +115,7 @@ Compiled into Perch's Tauri backend (`src-tauri`), 508 normal (runtime) dependen
 - endi 1.1.1 — MIT
 - enumflags2 0.7.12 — MIT OR Apache-2.0
 - enumflags2_derive 0.7.12 — MIT OR Apache-2.0
+- env_filter 0.1.4 — MIT OR Apache-2.0
 - equivalent 1.0.2 — Apache-2.0 OR MIT
 - erased-serde 0.4.10 — MIT OR Apache-2.0
 - errno 0.3.14 — MIT OR Apache-2.0
@@ -120,6 +123,7 @@ Compiled into Perch's Tauri backend (`src-tauri`), 508 normal (runtime) dependen
 - event-listener-strategy 0.5.4 — Apache-2.0 OR MIT
 - fastrand 2.5.0 — Apache-2.0 OR MIT
 - fdeflate 0.3.7 — MIT OR Apache-2.0
+- fern 0.7.1 — MIT
 - field-offset 0.3.6 — MIT OR Apache-2.0
 - filetime 0.2.29 — MIT OR Apache-2.0
 - flate2 1.1.10 — MIT OR Apache-2.0
@@ -230,6 +234,7 @@ Compiled into Perch's Tauri backend (`src-tauri`), 508 normal (runtime) dependen
 - notify-rust 4.18.0 — MIT OR Apache-2.0
 - num_enum 0.7.6 — BSD-3-Clause OR MIT OR Apache-2.0
 - num_enum_derive 0.7.6 — BSD-3-Clause OR MIT OR Apache-2.0
+- num_threads 0.1.7 — MIT OR Apache-2.0
 - num-conv 0.2.2 — MIT OR Apache-2.0
 - objc2 0.6.4 — MIT
 - objc2-app-kit 0.3.2 — Zlib OR Apache-2.0 OR MIT
@@ -366,6 +371,7 @@ Compiled into Perch's Tauri backend (`src-tauri`), 508 normal (runtime) dependen
 - tauri-plugin-dialog 2.7.3 — Apache-2.0 OR MIT
 - tauri-plugin-fs 2.5.2 — Apache-2.0 OR MIT
 - tauri-plugin-global-shortcut 2.3.2 — Apache-2.0 OR MIT
+- tauri-plugin-log 2.9.2 — Apache-2.0 OR MIT
 - tauri-plugin-notification 2.4.0 — Apache-2.0 OR MIT
 - tauri-plugin-opener 2.5.5 — Apache-2.0 OR MIT
 - tauri-plugin-single-instance 2.4.5 — Apache-2.0 OR MIT
@@ -2598,6 +2604,20 @@ DEALINGS IN THE SOFTWARE.
 
 #### MIT License (MIT)
 
+Used by: fern 0.7.1
+
+```text
+Copyright (c) 2014-2017 David Ross
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+#### MIT License (MIT)
+
 Used by: dbus 0.9.12, libdbus-sys 0.2.7
 
 ```text
@@ -3253,6 +3273,58 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+```
+
+#### MIT License (MIT)
+
+Used by: android_log-sys 0.3.2
+
+```text
+Copyright (c) 2016 The android_log_sys Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### MIT License (MIT)
+
+Used by: android_logger 0.15.1
+
+```text
+Copyright (c) 2016 The android_logger Developers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 #### MIT License (MIT)
@@ -4337,6 +4409,32 @@ DEALINGS IN THE SOFTWARE.
 
 #### MIT License (MIT)
 
+Used by: num_threads 0.1.7
+
+```text
+Copyright (c) 2021 Jacob Pratt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### MIT License (MIT)
+
 Used by: crypto-common 0.1.7
 
 ```text
@@ -4691,7 +4789,7 @@ DEALINGS IN THE SOFTWARE.
 
 #### MIT License (MIT)
 
-Used by: serde_spanned 1.1.1, toml 1.1.6+spec-1.1.0, toml_datetime 1.1.1+spec-1.1.0, toml_edit 0.19.15, toml_edit 0.20.2, toml_edit 0.25.15+spec-1.1.0, toml_parser 1.1.3+spec-1.1.0, toml_writer 1.1.2+spec-1.1.0
+Used by: env_filter 0.1.4, serde_spanned 1.1.1, toml 1.1.6+spec-1.1.0, toml_datetime 1.1.1+spec-1.1.0, toml_edit 0.19.15, toml_edit 0.20.2, toml_edit 0.25.15+spec-1.1.0, toml_parser 1.1.3+spec-1.1.0, toml_writer 1.1.2+spec-1.1.0
 
 ```text
 Copyright (c) Individual contributors
@@ -5890,7 +5988,7 @@ SOFTWARE.
 
 #### MIT License (MIT)
 
-Used by: block2 0.6.2, brotli-decompressor 5.0.3, cesu8 1.1.0, dispatch2 0.3.1, dlopen2 0.8.2, dlopen2_derive 0.4.3, dpi 0.1.2, jni 0.22.4, jni-macros 0.22.4, jni-sys-macros 0.4.1, libappindicator-sys 0.9.0, mac-notification-sys 0.6.15, minisign-verify 0.2.5, ndk 0.9.0, ndk-sys 0.6.0+11769913, objc2 0.6.4, objc2-app-kit 0.3.2, objc2-cloud-kit 0.3.2, objc2-core-data 0.3.2, objc2-core-foundation 0.3.2, objc2-core-graphics 0.3.2, objc2-core-image 0.3.2, objc2-core-location 0.3.2, objc2-core-text 0.3.2, objc2-encode 4.1.0, objc2-exception-helper 0.1.1, objc2-foundation 0.3.2, objc2-osa-kit 0.3.2, objc2-quartz-core 0.3.2, objc2-ui-kit 0.3.2, objc2-user-notifications 0.3.2, objc2-web-kit 0.3.2, perch 0.2.0, r-efi 5.3.0, r-efi 6.0.0, rustls-platform-verifier-android 0.2.0, tauri 2.11.6, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-autostart 2.5.1, tauri-plugin-dialog 2.7.3, tauri-plugin-fs 2.5.2, tauri-plugin-global-shortcut 2.3.2, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.5, tauri-plugin-single-instance 2.4.5, tauri-plugin-updater 2.12.0, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3, tauri-winrt-notification 0.7.3, unic-char-property 0.9.0, unic-char-range 0.9.0, unic-common 0.9.0, unic-ucd-ident 0.9.0, unic-ucd-version 0.9.0, webview2-com 0.38.2, webview2-com-macros 0.8.1, webview2-com-sys 0.38.2, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0, windows 0.61.3, windows-collections 0.2.0, windows-core 0.61.2, windows-future 0.2.1, windows-implement 0.60.2, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-registry 0.6.1, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.4.2, windows-strings 0.5.1, windows-sys 0.45.0, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.60.2, windows-sys 0.61.2, windows-targets 0.42.2, windows-targets 0.48.5, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.1.0, windows-version 0.1.7, windows_aarch64_gnullvm 0.42.2, windows_aarch64_gnullvm 0.48.5, windows_aarch64_gnullvm 0.52.6, windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.42.2, windows_aarch64_msvc 0.48.5, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1, windows_i686_gnu 0.42.2, windows_i686_gnu 0.48.5, windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6, windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.42.2, windows_i686_msvc 0.48.5, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1, windows_x86_64_gnu 0.42.2, windows_x86_64_gnu 0.48.5, windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.42.2, windows_x86_64_gnullvm 0.48.5, windows_x86_64_gnullvm 0.52.6, windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.42.2, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1
+Used by: block2 0.6.2, brotli-decompressor 5.0.3, cesu8 1.1.0, dispatch2 0.3.1, dlopen2 0.8.2, dlopen2_derive 0.4.3, dpi 0.1.2, jni 0.22.4, jni-macros 0.22.4, jni-sys-macros 0.4.1, libappindicator-sys 0.9.0, mac-notification-sys 0.6.15, minisign-verify 0.2.5, ndk 0.9.0, ndk-sys 0.6.0+11769913, objc2 0.6.4, objc2-app-kit 0.3.2, objc2-cloud-kit 0.3.2, objc2-core-data 0.3.2, objc2-core-foundation 0.3.2, objc2-core-graphics 0.3.2, objc2-core-image 0.3.2, objc2-core-location 0.3.2, objc2-core-text 0.3.2, objc2-encode 4.1.0, objc2-exception-helper 0.1.1, objc2-foundation 0.3.2, objc2-osa-kit 0.3.2, objc2-quartz-core 0.3.2, objc2-ui-kit 0.3.2, objc2-user-notifications 0.3.2, objc2-web-kit 0.3.2, perch 0.2.0, r-efi 5.3.0, r-efi 6.0.0, rustls-platform-verifier-android 0.2.0, tauri 2.11.6, tauri-codegen 2.6.3, tauri-macros 2.6.3, tauri-plugin-autostart 2.5.1, tauri-plugin-dialog 2.7.3, tauri-plugin-fs 2.5.2, tauri-plugin-global-shortcut 2.3.2, tauri-plugin-log 2.9.2, tauri-plugin-notification 2.4.0, tauri-plugin-opener 2.5.5, tauri-plugin-single-instance 2.4.5, tauri-plugin-updater 2.12.0, tauri-runtime 2.11.3, tauri-runtime-wry 2.11.4, tauri-utils 2.9.3, tauri-winrt-notification 0.7.3, unic-char-property 0.9.0, unic-char-range 0.9.0, unic-common 0.9.0, unic-ucd-ident 0.9.0, unic-ucd-version 0.9.0, webview2-com 0.38.2, webview2-com-macros 0.8.1, webview2-com-sys 0.38.2, winapi-i686-pc-windows-gnu 0.4.0, winapi-x86_64-pc-windows-gnu 0.4.0, windows 0.61.3, windows-collections 0.2.0, windows-core 0.61.2, windows-future 0.2.1, windows-implement 0.60.2, windows-interface 0.59.3, windows-link 0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-registry 0.6.1, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.4.2, windows-strings 0.5.1, windows-sys 0.45.0, windows-sys 0.48.0, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.60.2, windows-sys 0.61.2, windows-targets 0.42.2, windows-targets 0.48.5, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.1.0, windows-version 0.1.7, windows_aarch64_gnullvm 0.42.2, windows_aarch64_gnullvm 0.48.5, windows_aarch64_gnullvm 0.52.6, windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.42.2, windows_aarch64_msvc 0.48.5, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1, windows_i686_gnu 0.42.2, windows_i686_gnu 0.48.5, windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6, windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.42.2, windows_i686_msvc 0.48.5, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1, windows_x86_64_gnu 0.42.2, windows_x86_64_gnu 0.48.5, windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.42.2, windows_x86_64_gnullvm 0.48.5, windows_x86_64_gnullvm 0.52.6, windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.42.2, windows_x86_64_msvc 0.48.5, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1
 
 ```text
 MIT License
