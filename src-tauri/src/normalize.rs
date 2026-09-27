@@ -67,9 +67,11 @@ pub fn from_hook(body: &Value, now: i64) -> Option<PetEvent> {
             (Kind::Step, Some(step_label(tool, input)), None)
         }
         "Notification" => match body.get("notification_type").and_then(Value::as_str) {
-            Some("permission_prompt") => (Kind::NeedsYou, Some("Needs your approval".to_string()), None),
+            Some("permission_prompt") => (Kind::NeedsYou, Some(NEEDS_APPROVAL.to_string()), None),
             _ => return None,
         },
+        // Arrives the moment Claude Code shows its own prompt (design v1.0 D5).
+        "PermissionRequest" => (Kind::NeedsYou, Some(NEEDS_APPROVAL.to_string()), None),
         "Stop" => (
             Kind::Done,
             Some("Done".to_string()),
@@ -84,12 +86,34 @@ pub fn from_hook(body: &Value, now: i64) -> Option<PetEvent> {
     Some(PetEvent { session_id, project, source: Source::Watch, kind, label, text, at: now })
 }
 
+/// A tool that ran (PostToolUse, PostToolUseFailure) or was denied (PermissionDenied), as the update that puts
+/// a thread waiting on a permission prompt back to work. The caller applies it only to a waiting thread.
+pub fn from_hook_after_tool(body: &Value, now: i64) -> Option<PetEvent> {
+    let session_id = body.get("session_id")?.as_str()?.to_string();
+    let project = body.get("cwd").and_then(Value::as_str).unwrap_or("").to_string();
+    let tool = body.get("tool_name").and_then(Value::as_str).unwrap_or("Tool");
+    let (kind, label) = match body.get("hook_event_name")?.as_str()? {
+        "PostToolUse" | "PostToolUseFailure" => (Kind::Step, step_label(tool, body.get("tool_input").unwrap_or(&NULL))),
+        "PermissionDenied" => (Kind::Blocked, format!("Blocked: {tool}")),
+        _ => return None,
+    };
+    Some(PetEvent { session_id, project, source: Source::Watch, kind, label: Some(label), text: None, at: now })
+}
+
+pub const NEEDS_APPROVAL: &str = "Needs your approval";
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamItem {
     Init { session_id: String, api_key_source: String },
     Pet(PetEvent),
     Overage { resets_at: Option<i64> },
     LimitRejected { resets_at: Option<i64> },
+    /// Host protocol: Claude Code asks whether a tool may run. `request` is the control request's body.
+    CanUseTool { request_id: String, request: Value },
+    /// Host protocol: a control request Perch doesn't handle.
+    ControlRequest { request_id: String, subtype: String },
+    /// Host protocol: Claude Code withdrew a request (for example, a hook allowed the tool first).
+    ControlCancel { request_id: String },
 }
 
 pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> {
@@ -165,6 +189,18 @@ pub fn from_stream_line(line: &str, project: &str, now: i64) -> Vec<StreamItem> 
                     .collect()
             })
             .unwrap_or_default(),
+        (Some("control_request"), _) => {
+            let Some(request_id) = str_of("request_id").map(str::to_string) else { return vec![] };
+            let request = v.get("request").cloned().unwrap_or(Value::Null);
+            match request.get("subtype").and_then(Value::as_str) {
+                Some("can_use_tool") => vec![StreamItem::CanUseTool { request_id, request }],
+                other => vec![StreamItem::ControlRequest { request_id, subtype: other.unwrap_or("").to_string() }],
+            }
+        }
+        (Some("control_cancel_request"), _) => match str_of("request_id") {
+            Some(id) => vec![StreamItem::ControlCancel { request_id: id.to_string() }],
+            None => vec![],
+        },
         (Some("result"), _) => {
             let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false);
             let text = str_of("result").map(str::to_string);
@@ -418,8 +454,44 @@ mod tests {
         let prompt = from_hook(&bodies[0], 3).unwrap();
         assert_eq!((prompt.kind, prompt.project.as_str(), prompt.source), (Kind::Prompt, "C:\\Users\\me\\proj", Source::Watch));
         assert_eq!(bodies[1]["hook_event_name"], "PermissionRequest");
-        // Answered by the hook server; it may or may not show as "needs input", but never as anything else.
-        assert!(from_hook(&bodies[1], 3).is_none_or(|e| e.kind == Kind::NeedsYou));
+        // A permission request shows as "needs input" at once (design D5).
+        let needs = from_hook(&bodies[1], 3).unwrap();
+        assert_eq!((needs.kind, needs.label.as_deref()), (Kind::NeedsYou, Some("Needs your approval")));
+    }
+
+    #[test]
+    fn tools_that_ran_or_were_denied() {
+        let ran = from_hook_after_tool(&hook("PostToolUse", json!({"tool_name": "Bash", "tool_input": {"command": "npm test"}})), 4).unwrap();
+        assert_eq!((ran.kind, ran.label.as_deref(), ran.at, ran.source), (Kind::Step, Some("Running npm test"), 4, Source::Watch));
+        let failed = from_hook_after_tool(&hook("PostToolUseFailure", json!({"tool_name": "Read", "tool_input": {"file_path": "C:\\a\\b.rs"}})), 4).unwrap();
+        assert_eq!((failed.kind, failed.label.as_deref()), (Kind::Step, Some("Reading b.rs")));
+        let denied = from_hook_after_tool(&hook("PermissionDenied", json!({"tool_name": "Write"})), 4).unwrap();
+        assert_eq!((denied.kind, denied.label.as_deref()), (Kind::Blocked, Some("Blocked: Write")));
+        assert!(from_hook_after_tool(&hook("PreToolUse", json!({"tool_name": "Bash"})), 4).is_none());
+        assert!(from_hook_after_tool(&json!({"hook_event_name": "PostToolUse"}), 4).is_none());
+        // These never change a thread on their own.
+        assert!(from_hook(&hook("PostToolUse", json!({})), 1).is_none());
+        assert!(from_hook(&hook("PermissionDenied", json!({})), 1).is_none());
+    }
+
+    /// Claude Code 2.1.282 with the host protocol: a `can_use_tool` request, then its withdrawal.
+    #[test]
+    fn fixture_2_1_282_host_protocol() {
+        let items = stream(include_str!("../tests/fixtures/cc2.1.282_host_cancel.ndjson"));
+        let ask = items.iter().find_map(|i| match i {
+            StreamItem::CanUseTool { request_id, request } => Some((request_id.clone(), request.clone())),
+            _ => None,
+        });
+        let (id, request) = ask.unwrap();
+        assert_eq!(id, "8b55f4ca-71a0-4681-a59f-7763dd84e624");
+        assert_eq!((request["subtype"].as_str(), request["tool_name"].as_str()), (Some("can_use_tool"), Some("PowerShell")));
+        assert!(items.contains(&StreamItem::ControlCancel { request_id: id }));
+        assert!(matches!(items.last(), Some(StreamItem::Pet(e)) if e.kind == Kind::Done));
+        let other = r#"{"type":"control_request","request_id":"q","request":{"subtype":"mcp_message"}}"#;
+        assert_eq!(from_stream_line(other, "p", 1), vec![StreamItem::ControlRequest { request_id: "q".into(), subtype: "mcp_message".into() }]);
+        assert!(from_stream_line(r#"{"type":"control_request","request":{"subtype":"can_use_tool"}}"#, "p", 1).is_empty());
+        assert!(from_stream_line(r#"{"type":"control_cancel_request"}"#, "p", 1).is_empty());
+        assert!(from_stream_line(r#"{"type":"control_response","response":{}}"#, "p", 1).is_empty());
     }
 
     /// Unknown events, unknown fields and wrong types are ignored, never a panic.

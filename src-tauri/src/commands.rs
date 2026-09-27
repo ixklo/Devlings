@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{
+    approvals::{self, Decision},
     diagnostics,
     hooks_installer::{self, HookTarget, RelayExe},
     locks::lock,
@@ -155,6 +156,7 @@ pub fn set_permission_mode(app: AppHandle, project: String, mode: PermissionMode
 #[tauri::command]
 pub fn new_conversation(app: AppHandle, project: String) -> CmdResult<Snapshot> {
     let s = app.state::<AppState>();
+    lock(&s.approvals).deny_ask_run(&project, approvals::NEW_CHAT_MESSAGE);
     {
         let mut projects = lock(&s.projects);
         let p = projects.get_mut(&project).ok_or("Unknown project.")?;
@@ -232,8 +234,8 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         // No run exists for this project, so a stop request left from the last one is stale.
         lock(&s.stop_requested).retain(|p| !store::same_path(p, &project));
     }
-    let child = match runner::spawn(&req) {
-        Ok(child) => child,
+    let (child, stdin) = match runner::spawn(&req) {
+        Ok(started) => started,
         Err(e) => {
             lock(&s.running).remove(&project);
             log::error!("Ask in {project} couldn't start Claude Code: {e}");
@@ -256,7 +258,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     }
     state::emit_snapshot(&app);
     let handle = app.clone();
-    std::thread::spawn(move || state::run_ask(handle, project, child));
+    std::thread::spawn(move || state::run_ask(handle, project, child, stdin));
     Ok(())
 }
 
@@ -268,10 +270,14 @@ pub fn stop_ask(app: AppHandle, project: String) {
         let pid = running.iter().find(|(p, _)| store::same_path(p, &project)).map(|(_, pid)| *pid);
         if pid.is_some() {
             log::info!("Stop requested for the Ask in {project}");
-            lock(&s.stop_requested).insert(project);
+            lock(&s.stop_requested).insert(project.clone());
         }
         pid
     };
+    // Stop answers the run's pending permission requests first, then stops it as before.
+    if lock(&s.approvals).deny_ask_run(&project, approvals::STOPPED_MESSAGE) > 0 {
+        state::emit_snapshot(&app);
+    }
     // A run that is still starting has no process yet (and `kill` of pid 0 would hit Perch's own
     // process group); `ask` stops it as soon as it has one.
     if let Some(pid) = pid.filter(|&pid| pid != STARTING) {
@@ -332,7 +338,50 @@ pub fn mark_credits_notice_seen(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn finish_onboarding(app: AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
-    lock(&s.config).onboarded = true;
+    {
+        let mut c = lock(&s.config);
+        c.onboarded = true;
+        // A fresh install learns about approvals during onboarding, so the upgrade intro card never shows.
+        c.approvals_intro_seen = true;
+    }
+    s.save_config();
+    publish(&app)
+}
+
+/// The user's answer to a permission request from a card or the mini chat. The first answer wins.
+#[tauri::command]
+pub fn answer_approval(app: AppHandle, id: String, decision: Decision) -> CmdResult<Snapshot> {
+    let resolved = lock(&app.state::<AppState>().approvals).answer(&id, decision)?;
+    log::info!("Permission request for {} answered in Perch ({decision:?})", resolved.tool_name);
+    state::after_resolved(&app, vec![resolved]);
+    Ok(state::snapshot(&app))
+}
+
+#[tauri::command]
+pub fn set_watch_approvals(app: AppHandle, enabled: bool) -> Snapshot {
+    let s = app.state::<AppState>();
+    lock(&s.config).watch_approvals = enabled;
+    s.save_config();
+    if !enabled {
+        // Everything held is answered "no decision"; Claude Code's own prompts carry on.
+        lock(&s.approvals).release_watch();
+    }
+    publish(&app)
+}
+
+#[tauri::command]
+pub fn set_approval_hold(app: AppHandle, secs: u64) -> CmdResult<Snapshot> {
+    let secs = store::validate_approval_hold(secs)?;
+    let s = app.state::<AppState>();
+    lock(&s.config).approval_hold_secs = secs;
+    s.save_config();
+    Ok(publish(&app))
+}
+
+#[tauri::command]
+pub fn mark_approvals_intro_seen(app: AppHandle) -> Snapshot {
+    let s = app.state::<AppState>();
+    lock(&s.config).approvals_intro_seen = true;
     s.save_config();
     publish(&app)
 }

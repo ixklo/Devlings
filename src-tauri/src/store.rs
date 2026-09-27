@@ -10,6 +10,9 @@ pub const DEFAULT_PET_SCALE: f64 = 0.6;
 pub const MIN_PET_SCALE: f64 = 0.4;
 pub const MAX_PET_SCALE: f64 = 1.0;
 pub const DEFAULT_DIAGNOSTICS_LEVEL: &str = "info";
+/// How long a watched permission request can be held for an answer in Perch; the UI offers exactly these.
+pub const APPROVAL_HOLDS: [u64; 4] = [30, 60, 120, 240];
+pub const DEFAULT_APPROVAL_HOLD_SECS: u64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -33,6 +36,12 @@ pub struct Config {
     pub auto_update: bool,
     /// Epoch ms of the last update check.
     pub last_update_check: Option<i64>,
+    /// Answer permission requests of watched sessions from the pet (design v1.0 D3). Off by default.
+    pub watch_approvals: bool,
+    /// How long a watched request is held for an answer in Perch: one of `APPROVAL_HOLDS`.
+    pub approval_hold_secs: u64,
+    /// The one-time "answer permission prompts" intro card was answered.
+    pub approvals_intro_seen: bool,
 }
 
 impl Config {
@@ -43,7 +52,17 @@ impl Config {
             self.pet_id = DEFAULT_PET_ID.to_string();
         }
         self.diagnostics_level = normalize_diagnostics_level(&self.diagnostics_level);
+        self.approval_hold_secs = validate_approval_hold(self.approval_hold_secs).unwrap_or(DEFAULT_APPROVAL_HOLD_SECS);
         self
+    }
+}
+
+/// A hold the UI offers, or an error for anything else.
+pub fn validate_approval_hold(secs: u64) -> Result<u64, String> {
+    if APPROVAL_HOLDS.contains(&secs) {
+        Ok(secs)
+    } else {
+        Err("Choose 30 seconds, 1 minute, 2 minutes or 4 minutes.".to_string())
     }
 }
 
@@ -80,6 +99,9 @@ impl Default for Config {
             diagnostics_level: DEFAULT_DIAGNOSTICS_LEVEL.to_string(),
             auto_update: true,
             last_update_check: None,
+            watch_approvals: false,
+            approval_hold_secs: DEFAULT_APPROVAL_HOLD_SECS,
+            approvals_intro_seen: false,
         }
     }
 }
@@ -312,6 +334,39 @@ mod tests {
         std::fs::write(&p, r#"{"autoUpdate":false,"lastUpdateCheck":1700000000000}"#).unwrap();
         let c = load::<Config>(&p);
         assert_eq!((c.auto_update, c.last_update_check), (false, Some(1_700_000_000_000)));
+    }
+
+    #[test]
+    fn approval_config_keys_default_for_old_files() {
+        let c = Config::default();
+        assert_eq!((c.watch_approvals, c.approval_hold_secs, c.approvals_intro_seen), (false, 60, false));
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!((&v["watchApprovals"], &v["approvalHoldSecs"], &v["approvalsIntroSeen"]), (&json!(false), &json!(60), &json!(false)));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        // A v0.2 config file has none of them.
+        std::fs::write(&p, r#"{"petName":"Bo","onboarded":true,"hookPort":4545}"#).unwrap();
+        let c = load::<Config>(&p).normalized();
+        assert_eq!((c.watch_approvals, c.approval_hold_secs, c.approvals_intro_seen, c.onboarded), (false, 60, false, true));
+        std::fs::write(&p, r#"{"watchApprovals":true,"approvalHoldSecs":240,"approvalsIntroSeen":true}"#).unwrap();
+        let c = load::<Config>(&p).normalized();
+        assert_eq!((c.watch_approvals, c.approval_hold_secs, c.approvals_intro_seen), (true, 240, true));
+        // A hold the UI doesn't offer reads as the default.
+        for odd in ["15", "0", "999", "-5", "\"60\""] {
+            std::fs::write(&p, format!(r#"{{"petName":"Bo","approvalHoldSecs":{odd}}}"#)).unwrap();
+            let c = load::<Config>(&p).normalized();
+            assert_eq!(c.approval_hold_secs, 60, "{odd}");
+        }
+    }
+
+    #[test]
+    fn approval_holds() {
+        for secs in [30, 60, 120, 240] {
+            assert_eq!(validate_approval_hold(secs), Ok(secs));
+        }
+        for secs in [0, 15, 59, 300, 241] {
+            assert!(validate_approval_hold(secs).is_err(), "{secs}");
+        }
     }
 
     #[test]
