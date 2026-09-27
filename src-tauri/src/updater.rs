@@ -195,6 +195,19 @@ pub fn install_refusal(status: &UpdateStatus, ask_running: bool) -> Option<&'sta
     }
 }
 
+/// SHA-256 of an update bundle, taken right after the plugin verified its signature.
+pub fn digest(bytes: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).into()
+}
+
+/// Whether bundle bytes read back from disk are exactly the ones that passed signature verification.
+/// The plugin checks the signature only when downloading, so a file changed in the cache folder
+/// between download and install would otherwise be installed unchecked.
+pub fn still_verified(bytes: &[u8], verified: &[u8; 32]) -> bool {
+    digest(bytes) == *verified
+}
+
 /// Writes a verified update bundle to `dir` as `perch-<version>.update`.
 pub fn save_bundle(dir: &Path, version: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
@@ -233,6 +246,8 @@ fn endpoint_var() -> Option<String> {
 struct ReadyUpdate {
     update: Update,
     path: PathBuf,
+    /// `digest` of the verified bytes, re-checked before installing.
+    verified: [u8; 32],
 }
 
 /// Managed state: the status the UI sees, the ready update, and the scheduler's bookkeeping.
@@ -404,12 +419,14 @@ async fn download(app: &AppHandle, mut update: Update, manual: bool) {
         .and_then(|bytes| {
             // The plugin verified the minisign signature against tauri.conf.json's pubkey before returning.
             let dir = bundles_dir(app).ok_or((false, "no cache folder".to_string()))?;
-            save_bundle(&dir, &update.version, &bytes).map_err(|e| (false, format!("couldn't save it: {e}")))
+            let path =
+                save_bundle(&dir, &update.version, &bytes).map_err(|e| (false, format!("couldn't save it: {e}")))?;
+            Ok((path, digest(&bytes)))
         });
     match result {
-        Ok(path) => {
+        Ok((path, verified)) => {
             log::info!("update: Perch {} downloaded and verified to {}", update.version, path.display());
-            keep_ready(app, update, path);
+            keep_ready(app, update, path, verified);
         }
         Err((bad_signature, e)) => {
             if bad_signature {
@@ -424,7 +441,7 @@ async fn download(app: &AppHandle, mut update: Update, manual: bool) {
 }
 
 /// Makes a freshly downloaded update the ready one and deletes any older bundle.
-fn keep_ready(app: &AppHandle, update: Update, path: PathBuf) {
+fn keep_ready(app: &AppHandle, update: Update, path: PathBuf, verified: [u8; 32]) {
     let updates = app.state::<Updates>();
     if updates.installing.load(Ordering::SeqCst) {
         // A restart for the previous update is under way; this one is fetched again next launch.
@@ -432,7 +449,7 @@ fn keep_ready(app: &AppHandle, update: Update, path: PathBuf) {
         return;
     }
     let (version, notes) = (update.version.clone(), update.body.as_deref().map(|n| n.chars().take(NOTES_MAX_CHARS).collect()));
-    *lock(&updates.ready) = Some(ReadyUpdate { update, path: path.clone() });
+    *lock(&updates.ready) = Some(ReadyUpdate { update, path: path.clone(), verified });
     if let Some(dir) = path.parent() {
         remove_bundles(dir, Some(&path));
     }
@@ -471,6 +488,13 @@ fn install_claimed(app: &AppHandle, updates: &Updates) -> Result<(), String> {
             return Err(format!("Couldn't read the downloaded update: {e}"));
         }
     };
+    if !still_verified(&bytes, &ready.verified) {
+        // Changed on disk since it was verified: never install it. The next check downloads it again.
+        log::error!("update: {} changed after it was verified; discarding it", ready.path.display());
+        let _ = std::fs::remove_file(&ready.path);
+        advance(app, Step::DownloadFailed { manual: true, bad_signature: true });
+        return Err(BAD_SIGNATURE.into());
+    }
     log::info!("update: installing Perch {} and restarting", ready.update.version);
     match ready.update.install(&bytes) {
         Ok(()) => {
@@ -543,6 +567,17 @@ mod tests {
 
     fn failed_times(n: u32, last: i64) -> Backoff {
         (0..n).fold(NO_FAILURES, |b, _| b.failed(last))
+    }
+
+    #[test]
+    fn a_staged_bundle_must_still_match_what_was_verified() {
+        let verified = b"signed update bytes".to_vec();
+        let fingerprint = digest(&verified);
+        assert!(still_verified(&verified, &fingerprint));
+        let mut swapped = verified.clone();
+        swapped[0] ^= 1;
+        assert!(!still_verified(&swapped, &fingerprint));
+        assert!(!still_verified(b"", &fingerprint));
     }
 
     #[test]

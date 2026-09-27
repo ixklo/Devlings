@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use tauri::{AppHandle, Manager, Window};
 use tauri_plugin_autostart::ManagerExt;
@@ -192,7 +195,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         state::emit_snapshot(&app);
         return Err("That folder no longer exists, so it was removed from your projects.".into());
     }
-    let bin = lock(&s.claude).as_ref().map(|l| l.path.clone()).map_err(|e| e.clone())?;
+    let bin = state::ensure_claude_located(&app)?;
     let verdict = runner::auth_status(&bin);
     *lock(&s.auth) = Some(verdict.clone());
     if let AuthVerdict::Refused { reason } = verdict {
@@ -217,7 +220,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         log::info!("Ask in {project}: untrusted folder, so it runs with --setting-sources user (found {})", notice.log);
     }
     let notice_session = resume.clone().unwrap_or_default();
-    let req = AskRequest {
+    let mut req = AskRequest {
         bin,
         project: project.clone(),
         prompt,
@@ -236,6 +239,34 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     }
     let (child, stdin) = match runner::spawn(&req) {
         Ok(started) => started,
+        // The remembered binary passed its last staleness check but vanished right before spawn
+        // (e.g. the VS Code extension updated mid-session): re-locate once and retry.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::warn!("Ask in {project}: {} wasn't found; re-locating Claude Code", req.bin.display());
+            state::recheck_setup(&app);
+            let relocated = lock(&s.claude).as_ref().map(|l| l.path.clone()).map_err(|e| e.clone());
+            let auth = lock(&s.auth).clone();
+            // The re-located binary gets the same login check as the first one, before it runs.
+            match retry_bin(relocated, auth) {
+                Ok(bin) => {
+                    req.bin = bin;
+                    match runner::spawn(&req) {
+                        Ok(started) => started,
+                        Err(e2) => {
+                            lock(&s.running).remove(&project);
+                            log::error!("Ask in {project} couldn't start Claude Code after re-locating: {e2}");
+                            return Err(format!("Couldn't start Claude Code: {e2}"));
+                        }
+                    }
+                }
+                Err(err) => {
+                    lock(&s.running).remove(&project);
+                    state::emit_snapshot(&app);
+                    log::error!("Ask in {project}: not retried after re-locating Claude Code: {err}");
+                    return Err(err);
+                }
+            }
+        }
         Err(e) => {
             lock(&s.running).remove(&project);
             log::error!("Ask in {project} couldn't start Claude Code: {e}");
@@ -313,6 +344,16 @@ fn set_project_trust(app: &AppHandle, project: &str, trusted: bool) -> CmdResult
         }
     }
     Ok(publish(app))
+}
+
+/// The binary a retried Ask may run after re-locating Claude Code: only one whose fresh login check allows Asks.
+fn retry_bin(located: Result<PathBuf, String>, auth: Option<AuthVerdict>) -> CmdResult<PathBuf> {
+    let bin = located?;
+    match auth {
+        Some(AuthVerdict::Allowed { .. }) => Ok(bin),
+        Some(AuthVerdict::Refused { reason }) => Err(reason),
+        None => Err("Couldn't check Claude Code's login.".into()),
+    }
 }
 
 /// The PID recorded for an Ask whose process is still starting.
@@ -537,6 +578,17 @@ pub fn save_pet_position(app: AppHandle, x: i32, y: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_retried_ask_needs_a_fresh_allowed_login() {
+        let bin = || Ok(PathBuf::from("/opt/new/claude"));
+        let allowed = Some(AuthVerdict::Allowed { subscription: "pro".into() });
+        assert_eq!(retry_bin(bin(), allowed.clone()), Ok(PathBuf::from("/opt/new/claude")));
+        let refused = Some(AuthVerdict::Refused { reason: "Claude Code isn't logged in.".into() });
+        assert_eq!(retry_bin(bin(), refused), Err("Claude Code isn't logged in.".to_string()));
+        assert!(retry_bin(bin(), None).is_err());
+        assert_eq!(retry_bin(Err("Claude Code wasn't found.".into()), allowed), Err("Claude Code wasn't found.".to_string()));
+    }
 
     #[test]
     fn an_ask_reserves_its_project_until_the_process_starts() {

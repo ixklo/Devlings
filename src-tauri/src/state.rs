@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    ffi::OsStr,
     io::{BufReader, Read},
     path::{Path, PathBuf},
     process::Child,
@@ -64,6 +65,9 @@ pub struct AppState {
     /// Interactive rects of the pet window; None until the frontend first reports them.
     pub hit_regions: Mutex<Option<Vec<HitRect>>>,
     pub pet_visibility_gen: AtomicU64,
+    /// Whether cards currently open below the sprite instead of above it (design D9). Runtime
+    /// only, for the flip's hysteresis; not persisted, so a restart re-derives it from scratch.
+    pub cards_below: AtomicBool,
 }
 
 impl AppState {
@@ -90,6 +94,7 @@ impl AppState {
             pets: Mutex::new(Vec::new()),
             hit_regions: Mutex::new(None),
             pet_visibility_gen: AtomicU64::new(0),
+            cards_below: AtomicBool::new(false),
         })
     }
 
@@ -413,29 +418,67 @@ pub fn refresh_hooks_installed(app: &AppHandle) {
     app.state::<AppState>().hooks_installed.store(installed, Ordering::SeqCst);
 }
 
+/// What a setup recheck found: a pure function (candidates/version/auth are all injected) so a
+/// test can prove it never reuses a cached verdict, without any Tauri app to construct.
+pub struct RecheckOutcome {
+    pub located: Result<Located, String>,
+    pub auth: Option<AuthVerdict>,
+}
+
+/// Locates Claude Code and checks its login fresh, every time it's called. `auth_status_of` is
+/// only ever invoked with the binary this same call just located, so Recheck (and any other
+/// caller) can never show a login verdict left over from a previous check or a previous binary.
+pub fn compute_recheck(
+    override_path: Option<&Path>,
+    path_env: Option<&OsStr>,
+    home: &Path,
+    version_of: impl Fn(&Path) -> Option<String>,
+    auth_status_of: impl Fn(&Path) -> AuthVerdict,
+) -> RecheckOutcome {
+    let located = locator::relocate(override_path, path_env, home, version_of);
+    let auth = located.as_ref().ok().map(|l| auth_status_of(&l.path));
+    RecheckOutcome { located, auth }
+}
+
 pub fn recheck_setup(app: &AppHandle) {
     let s = app.state::<AppState>();
     let override_path = lock(&s.config).claude_path.clone();
     let home = dirs::home_dir().unwrap_or_default();
     let path_env = std::env::var_os("PATH");
-    let cands = locator::candidates(override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
-    let located = locator::locate(&cands, runner::version_of);
-    match &located {
+    let outcome = compute_recheck(override_path.as_deref().map(Path::new), path_env.as_deref(), &home, runner::version_of, runner::auth_status);
+    match &outcome.located {
         Ok(l) => {
             let via = locator::describe_source(&l.path, override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
             log::info!("Claude Code {} at {} (found via {via})", l.version, l.path.display());
         }
         Err(e) => log::warn!("Claude Code not usable: {e}"),
     }
-    let auth = located.as_ref().ok().map(|l| runner::auth_status(&l.path));
-    match &auth {
+    match &outcome.auth {
         Some(AuthVerdict::Allowed { subscription }) => log::info!("Claude Code login: {subscription} subscription"),
         Some(AuthVerdict::Refused { reason }) => log::warn!("Claude Code login refused: {reason}"),
         None => {}
     }
-    *lock(&s.claude) = located;
-    *lock(&s.auth) = auth;
+    *lock(&s.claude) = outcome.located;
+    *lock(&s.auth) = outcome.auth;
     refresh_hooks_installed(app);
+}
+
+/// Re-locates Claude Code if the remembered path no longer runs (design gap G3.5): checked before
+/// every Ask spawn, and on a plain setup recheck. A stale user-chosen path is skipped like any
+/// missing candidate (see `locator::relocate`), so this falls back to auto-detection on its own.
+/// Returns the binary to run, refreshing `s.claude`/`s.auth` first if it had to re-locate.
+pub fn ensure_claude_located(app: &AppHandle) -> Result<PathBuf, String> {
+    let located = lock(&app.state::<AppState>().claude).clone();
+    let stale = match &located {
+        Ok(l) => locator::is_stale(&l.path, runner::version_of),
+        Err(_) => true,
+    };
+    if !stale {
+        return located.map(|l| l.path);
+    }
+    log::info!("Claude Code's remembered path is stale; re-locating");
+    recheck_setup(app);
+    lock(&app.state::<AppState>().claude).clone().map(|l| l.path)
 }
 
 pub fn boot(app: AppHandle) {
@@ -614,4 +657,53 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWr
     lock(&s.approvals).drop_ask_run(&project);
     lock(&s.running).retain(|p, _| !store::same_path(p, &project));
     emit_snapshot(&app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+
+    fn touch(p: &Path) {
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, b"").unwrap();
+    }
+
+    /// The regression this gap is about: Claude Code's own account cache can be stale, so Recheck
+    /// must never paper over that by reusing a verdict Perch already had. Two calls with a counting
+    /// fake must mean two real `claude auth status` calls, not one memoized and replayed.
+    #[test]
+    fn recheck_never_reuses_a_cached_auth_verdict() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join(if cfg!(windows) { "claude.exe" } else { "claude" });
+        touch(&bin);
+        let calls = AtomicUsize::new(0);
+        let version_of = |_: &Path| Some("2.1.282 (Claude Code)".to_string());
+        let auth_status_of = |_: &Path| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            AuthVerdict::Allowed { subscription: "max".to_string() }
+        };
+        let home = dir.path();
+
+        let first = compute_recheck(Some(&bin), None, home, version_of, auth_status_of);
+        assert!(matches!(first.auth, Some(AuthVerdict::Allowed { .. })));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let second = compute_recheck(Some(&bin), None, home, version_of, auth_status_of);
+        assert!(matches!(second.auth, Some(AuthVerdict::Allowed { .. })));
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "a second recheck must call auth status again, not reuse the first result");
+    }
+
+    #[test]
+    fn recheck_reports_no_auth_when_claude_code_itself_is_not_found() {
+        let home = tempfile::tempdir().unwrap();
+        let calls = AtomicUsize::new(0);
+        let outcome = compute_recheck(None, None, home.path(), |_: &Path| None, |_: &Path| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            AuthVerdict::Allowed { subscription: "max".to_string() }
+        });
+        assert!(outcome.located.is_err());
+        assert!(outcome.auth.is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "auth status is only worth checking once a binary was found");
+    }
 }

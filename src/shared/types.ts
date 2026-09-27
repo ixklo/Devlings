@@ -39,6 +39,8 @@ export interface Config {
   hookToken: string | null;
   claudePath: string | null;
   petPosition: [number, number] | null;
+  /** Whether `petPosition` is already the sprite's anchor (design D9), vs. an unmigrated v0.2 value. */
+  petPositionMigrated: boolean;
   notifications: boolean;
   launchAtLogin: boolean;
   petId: string;
@@ -164,6 +166,20 @@ export interface HitRect {
   h: number;
   /** Set for elements whose hover matters ("pet", "bar"); the backend reports it back via `pet-pointer`. */
   id?: string;
+}
+
+/**
+ * How `.stage` should lay out for the sprite's current on-screen spot (design D9). Sent as the
+ * `pet-placement` event whenever the backend (re)positions the window.
+ */
+export interface Placement {
+  /** Cards open below the sprite (flipped) instead of above it. */
+  cardsBelow: boolean;
+  /** Logical px to shift `.stage` sideways (a CSS transform) so cards stay on screen near an edge. */
+  shiftX: number;
+  /** Logical px `.stage` actually has on screen; applied as its `max-height` so content shrinks or
+   *  scrolls instead of being cut off when the window's top or bottom edge is off-screen. */
+  stageRoom: number;
 }
 
 export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string };

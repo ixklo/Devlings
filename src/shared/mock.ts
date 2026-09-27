@@ -222,6 +222,7 @@ class MockBackend {
     hookToken: "preview",
     claudePath: null,
     petPosition: null,
+    petPositionMigrated: true,
     notifications: true,
     launchAtLogin: false,
     petId: "perch",

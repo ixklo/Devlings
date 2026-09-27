@@ -98,6 +98,25 @@ pub fn describe_source(path: &Path, override_path: Option<&Path>, path_env: Opti
     "other location".to_string()
 }
 
+/// Finds Claude Code again: candidates in order (an override path, then PATH, then the usual
+/// fallbacks and editor extensions), filtered to the first that runs `--version` at or above
+/// `MIN_VERSION`. A missing or too-old `override_path` (e.g. a user-chosen path that vanished) is
+/// skipped like any other bad candidate, so this naturally falls back to auto-detection.
+pub fn relocate(
+    override_path: Option<&Path>,
+    path_env: Option<&OsStr>,
+    home: &Path,
+    version_of: impl Fn(&Path) -> Option<String>,
+) -> Result<Located, String> {
+    locate(&candidates(override_path, path_env, home), version_of)
+}
+
+/// Whether a remembered binary path should be re-located (design D-gap G3.5): it no longer exists,
+/// or no longer runs `--version` successfully (moved by an extension update, deleted, or replaced).
+pub fn is_stale(path: &Path, version_of: impl Fn(&Path) -> Option<String>) -> bool {
+    !path.is_file() || version_of(path).and_then(|v| parse_version(&v)).is_none()
+}
+
 pub fn locate(cands: &[PathBuf], version_of: impl Fn(&Path) -> Option<String>) -> Result<Located, String> {
     let mut too_old: Option<String> = None;
     for c in cands {
@@ -171,6 +190,51 @@ mod tests {
         let cursor = home.join(".cursor").join("extensions").join("anthropic.claude-code-2.1.1").join(exe_name());
         assert_eq!(describe_source(&cursor, None, None, home), "Cursor extension (anthropic.claude-code-2.1.1)");
         assert_eq!(describe_source(Path::new("/somewhere/claude"), None, None, home), "other location");
+    }
+
+    #[test]
+    fn stale_path_is_missing_or_fails_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("gone").join(exe_name());
+        let present = dir.path().join(exe_name());
+        touch(&present);
+        let version_of = |p: &Path| (p == present.as_path()).then(|| "2.1.282 (Claude Code)".to_string());
+        assert!(is_stale(&missing, version_of), "a path that no longer exists is stale");
+        assert!(!is_stale(&present, version_of), "a path that runs --version is not stale");
+        assert!(is_stale(&present, |_: &Path| None), "a path whose --version now fails is stale");
+    }
+
+    #[test]
+    fn relocate_finds_the_new_path_after_an_extension_update() {
+        // The remembered path pointed at the old version's folder, which the update removed.
+        let home = tempfile::tempdir().unwrap();
+        let ext = home.path().join(".vscode").join("extensions");
+        let stale = ext.join("anthropic.claude-code-2.1.200-win32-x64").join("resources").join("native-binary").join(exe_name());
+        let new = ext.join("anthropic.claude-code-2.1.282-win32-x64").join("resources").join("native-binary").join(exe_name());
+        touch(&new);
+        let version_of = |p: &Path| (p == new.as_path()).then(|| "2.1.282 (Claude Code)".to_string());
+        assert!(is_stale(&stale, version_of));
+        let found = relocate(None, None, home.path(), version_of).unwrap();
+        assert_eq!(found.path, new);
+    }
+
+    #[test]
+    fn relocate_falls_back_to_auto_detect_when_the_chosen_path_vanished() {
+        let home = tempfile::tempdir().unwrap();
+        let chosen = home.path().join("custom").join(exe_name()); // configured in Settings, now missing
+        let local = home.path().join(".local").join("bin").join(exe_name());
+        touch(&local);
+        let version_of = |p: &Path| (p == local.as_path()).then(|| "2.1.282 (Claude Code)".to_string());
+        assert!(is_stale(&chosen, version_of));
+        let found = relocate(Some(&chosen), None, home.path(), version_of).unwrap();
+        assert_eq!(found.path, local);
+    }
+
+    #[test]
+    fn relocate_reports_a_clear_error_when_nothing_is_found() {
+        let home = tempfile::tempdir().unwrap();
+        let err = relocate(None, None, home.path(), |_: &Path| None).unwrap_err();
+        assert!(err.contains("wasn't found"), "{err}");
     }
 
     #[test]
