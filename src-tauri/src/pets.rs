@@ -209,9 +209,21 @@ pub fn discover(roots: &[(PetSource, PathBuf)]) -> Vec<Pet> {
             }
         }
     }
-    // Grouped by source; the default pet leads its group so it shows first in pickers.
-    out.sort_by_key(|p| (rank(p.info.source), p.info.id != DEFAULT_PET_ID));
+    // Grouped by source; the default pet leads its group so it shows first in pickers, and the
+    // bundled pets keep their collection order (other pets stay in folder order).
+    out.sort_by_key(|p| (rank(p.info.source), p.info.id != DEFAULT_PET_ID, bundled_position(p)));
     out
+}
+
+/// The pets that ship with Perch, in the order pickers and the menu list them: the three birds,
+/// then the other species. `scripts/pets` builds exactly these (its `PET_IDS`).
+pub const BUNDLED_ORDER: [&str; 9] = ["perch", "ember", "plum", "fox", "cat", "axolotl", "capybara", "robot", "ghost"];
+
+fn bundled_position(p: &Pet) -> usize {
+    if p.info.source != PetSource::Bundled {
+        return usize::MAX;
+    }
+    BUNDLED_ORDER.iter().position(|id| *id == p.info.id).unwrap_or(usize::MAX)
 }
 
 /// The wanted pet, else the default pet, else the first one available.
@@ -422,6 +434,33 @@ mod tests {
         );
         assert_eq!(pets[0].sprite, bundled.join("perch").join("s.png"));
         assert!(discover(&[(PetSource::Bundled, t.path().join("missing"))]).is_empty());
+    }
+
+    fn shipped_pets() -> Vec<Pet> {
+        discover(&[(PetSource::Bundled, PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/pets")))])
+    }
+
+    #[test]
+    fn the_bundled_pets_come_in_collection_order() {
+        // What the pickers and the right-click menu list: the three birds, then the six other species.
+        let pets = shipped_pets();
+        let ids: Vec<&str> = pets.iter().map(|p| p.info.id.as_str()).collect();
+        assert_eq!(ids, BUNDLED_ORDER);
+        assert_eq!(ids.len(), 9);
+        assert_eq!(ids[0], DEFAULT_PET_ID);
+        let names: Vec<&str> = pets.iter().map(|p| p.info.display_name.as_str()).collect();
+        assert_eq!(names, ["Perch", "Ember", "Plum", "Pip", "Miso", "Nori", "Bean", "Bolt", "Wisp"]);
+    }
+
+    #[test]
+    fn unknown_bundled_ids_follow_the_known_ones() {
+        let t = tempfile::tempdir().unwrap();
+        for id in ["zeta", "fox", "alpha", "perch", "cat"] {
+            make_pet(t.path(), id, &manifest(id, "s.png"), Some(("s.png", &png())));
+        }
+        let pets = discover(&[(PetSource::Bundled, t.path().to_path_buf())]);
+        let order: Vec<&str> = ids(&pets).into_iter().map(|(id, _)| id).collect();
+        assert_eq!(order, ["perch", "fox", "cat", "alpha", "zeta"]);
     }
 
     #[test]

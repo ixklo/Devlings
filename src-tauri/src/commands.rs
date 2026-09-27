@@ -484,12 +484,22 @@ pub async fn set_pet(app: AppHandle, id: String) -> CmdResult<Snapshot> {
     Ok(publish(&app))
 }
 
+/// Switches the pet. A name the user chose stays; a default name follows the new pet
+/// (`store::name_after_pet_change`).
 pub fn choose_pet(app: &AppHandle, id: &str) -> CmdResult<()> {
-    if !state::refresh_pets(app).iter().any(|p| p.info.id == id) {
+    let all = state::refresh_pets(app);
+    let Some(pet) = all.iter().find(|p| p.info.id == id) else {
         return Err("That pet wasn't found.".into());
-    }
+    };
     let s = app.state::<AppState>();
-    lock(&s.config).pet_id = id.to_string();
+    {
+        let mut c = lock(&s.config);
+        let old_name = all.iter().find(|p| p.info.id == c.pet_id).map(|p| p.info.display_name.as_str());
+        if let Some(name) = store::name_after_pet_change(&c.pet_name, old_name, &pet.info.display_name) {
+            c.pet_name = name;
+        }
+        c.pet_id = id.to_string();
+    }
     s.save_config();
     Ok(())
 }

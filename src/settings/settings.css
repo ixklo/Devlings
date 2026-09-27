@@ -301,6 +301,16 @@ body[data-window="settings"] {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 8px;
+  /* Nine pets are built in: about two and a half rows show and the rest scroll, so it's clear
+     there are more. The padding keeps the chosen pet's ring and the focus ring inside the box. */
+  max-height: 302px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: -4px;
+  padding: 4px;
+  scroll-padding: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fill-3) transparent;
 }
 
 .pet-option {

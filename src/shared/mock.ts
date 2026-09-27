@@ -45,6 +45,12 @@ const PETS: PetInfo[] = [
   { id: "perch", displayName: "Perch", description: "A teal songbird that keeps an eye on your sessions.", source: "bundled" },
   { id: "ember", displayName: "Ember", description: "A warm orange finch with a lot of energy.", source: "bundled" },
   { id: "plum", displayName: "Plum", description: "A calm purple bird, unbothered by long builds.", source: "bundled" },
+  { id: "fox", displayName: "Pip", description: "A russet fox with a white-tipped tail.", source: "bundled" },
+  { id: "cat", displayName: "Miso", description: "A charcoal cat with amber eyes.", source: "bundled" },
+  { id: "axolotl", displayName: "Nori", description: "A pink axolotl with fluttering frills.", source: "bundled" },
+  { id: "capybara", displayName: "Bean", description: "A calm capybara with an orange on its head.", source: "bundled" },
+  { id: "robot", displayName: "Bolt", description: "A steel robot with a blue visor.", source: "bundled" },
+  { id: "ghost", displayName: "Wisp", description: "A soft little floating ghost.", source: "bundled" },
   { id: "sprout", displayName: "Sprout", description: "A green bird from your Codex pets folder.", source: "codex" },
 ];
 
@@ -600,10 +606,15 @@ class MockBackend {
         if (!url) throw "Couldn't draw the preview sprite.";
         return url;
       }
-      case "set_pet":
-        if (!PETS.some((p) => p.id === a.id)) throw "That pet isn't installed.";
-        c.petId = String(a.id);
+      case "set_pet": {
+        const next = PETS.find((p) => p.id === a.id);
+        if (!next) throw "That pet isn't installed.";
+        // As in Rust: a name the user chose stays, a default name follows the pet.
+        const old = PETS.find((p) => p.id === c.petId);
+        if (c.petName === "Perch" || c.petName === old?.displayName) c.petName = next.displayName;
+        c.petId = next.id;
         return this.publish();
+      }
       case "set_pet_scale":
         c.petScale = Math.min(1, Math.max(0.4, Number(a.scale)));
         return this.publish();
