@@ -198,6 +198,8 @@ pub fn pump<R: BufRead>(
             }
         }
     }
+    // The output ended or broke off: nothing more can be answered, so let Claude Code exit.
+    stdin.close();
     None
 }
 
@@ -463,6 +465,30 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0], serde_json::json!({"type": "control_response", "response": {"subtype": "error", "request_id": "x1", "error": "unsupported"}}));
         assert_eq!(lines[1]["response"]["request_id"], "x2");
+    }
+
+    /// Output that breaks off mid-run (a read error) must not leave Claude Code waiting on stdin forever.
+    #[test]
+    fn pump_closes_stdin_when_the_output_breaks() {
+        struct Broken(usize);
+        impl io::Read for Broken {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if self.0 == 0 {
+                    self.0 = 1;
+                    let line = b"{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s\",\"apiKeySource\":\"none\"}\n";
+                    buf[..line.len()].copy_from_slice(line);
+                    Ok(line.len())
+                } else {
+                    Err(io::Error::other("pipe broke"))
+                }
+            }
+        }
+        let (stdin, fake, _join) = fake_stdin::writer();
+        let mut items = vec![];
+        let kill = pump(io::BufReader::new(Broken(0)), "p", || 1, &stdin, |i| items.push(i));
+        assert_eq!(kill, None);
+        assert_eq!(items.len(), 2);
+        assert!(fake.wait_closed());
     }
 
     #[test]

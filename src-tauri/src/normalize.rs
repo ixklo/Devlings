@@ -71,7 +71,14 @@ pub fn from_hook(body: &Value, now: i64) -> Option<PetEvent> {
             _ => return None,
         },
         // Arrives the moment Claude Code shows its own prompt (design v1.0 D5).
-        "PermissionRequest" => (Kind::NeedsYou, Some(NEEDS_APPROVAL.to_string()), None),
+        "PermissionRequest" => {
+            let label = match body.get("tool_name").and_then(Value::as_str) {
+                Some("AskUserQuestion") => "Has a question for you",
+                Some("ExitPlanMode") => "Has a plan for you to review",
+                _ => NEEDS_APPROVAL,
+            };
+            (Kind::NeedsYou, Some(label.to_string()), None)
+        }
         "Stop" => (
             Kind::Done,
             Some("Done".to_string()),
@@ -457,6 +464,15 @@ mod tests {
         // A permission request shows as "needs input" at once (design D5).
         let needs = from_hook(&bodies[1], 3).unwrap();
         assert_eq!((needs.kind, needs.label.as_deref()), (Kind::NeedsYou, Some("Needs your approval")));
+    }
+
+    #[test]
+    fn questions_and_plans_say_so_on_the_card() {
+        let label = |tool: &str| from_hook(&hook("PermissionRequest", json!({"tool_name": tool})), 1).unwrap().label;
+        assert_eq!(label("AskUserQuestion").as_deref(), Some("Has a question for you"));
+        assert_eq!(label("ExitPlanMode").as_deref(), Some("Has a plan for you to review"));
+        assert_eq!(label("Bash").as_deref(), Some("Needs your approval"));
+        assert_eq!(from_hook(&hook("PermissionRequest", json!({})), 1).unwrap().label.as_deref(), Some("Needs your approval"));
     }
 
     #[test]

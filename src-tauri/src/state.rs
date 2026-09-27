@@ -75,8 +75,11 @@ impl AppState {
         std::fs::create_dir_all(&data_dir)?;
         let mut projects: Projects = store::load(&data_dir.join("projects.json"));
         projects.retain_outside(&temp_dir());
+        let config = store::load::<Config>(&data_dir.join("config.json")).normalized();
+        let mut approvals = Registry::default();
+        approvals.set_watching(config.watch_approvals);
         Ok(Self {
-            config: Mutex::new(store::load::<Config>(&data_dir.join("config.json")).normalized()),
+            config: Mutex::new(config),
             projects: Mutex::new(projects),
             data_dir,
             threads: Mutex::new(Threads::default()),
@@ -89,7 +92,7 @@ impl AppState {
             running: Mutex::new(HashMap::new()),
             stop_requested: Mutex::new(HashSet::new()),
             ask_sids: Mutex::new(HashMap::new()),
-            approvals: Mutex::new(Registry::default()),
+            approvals: Mutex::new(approvals),
             last_view: Mutex::new(None),
             pets: Mutex::new(Vec::new()),
             hit_regions: Mutex::new(None),
@@ -217,6 +220,10 @@ pub fn emit_snapshot(app: &AppHandle) {
 
 pub fn handle_event(app: &AppHandle, ev: PetEvent) {
     let s = app.state::<AppState>();
+    // A session with a request still waiting stays in "needs input" through its other activity (D5).
+    let waiting = lock(&s.approvals).waiting(&ev.session_id);
+    let status = lock(&s.threads).get(&ev.session_id).map(|t| t.status);
+    let ev = approvals::keep_needs_input(ev, status, waiting);
     let applied = lock(&s.threads).apply(&ev);
     let _ = app.emit("pet-event", &ev);
     if let Some(status) = applied.alert {
@@ -301,10 +308,8 @@ fn on_permission_body(app: &AppHandle, body: Value) -> String {
     let s = app.state::<AppState>();
     let sid = body.get("session_id").and_then(Value::as_str).unwrap_or("");
     let own_ask = lock(&s.ask_sids).contains_key(sid);
-    let policy = {
-        let c = lock(&s.config);
-        WatchPolicy { enabled: c.watch_approvals, hold: Duration::from_secs(c.approval_hold_secs), own_ask }
-    };
+    let hold = Duration::from_secs(lock(&s.config).approval_hold_secs);
+    let policy = WatchPolicy { hold, own_ask };
     approvals::on_watch_request(&s.approvals, &body, policy, now_ms(), &|| emit_snapshot(app))
 }
 
@@ -600,7 +605,14 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWr
         StreamItem::CanUseTool { request_id, request } => {
             // Claude Code asks before running a tool (design v1.0 D4); held until answered in Perch.
             let req = approvals::Request::from_can_use_tool(&session_id, &project, &request);
-            log::info!("Ask in {project} asks to use {}", req.tool_name);
+            if let Some(dialog) = approvals::dialog_kind(&req.tool_name) {
+                // A question or a plan is never a plain Allow: turn it down with a message Claude can act on.
+                log::info!("Ask in {project}: {} answered with a note", approvals::log_safe(&req.tool_name));
+                stdin.send(approvals::host_deny(&request_id, dialog.ask_deny_message()));
+                handle_event(&app, ask_event(&session_id, &project, Kind::Blocked, dialog.chat_note(), None));
+                return;
+            }
+            log::info!("Ask in {project} asks to use {}", approvals::log_safe(&req.tool_name));
             let responder = Responder::Ask { stdin: stdin.clone(), request_id };
             lock(&s.approvals).add(req, Source::Ask, Some(responder), now_ms(), None);
             handle_event(&app, ask_event(&session_id, &project, Kind::NeedsYou, normalize::NEEDS_APPROVAL, None));
@@ -633,6 +645,8 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWr
         handle_event(&app, ask_event(&session_id, &project, Kind::Failed, label, Some(text)));
     }
 
+    // Nothing can answer this run any more; a closed stdin lets Claude Code exit on its own.
+    stdin.close();
     let status = child.wait();
     let stderr_text = stderr_thread.and_then(|h| h.join().ok()).unwrap_or_default();
     match &status {

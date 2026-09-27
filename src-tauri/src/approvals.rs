@@ -40,14 +40,22 @@ pub const NEW_CHAT_MESSAGE: &str = "The user started a new chat in Perch.";
 pub const QUIT_MESSAGE: &str = "Perch quit before this was answered.";
 const GONE: &str = "That request was already answered or is no longer waiting.";
 const NO_ALWAYS: &str = "Claude Code didn't offer a rule for this request.";
+/// Why a request can only be denied in Perch: part of it can't be shown.
+pub const TOO_LONG: &str = "Too long to review here. Answer in Claude Code.";
 /// Markers are forgotten this long after their request arrived.
 pub const MARKER_KEEP_MS: i64 = 60 * 60_000;
 /// Oldest markers make room beyond this many entries.
 pub const MAX_ENTRIES: usize = 256;
 const SUMMARY_KEYS: [&str; 6] = ["command", "file_path", "notebook_path", "url", "path", "pattern"];
 const SUMMARY_JSON_CHARS: usize = 300;
-const SUMMARY_MAX_CHARS: usize = 4000;
+/// The exact command, path or URL is shown whole up to this; beyond it the request can only be denied here.
+pub const SUMMARY_MAX_CHARS: usize = 4000;
+/// The full input, as pretty JSON, is shown up to this; beyond it the request can only be denied here.
+pub const DETAILS_MAX_CHARS: usize = 16 * 1024;
 const DESTINATIONS: [&str; 4] = ["session", "localSettings", "projectSettings", "userSettings"];
+/// The only modes "Always allow" may switch to, and only for the session.
+const SESSION_MODES: [&str; 3] = ["acceptEdits", "default", "plan"];
+const SANDBOX_RISK: &str = "Runs outside the sandbox";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -67,9 +75,19 @@ pub struct PendingApproval {
     pub project_name: String,
     pub source: Source,
     pub tool_name: String,
+    /// Claude Code's own name for an MCP tool shown under a display name, e.g. `mcp__github__create_issue`.
+    pub raw_tool_name: Option<String>,
     /// The exact command, file path or URL; otherwise the input as compact JSON.
     pub summary: String,
     pub description: Option<String>,
+    /// The whole tool input as pretty JSON (at most `DETAILS_MAX_CHARS`).
+    pub details: String,
+    /// The headline doesn't show everything that's being approved, so the card opens the details.
+    pub lossy: bool,
+    /// Part of the request can't be shown here, so it can only be denied.
+    pub too_long: bool,
+    /// Short warnings for risky flags, e.g. "Runs outside the sandbox".
+    pub risks: Vec<String>,
     pub can_always_allow: bool,
     pub always_label: Option<String>,
     pub always_detail: Option<String>,
@@ -133,14 +151,122 @@ fn cap(s: &str, max: usize) -> String {
     }
 }
 
-/// What the card shows in monospace: the exact command, file path or URL, else the input as compact JSON.
-pub fn summary(input: &Value) -> String {
+/// The card's headline and how it was made.
+struct Headline {
+    text: String,
+    /// It had to be cut.
+    truncated: bool,
+    /// It is one exact field (command, path, URL), not a JSON preview.
+    exact: bool,
+}
+
+fn headline(input: &Value) -> Headline {
     let exact = SUMMARY_KEYS.iter().find_map(|k| input.get(*k).and_then(Value::as_str).filter(|s| !s.trim().is_empty()));
-    match (exact, input) {
-        (Some(s), _) => cap(s, SUMMARY_MAX_CHARS),
-        (None, Value::Null) => String::new(),
-        (None, other) => cap(&other.to_string(), SUMMARY_JSON_CHARS),
+    let (full, max, exact) = match (exact, input) {
+        (Some(s), _) => (s.to_string(), SUMMARY_MAX_CHARS, true),
+        (None, Value::Null) => (String::new(), SUMMARY_JSON_CHARS, false),
+        (None, other) => (other.to_string(), SUMMARY_JSON_CHARS, false),
+    };
+    let truncated = full.chars().count() > max;
+    Headline { text: cap(&full, max), truncated, exact }
+}
+
+/// What the card shows in monospace: the exact command, file path or URL, else the input as compact JSON.
+#[cfg(test)]
+fn summary(input: &Value) -> String {
+    headline(input).text
+}
+
+/// The input keys a built-in tool's card covers: its headline, the description, and fields that are part of the
+/// tool's normal shape (shown in the details). None for tools Perch doesn't know.
+fn known_keys(tool: &str) -> Option<&'static [&'static str]> {
+    Some(match tool {
+        "Bash" | "PowerShell" => &["command", "description", "timeout", "run_in_background"],
+        "Read" => &["file_path", "offset", "limit", "pages"],
+        "Write" => &["file_path", "content"],
+        "Edit" => &["file_path", "old_string", "new_string", "replace_all"],
+        "MultiEdit" => &["file_path", "edits"],
+        "NotebookEdit" => &["notebook_path", "new_source", "cell_id", "cell_type", "edit_mode"],
+        "WebFetch" => &["url", "prompt"],
+        "WebSearch" => &["query", "allowed_domains", "blocked_domains"],
+        "Glob" => &["pattern", "path"],
+        "Grep" => &["pattern", "path", "glob", "type", "output_mode", "-i", "-n", "-A", "-B", "-C", "multiline", "head_limit"],
+        _ => return None,
+    })
+}
+
+/// A value that changes nothing when present: null, false or an empty string.
+fn trivial(v: &Value) -> bool {
+    matches!(v, Value::Null | Value::Bool(false)) || v.as_str() == Some("")
+}
+
+/// Whether the headline (with the description) leaves out something being approved: a tool Perch doesn't know,
+/// an extra non-trivial key, or a headline that had to be cut.
+fn is_lossy(tool: &str, input: &Value, head: &Headline) -> bool {
+    if head.truncated {
+        return true;
     }
+    match (known_keys(tool), input.as_object()) {
+        (None, _) => true,
+        (Some(keys), Some(obj)) => obj.iter().any(|(k, v)| !keys.contains(&k.as_str()) && !trivial(v)),
+        (Some(_), None) => false,
+    }
+}
+
+fn risks(input: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if input.get("dangerouslyDisableSandbox").and_then(Value::as_bool) == Some(true) {
+        out.push(SANDBOX_RISK.to_string());
+    }
+    out
+}
+
+/// A permission dialog that is really a question or a plan to review, never a plain Allow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialog {
+    Question,
+    Plan,
+}
+
+pub fn dialog_kind(tool: &str) -> Option<Dialog> {
+    match tool {
+        "AskUserQuestion" => Some(Dialog::Question),
+        "ExitPlanMode" => Some(Dialog::Plan),
+        _ => None,
+    }
+}
+
+impl Dialog {
+    /// The denial an Ask run gets, worded so Claude carries on sensibly.
+    pub fn ask_deny_message(self) -> &'static str {
+        match self {
+            Dialog::Question => "Perch can't show questions yet. Make a reasonable assumption and say what you assumed.",
+            Dialog::Plan => "The user will review the plan in Perch's chat.",
+        }
+    }
+
+    /// The note the mini chat shows.
+    pub fn chat_note(self) -> &'static str {
+        match self {
+            Dialog::Question => "Claude had a question. Perch can't show questions yet, so Claude was asked to assume and say so.",
+            Dialog::Plan => "Claude has a plan ready. Review it below, then reply to go ahead.",
+        }
+    }
+}
+
+/// While a session still has a request waiting, its other activity (a parallel subagent's tool call, a streamed
+/// reply) updates the label but keeps the thread in "needs input" (design D5).
+pub fn keep_needs_input(mut ev: PetEvent, status: Option<ThreadStatus>, waiting: bool) -> PetEvent {
+    let live = matches!(ev.kind, Kind::Prompt | Kind::Step | Kind::ReplyDelta);
+    if live && waiting && status == Some(ThreadStatus::NeedsInput) {
+        ev.kind = Kind::NeedsYou;
+    }
+    ev
+}
+
+/// A tool name for the log: control characters escaped, at most 80 characters.
+pub fn log_safe(name: &str) -> String {
+    cap(&name.escape_debug().to_string(), 81)
 }
 
 fn keep(s: &Value) -> bool {
@@ -154,13 +280,13 @@ fn keep(s: &Value) -> bool {
             field("behavior") == Some("allow") && non_empty("rules", |r| r.get("toolName").and_then(Value::as_str).is_some())
         }
         Some("addDirectories") => non_empty("directories", Value::is_string),
-        Some("setMode") => field("mode").is_some_and(|m| !m.eq_ignore_ascii_case("bypassPermissions")),
+        Some("setMode") => field("mode").is_some_and(|m| SESSION_MODES.contains(&m)) && field("destination") == Some("session"),
         _ => false,
     }
 }
 
-/// The suggestions "Always allow" may echo back: well-formed allow rules, working folders and modes, but never
-/// a switch to `bypassPermissions`.
+/// The suggestions "Always allow" may echo back: well-formed allow rules, working folders, and a switch to
+/// `acceptEdits`, `default` or `plan` for the session only (so never `bypassPermissions`).
 pub fn keep_suggestions(raw: &Value) -> Vec<Value> {
     raw.as_array().into_iter().flatten().filter(|s| keep(s)).cloned().collect()
 }
@@ -268,6 +394,12 @@ struct Entry {
     responder: Option<Responder>,
 }
 
+impl Entry {
+    fn too_long(&self) -> bool {
+        self.view.too_long
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Allowed,
@@ -358,6 +490,8 @@ fn new_id() -> String {
 #[derive(Default)]
 pub struct Registry {
     entries: Vec<Entry>,
+    /// `watchApprovals`, mirrored here so turning it off and a new request are decided under one lock.
+    watch: bool,
 }
 
 impl Registry {
@@ -370,6 +504,15 @@ impl Registry {
         }
         let kept = keep_suggestions(&req.suggestions);
         let id = new_id();
+        let head = headline(&req.input);
+        let pretty = serde_json::to_string_pretty(&req.input).unwrap_or_default();
+        let details_cut = pretty.chars().count() > DETAILS_MAX_CHARS;
+        let too_long = details_cut || (head.exact && head.truncated);
+        let lossy = too_long || is_lossy(&req.tool_name, &req.input, &head);
+        let raw_tool_name = match &req.display_name {
+            Some(shown) if req.tool_name.starts_with("mcp__") && *shown != req.tool_name => Some(req.tool_name.clone()),
+            _ => None,
+        };
         let view = PendingApproval {
             id: id.clone(),
             session_id: req.session_id,
@@ -377,8 +520,13 @@ impl Registry {
             project: req.project,
             source,
             tool_name: req.display_name.unwrap_or_else(|| req.tool_name.clone()),
-            summary: summary(&req.input),
+            raw_tool_name,
+            summary: head.text,
             description: req.description,
+            details: cap(&pretty, DETAILS_MAX_CHARS),
+            lossy,
+            too_long,
+            risks: risks(&req.input),
             can_always_allow: !kept.is_empty(),
             always_label: always_label(&kept).map(str::to_string),
             always_detail: always_detail(&kept),
@@ -386,6 +534,21 @@ impl Registry {
         };
         self.entries.push(Entry { view, tool_name: req.tool_name, input: req.input, suggestions: kept, created_at: now, responder });
         id
+    }
+
+    /// Whether watched requests may be held (`watchApprovals`).
+    pub fn watching(&self) -> bool {
+        self.watch
+    }
+
+    /// Turns watching on or off. Off answers every hold "no decision" at once; returns how many.
+    pub fn set_watching(&mut self, enabled: bool) -> usize {
+        self.watch = enabled;
+        if enabled {
+            0
+        } else {
+            self.release_watch()
+        }
     }
 
     /// Watch requests currently held.
@@ -410,9 +573,12 @@ impl Registry {
     }
 
     /// The user's answer from a card. The first answer wins; later ones, unknown ids and requests no longer held
-    /// are harmless errors. "Always" needs a kept suggestion.
+    /// are harmless errors. "Always" needs a kept suggestion, and a request too long to show can only be denied.
     pub fn answer(&mut self, id: &str, decision: Decision) -> Result<Resolved, String> {
         let i = self.entries.iter().position(|e| e.view.id == id && e.responder.is_some()).ok_or(GONE)?;
+        if decision != Decision::Deny && self.entries[i].too_long() {
+            return Err(TOO_LONG.into());
+        }
         if decision == Decision::Always && self.entries[i].suggestions.is_empty() {
             return Err(NO_ALWAYS.into());
         }
@@ -448,6 +614,19 @@ impl Registry {
             e.view.source == Source::Watch && e.view.session_id == session_id && e.tool_name == tool && input.is_none_or(|i| *i == e.input)
         });
         Self::release_all_hooks(gone)
+    }
+
+    /// The oldest watch request of `session_id` for `tool`, when a tool result matched none exactly. Returns how many.
+    pub fn resolve_oldest(&mut self, session_id: &str, tool: &str) -> usize {
+        let Some(i) = self
+            .entries
+            .iter()
+            .position(|e| e.view.source == Source::Watch && e.view.session_id == session_id && e.tool_name == tool)
+        else {
+            return 0;
+        };
+        self.entries.remove(i).release_hook();
+        1
     }
 
     /// Every watch request of `session_id` (a new prompt, a stop or the session's end resolved them).
@@ -514,11 +693,9 @@ impl Registry {
     }
 }
 
-/// How a watched PermissionRequest is handled.
+/// How a watched PermissionRequest is handled (whether watching is on lives in the registry).
 #[derive(Debug, Clone, Copy)]
 pub struct WatchPolicy {
-    /// `watchApprovals`.
-    pub enabled: bool,
     /// `approvalHoldSecs` (capped at `MAX_HOLD`).
     pub hold: Duration,
     /// The session is one of Perch's own Ask runs, which are answered on their stdin instead.
@@ -537,7 +714,9 @@ pub fn on_watch_request(reg: &Mutex<Registry>, body: &Value, policy: WatchPolicy
     let (tx, rx) = mpsc::channel();
     let id = {
         let mut r = lock(reg);
-        if !policy.enabled || r.holds() >= MAX_HOLDS {
+        // Questions and plans are left to Claude Code's own dialog: they must never get a generic Allow.
+        let dialog = dialog_kind(&req.tool_name).is_some();
+        if dialog || !r.watching() || r.holds() >= MAX_HOLDS {
             // Nothing is held, but "needs input" still waits for this request to be resolved.
             r.add(req, Source::Watch, None, now, None);
             return EMPTY_ANSWER.to_string();
@@ -560,7 +739,8 @@ pub fn on_watch_request(reg: &Mutex<Registry>, body: &Value, policy: WatchPolicy
 }
 
 /// Clears the watch requests a hook event shows were resolved (design D5). Returns how many were removed.
-/// - PostToolUse, PostToolUseFailure: the same tool with an equal input ran.
+/// - PostToolUse, PostToolUseFailure: the same tool with an equal input ran; if none matches exactly, the
+///   session's oldest request for that tool (the input may come back slightly different).
 /// - PermissionDenied: the same tool was denied.
 /// - UserPromptSubmit, Stop, StopFailure, SessionEnd: all of that session's requests.
 pub fn apply_hook_event(reg: &mut Registry, body: &Value) -> usize {
@@ -568,7 +748,10 @@ pub fn apply_hook_event(reg: &mut Registry, body: &Value) -> usize {
     let tool = body.get("tool_name").and_then(Value::as_str).unwrap_or("");
     match body.get("hook_event_name").and_then(Value::as_str) {
         Some("PostToolUse" | "PostToolUseFailure") => {
-            reg.resolve_elsewhere(sid, tool, Some(body.get("tool_input").unwrap_or(&normalize::NULL)))
+            match reg.resolve_elsewhere(sid, tool, Some(body.get("tool_input").unwrap_or(&normalize::NULL))) {
+                0 => reg.resolve_oldest(sid, tool),
+                n => n,
+            }
         }
         Some("PermissionDenied") => reg.resolve_elsewhere(sid, tool, None),
         Some("UserPromptSubmit" | "Stop" | "StopFailure" | "SessionEnd") => reg.clear_session(sid),
@@ -674,6 +857,22 @@ mod tests {
         assert_eq!(keep_suggestions(&raw), vec![json!({"type": "setMode", "mode": "acceptEdits", "destination": "session"})]);
         let only_bypass = json!([{"type": "setMode", "mode": "bypassPermissions", "destination": "session"}]);
         assert!(keep_suggestions(&only_bypass).is_empty());
+    }
+
+    #[test]
+    fn modes_are_limited_to_a_short_list_for_the_session() {
+        let mode = |m: &str, d: &str| json!({"type": "setMode", "mode": m, "destination": d});
+        let raw = json!([
+            mode("acceptEdits", "session"),
+            mode("default", "session"),
+            mode("plan", "session"),
+            mode("acceptEdits", "localSettings"),
+            mode("acceptEdits", "userSettings"),
+            mode("dontAsk", "session"),
+            mode("auto", "session"),
+            mode("bypassPermissions", "session"),
+        ]);
+        assert_eq!(keep_suggestions(&raw), vec![mode("acceptEdits", "session"), mode("default", "session"), mode("plan", "session")]);
     }
 
     #[test]
@@ -815,7 +1014,9 @@ mod tests {
             v,
             json!({
                 "id": id, "sessionId": "s1", "project": "C:\\Users\\me\\proj", "projectName": "proj", "source": "watch",
-                "toolName": "Bash", "summary": "npm test", "description": null, "canAlwaysAllow": true,
+                "toolName": "Bash", "rawToolName": null, "summary": "npm test", "description": null,
+                "details": "{\n  \"command\": \"npm test\"\n}", "lossy": false, "tooLong": false, "risks": [],
+                "canAlwaysAllow": true,
                 "alwaysLabel": "Always allow", "alwaysDetail": "Adds the rule Bash(npm test:*) to this project's local settings",
                 "expiresAt": 61_000
             })
@@ -825,6 +1026,162 @@ mod tests {
         assert_ne!(id, other);
         assert_eq!(id.len(), 32);
         assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    fn view_of(tool: &str, input: Value) -> PendingApproval {
+        let mut reg = Registry::default();
+        reg.add(req("s", tool, input), Source::Watch, None, 1, None);
+        reg.entries.remove(0).view
+    }
+
+    #[test]
+    fn details_show_the_whole_input() {
+        let w = view_of("Write", json!({"file_path": "C:\\p\\a.txt", "content": "line 1\nline 2"}));
+        assert_eq!(w.details, "{\n  \"file_path\": \"C:\\\\p\\\\a.txt\",\n  \"content\": \"line 1\\nline 2\"\n}");
+        let e = view_of("Edit", json!({"file_path": "a.rs", "old_string": "let x = 1;", "new_string": "let x = 2;"}));
+        assert!(e.details.contains("\"old_string\": \"let x = 1;\"") && e.details.contains("\"new_string\": \"let x = 2;\""), "{}", e.details);
+        assert_eq!(view_of("Bash", Value::Null).details, "null");
+    }
+
+    #[test]
+    fn lossy_when_the_headline_misses_something() {
+        let lossy = |tool: &str, input: Value| view_of(tool, input).lossy;
+        // The headline plus the description cover these.
+        assert!(!lossy("Bash", json!({"command": "ls", "description": "List"})));
+        assert!(!lossy("PowerShell", json!({"command": "dir", "timeout": 1000, "run_in_background": false})));
+        assert!(!lossy("Write", json!({"file_path": "a", "content": "x"})));
+        assert!(!lossy("Edit", json!({"file_path": "a", "old_string": "x", "new_string": "y", "replace_all": true})));
+        assert!(!lossy("Read", json!({"file_path": "a", "offset": 1, "limit": 2})));
+        assert!(!lossy("WebFetch", json!({"url": "https://example.com", "prompt": "Summarize"})));
+        // A built-in tool whose whole input fits the JSON headline.
+        assert!(!lossy("WebSearch", json!({"query": "tauri"})));
+        // Trivial values of unknown keys don't count.
+        assert!(!lossy("Bash", json!({"command": "ls", "dangerouslyDisableSandbox": false, "extra": null})));
+        // Extra, non-trivial keys.
+        assert!(lossy("Bash", json!({"command": "ls", "dangerouslyDisableSandbox": true})));
+        assert!(lossy("Bash", json!({"command": "ls", "cwd": "C:\\other"})));
+        // Tools Perch doesn't know.
+        assert!(lossy("mcp__fs__write_file", json!({"path": "a", "content": "x"})));
+        assert!(lossy("SomethingNew", json!({"a": 1})));
+        // A headline that had to be cut.
+        assert!(lossy("WebSearch", json!({"query": "q".repeat(400)})));
+    }
+
+    #[test]
+    fn risky_flags_get_a_badge() {
+        assert_eq!(view_of("Bash", json!({"command": "ls", "dangerouslyDisableSandbox": true})).risks, vec!["Runs outside the sandbox"]);
+        assert_eq!(view_of("PowerShell", json!({"command": "dir", "dangerouslyDisableSandbox": true})).risks, vec!["Runs outside the sandbox"]);
+        assert!(view_of("Bash", json!({"command": "ls", "dangerouslyDisableSandbox": false})).risks.is_empty());
+        assert!(view_of("Bash", json!({"command": "ls"})).risks.is_empty());
+    }
+
+    #[test]
+    fn too_long_inputs_can_only_be_denied() {
+        let big = view_of("Write", json!({"file_path": "a", "content": "z".repeat(DETAILS_MAX_CHARS)}));
+        assert!(big.too_long && big.lossy);
+        assert_eq!(big.details.chars().count(), DETAILS_MAX_CHARS);
+        assert!(big.details.ends_with('…'));
+        let long_command = view_of("Bash", json!({"command": "y".repeat(SUMMARY_MAX_CHARS + 1)}));
+        assert!(long_command.too_long);
+        assert!(!view_of("Bash", json!({"command": "y".repeat(SUMMARY_MAX_CHARS)})).too_long);
+        // Only Deny goes through, whoever asks.
+        for decision in [Decision::Allow, Decision::Always] {
+            let mut reg = Registry::default();
+            let (tx, rx) = mpsc::channel();
+            let id = reg.add(req("s", "Bash", json!({"command": "y".repeat(SUMMARY_MAX_CHARS + 1)})), Source::Watch, Some(Responder::Hook(tx)), 1, Some(1));
+            assert_eq!(reg.answer(&id, decision), Err(TOO_LONG.to_string()));
+            assert!(rx.try_recv().is_err());
+            assert_eq!(reg.answer(&id, Decision::Deny).unwrap().outcome, Outcome::Denied);
+        }
+    }
+
+    #[test]
+    fn mcp_tools_show_their_raw_name_too() {
+        let mut reg = Registry::default();
+        let named = Request::from_can_use_tool("s", "p", &json!({"tool_name": "mcp__gh__create_issue", "display_name": "Create issue", "input": {}}));
+        reg.add(named, Source::Ask, None, 1, None);
+        let unnamed = Request::from_can_use_tool("s", "p", &json!({"tool_name": "mcp__gh__close_issue", "input": {}}));
+        reg.add(unnamed, Source::Ask, None, 1, None);
+        let builtin = Request::from_can_use_tool("s", "p", &json!({"tool_name": "Bash", "display_name": "Shell", "input": {}}));
+        reg.add(builtin, Source::Ask, None, 1, None);
+        let v: Vec<_> = reg.entries.iter().map(|e| (e.view.tool_name.clone(), e.view.raw_tool_name.clone())).collect();
+        assert_eq!(
+            v,
+            vec![
+                ("Create issue".to_string(), Some("mcp__gh__create_issue".to_string())),
+                ("mcp__gh__close_issue".to_string(), None),
+                ("Shell".to_string(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn questions_and_plans_are_dialogs_not_permissions() {
+        assert_eq!(dialog_kind("AskUserQuestion"), Some(Dialog::Question));
+        assert_eq!(dialog_kind("ExitPlanMode"), Some(Dialog::Plan));
+        assert_eq!(dialog_kind("Bash"), None);
+        assert_eq!(dialog_kind("askuserquestion"), None);
+        assert_eq!(
+            Dialog::Question.ask_deny_message(),
+            "Perch can't show questions yet. Make a reasonable assumption and say what you assumed."
+        );
+        assert_eq!(Dialog::Plan.ask_deny_message(), "The user will review the plan in Perch's chat.");
+        assert!(!Dialog::Question.chat_note().is_empty() && !Dialog::Plan.chat_note().is_empty());
+    }
+
+    #[test]
+    fn watched_questions_and_plans_are_left_to_claude_code() {
+        let reg = Mutex::new(Registry::default());
+        lock(&reg).set_watching(true);
+        let policy = WatchPolicy { hold: Duration::from_secs(20), own_ask: false };
+        for tool in ["AskUserQuestion", "ExitPlanMode"] {
+            let t0 = Instant::now();
+            let sid = format!("s-{tool}");
+            assert_eq!(on_watch_request(&reg, &body(&sid, tool, json!({"questions": []})), policy, 1, &|| {}), "{}", "{tool}");
+            assert!(t0.elapsed() < Duration::from_secs(1), "{tool}");
+            // Needs input stays until the native dialog is answered, but there's nothing to click in Perch.
+            assert!(lock(&reg).waiting(&sid), "{tool}");
+        }
+        assert!(lock(&reg).pending().is_empty());
+        assert_eq!(lock(&reg).holds(), 0);
+    }
+
+    #[test]
+    fn needs_input_stays_while_a_request_waits() {
+        let ev = |kind: Kind, label: Option<&str>| PetEvent {
+            session_id: "s1".into(),
+            project: "p".into(),
+            source: Source::Watch,
+            kind,
+            label: label.map(str::to_string),
+            text: None,
+            at: 1,
+        };
+        let needs = Some(ThreadStatus::NeedsInput);
+        for kind in [Kind::Prompt, Kind::Step, Kind::ReplyDelta] {
+            let kept = keep_needs_input(ev(kind, Some("Reading a.rs")), needs, true);
+            assert_eq!((kept.kind, kept.label.as_deref()), (Kind::NeedsYou, Some("Reading a.rs")), "{kind:?}");
+            // Nothing waiting, or not waiting on the user: applied as it came.
+            assert_eq!(keep_needs_input(ev(kind, None), needs, false).kind, kind, "{kind:?}");
+            assert_eq!(keep_needs_input(ev(kind, None), Some(ThreadStatus::Running), true).kind, kind, "{kind:?}");
+            assert_eq!(keep_needs_input(ev(kind, None), None, true).kind, kind, "{kind:?}");
+        }
+        for kind in [Kind::Done, Kind::Failed, Kind::Ended, Kind::Blocked, Kind::Started] {
+            assert_eq!(keep_needs_input(ev(kind, None), needs, true).kind, kind, "{kind:?}");
+        }
+        // Applied to a thread, the label changes and the status stays.
+        let mut threads = Threads::default();
+        threads.apply(&ev(Kind::NeedsYou, Some("Needs your approval")));
+        let alert = threads.apply(&keep_needs_input(ev(Kind::Step, Some("Subagent: Search")), needs, true)).alert;
+        let t = threads.get("s1").unwrap();
+        assert_eq!((t.status, t.label.as_deref(), alert), (ThreadStatus::NeedsInput, Some("Subagent: Search"), None));
+    }
+
+    #[test]
+    fn logged_names_are_escaped_and_short() {
+        assert_eq!(log_safe("Bash"), "Bash");
+        assert_eq!(log_safe("mcp__x\n\u{1b}[2Jfake"), "mcp__x\\n\\u{1b}[2Jfake");
+        assert_eq!(log_safe(&"a".repeat(500)).chars().count(), 81);
     }
 
     // ---- Registry ----
@@ -932,7 +1289,8 @@ mod tests {
         reg.add(req("s1", "Bash", json!({"command": "npm test"})), Source::Watch, None, 1, None);
         let post = |name: &str, input: Value| json!({"hook_event_name": name, "session_id": "s1", "tool_name": "Bash", "tool_input": input});
         assert_eq!(apply_hook_event(&mut reg, &post("PreToolUse", json!({"command": "npm test"}))), 0);
-        assert_eq!(apply_hook_event(&mut reg, &post("PostToolUse", json!({"command": "ls"}))), 0);
+        let other_tool = json!({"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": "Read", "tool_input": {"file_path": "a"}});
+        assert_eq!(apply_hook_event(&mut reg, &other_tool), 0);
         assert_eq!(apply_hook_event(&mut reg, &post("PostToolUseFailure", json!({"command": "npm test"}))), 1);
         reg.add(req("s1", "Bash", json!({"command": "npm test"})), Source::Watch, None, 1, None);
         assert_eq!(apply_hook_event(&mut reg, &post("PostToolUse", json!({"command": "npm test"}))), 1);
@@ -940,6 +1298,31 @@ mod tests {
         assert_eq!(apply_hook_event(&mut reg, &post("PermissionDenied", json!({"command": "y"}))), 1);
         assert_eq!(apply_hook_event(&mut reg, &json!({"hook_event_name": "Stop"})), 0);
         assert_eq!(apply_hook_event(&mut reg, &json!([1])), 0);
+    }
+
+    /// D5 fallback: Claude Code may report the input a little differently after the tool ran (for example with
+    /// defaults filled in), so a PostToolUse that matches nothing exactly releases the session's oldest request
+    /// for that tool.
+    #[test]
+    fn an_unmatched_tool_result_releases_the_oldest_request_for_that_tool() {
+        let mut reg = Registry::default();
+        let (_, rx_a) = held(&mut reg, "s1", "Bash", json!({"command": "a"}));
+        let (_, rx_b) = held(&mut reg, "s1", "Bash", json!({"command": "b"}));
+        reg.add(req("s1", "Write", json!({"file_path": "w"})), Source::Watch, None, 1, None);
+        reg.add(req("s2", "Bash", json!({"command": "c"})), Source::Watch, None, 1, None);
+        let ran = |name: &str, input: Value| json!({"hook_event_name": name, "session_id": "s1", "tool_name": "Bash", "tool_input": input});
+        assert_eq!(apply_hook_event(&mut reg, &ran("PostToolUse", json!({"command": "a", "timeout": 120000}))), 1);
+        assert_eq!(rx_a.recv().unwrap(), "{}");
+        assert!(rx_b.try_recv().is_err());
+        // An exact match still wins over the oldest.
+        reg.add(req("s1", "Bash", json!({"command": "d"})), Source::Watch, None, 1, None);
+        assert_eq!(apply_hook_event(&mut reg, &ran("PostToolUseFailure", json!({"command": "d"}))), 1);
+        assert_eq!(reg.pending().len(), 1, "b is still held");
+        assert!(rx_b.try_recv().is_err());
+        // Nothing for that tool in the session: nothing to release.
+        let other = json!({"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": "Read", "tool_input": {}});
+        assert_eq!(apply_hook_event(&mut reg, &other), 0);
+        assert!(reg.waiting("s2"));
     }
 
     #[test]
@@ -952,6 +1335,29 @@ mod tests {
         assert!(reg.pending().is_empty());
         assert!(reg.waiting("s1") && reg.waiting("s2"));
         assert_eq!(reg.release_watch(), 0);
+    }
+
+    /// The flag lives in the registry, so turning watching off and a new request can't interleave: the request
+    /// either sees the flag off, or is held and then released by the toggle.
+    #[test]
+    fn the_watch_flag_is_checked_under_the_registry_lock() {
+        let reg = Mutex::new(Registry::default());
+        assert!(!lock(&reg).watching());
+        lock(&reg).set_watching(true);
+        let policy = WatchPolicy { hold: Duration::from_secs(20), own_ask: false };
+        let held = std::thread::scope(|scope| {
+            let h = scope.spawn(|| on_watch_request(&reg, &body("s1", "Bash", json!({"command": "a"})), policy, 1, &|| {}));
+            wait_for("the hold", || lock(&reg).holds() == 1);
+            assert_eq!(lock(&reg).set_watching(false), 1);
+            h.join().unwrap()
+        });
+        assert_eq!(held, "{}");
+        assert!(!lock(&reg).watching());
+        let t0 = Instant::now();
+        assert_eq!(on_watch_request(&reg, &body("s2", "Bash", json!({})), policy, 1, &|| {}), "{}");
+        assert!(t0.elapsed() < Duration::from_secs(1));
+        assert_eq!(lock(&reg).holds(), 0);
+        assert!(lock(&reg).waiting("s2"));
     }
 
     #[test]
@@ -1110,12 +1516,16 @@ mod tests {
     /// PermissionRequest bodies are held on their worker.
     fn world(enabled: bool, hold: Duration) -> World {
         let reg = Arc::new(Mutex::new(Registry::default()));
+        lock(&reg).set_watching(enabled);
         let threads = Arc::new(Mutex::new(Threads::default()));
         let (tx, applied) = mpsc::channel();
         let (ev_reg, ev_threads) = (reg.clone(), threads.clone());
         let on_event = move |body: Value| {
             apply_hook_event(&mut lock(&ev_reg), &body);
             if let Some(ev) = crate::normalize::from_hook(&body, 1) {
+                let waiting = lock(&ev_reg).waiting(&ev.session_id);
+                let status = lock(&ev_threads).get(&ev.session_id).map(|t| t.status);
+                let ev = keep_needs_input(ev, status, waiting);
                 lock(&ev_threads).apply(&ev);
             }
             let status = body["session_id"].as_str().and_then(|s| lock(&ev_threads).get(s).map(|t| t.status));
@@ -1127,7 +1537,7 @@ mod tests {
         };
         let hold_reg = reg.clone();
         let on_permission = move |body: Value| {
-            let policy = WatchPolicy { enabled, hold, own_ask: false };
+            let policy = WatchPolicy { hold, own_ask: false };
             on_watch_request(&hold_reg, &body, policy, 1_000, &|| {})
         };
         let server = HookServer::start(0, TOKEN.into(), on_event, on_permission).unwrap();
@@ -1200,6 +1610,25 @@ mod tests {
         let (answer, _) = held.join().unwrap();
         assert_eq!(answer, hook_answer(Decision::Allow, &[]));
         assert!(lock(&w.reg).pending().is_empty());
+        w.server.stop();
+    }
+
+    #[test]
+    fn a_parallel_tool_call_keeps_needs_input_while_a_request_waits() {
+        let w = world(true, Duration::from_secs(20));
+        let held = post_in_background(&w.base, body("s1", "Bash", json!({"command": "npm test"})));
+        wait_for("the hold", || lock(&w.reg).holds() == 1);
+        applied_until(&w, "PermissionRequest");
+        // A subagent in the same session starts another tool.
+        post(&w.base, &json!({"hook_event_name": "PreToolUse", "session_id": "s1", "cwd": "C:\\Users\\me\\proj", "tool_name": "Grep", "tool_input": {"pattern": "x"}}));
+        applied_until(&w, "PreToolUse");
+        let t = lock(&w.threads).get("s1").cloned().unwrap();
+        assert_eq!((t.status, t.label.as_deref()), (ThreadStatus::NeedsInput, Some("Searching")));
+        // A new prompt clears the request and the thread moves on.
+        post(&w.base, &json!({"hook_event_name": "UserPromptSubmit", "session_id": "s1", "cwd": "C:\\Users\\me\\proj"}));
+        applied_until(&w, "UserPromptSubmit");
+        assert_eq!(status(&w, "s1"), Some(ThreadStatus::Running));
+        assert_eq!(held.join().unwrap().0, "{}");
         w.server.stop();
     }
 
@@ -1307,7 +1736,8 @@ mod tests {
     #[test]
     fn perchs_own_ask_sessions_are_never_held() {
         let reg = Mutex::new(Registry::default());
-        let policy = WatchPolicy { enabled: true, hold: Duration::from_secs(20), own_ask: true };
+        lock(&reg).set_watching(true);
+        let policy = WatchPolicy { hold: Duration::from_secs(20), own_ask: true };
         let t0 = Instant::now();
         assert_eq!(on_watch_request(&reg, &body("ask", "Bash", json!({})), policy, 1, &|| {}), "{}");
         assert!(t0.elapsed() < Duration::from_secs(1));

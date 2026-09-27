@@ -393,7 +393,7 @@ pub fn finish_onboarding(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn answer_approval(app: AppHandle, id: String, decision: Decision) -> CmdResult<Snapshot> {
     let resolved = lock(&app.state::<AppState>().approvals).answer(&id, decision)?;
-    log::info!("Permission request for {} answered in Perch ({decision:?})", resolved.tool_name);
+    log::info!("Permission request for {} answered in Perch ({decision:?})", approvals::log_safe(&resolved.raw_tool));
     state::after_resolved(&app, vec![resolved]);
     Ok(state::snapshot(&app))
 }
@@ -401,12 +401,11 @@ pub fn answer_approval(app: AppHandle, id: String, decision: Decision) -> CmdRes
 #[tauri::command]
 pub fn set_watch_approvals(app: AppHandle, enabled: bool) -> Snapshot {
     let s = app.state::<AppState>();
-    lock(&s.config).watch_approvals = enabled;
+    // Decided under the registry lock, so a request arriving now is either not held or released here.
+    // Turning it off answers everything held "no decision"; Claude Code's own prompts carry on.
+    lock(&s.approvals).set_watching(enabled);
+    lock(&s.config).set_watch_approvals(enabled);
     s.save_config();
-    if !enabled {
-        // Everything held is answered "no decision"; Claude Code's own prompts carry on.
-        lock(&s.approvals).release_watch();
-    }
     publish(&app)
 }
 

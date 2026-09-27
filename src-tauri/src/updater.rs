@@ -496,6 +496,8 @@ fn install_claimed(app: &AppHandle, updates: &Updates) -> Result<(), String> {
         return Err(BAD_SIGNATURE.into());
     }
     log::info!("update: installing Perch {} and restarting", ready.update.version);
+    // On Windows the installer ends this process; answer held permission requests first.
+    crate::state::shutdown(app);
     match ready.update.install(&bytes) {
         Ok(()) => {
             app.request_restart();

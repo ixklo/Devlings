@@ -60,6 +60,16 @@ impl Config {
     }
 }
 
+impl Config {
+    /// Turning watching on also answers the one-time intro card.
+    pub fn set_watch_approvals(&mut self, enabled: bool) {
+        self.watch_approvals = enabled;
+        if enabled {
+            self.approvals_intro_seen = true;
+        }
+    }
+}
+
 /// A hold the UI offers, or an error for anything else.
 pub fn validate_approval_hold(secs: u64) -> Result<u64, String> {
     if APPROVAL_HOLDS.contains(&secs) {
@@ -361,6 +371,17 @@ mod tests {
             let c = load::<Config>(&p).normalized();
             assert_eq!(c.approval_hold_secs, 60, "{odd}");
         }
+    }
+
+    #[test]
+    fn turning_watch_approvals_on_answers_the_intro() {
+        let mut c = Config::default();
+        c.set_watch_approvals(false);
+        assert_eq!((c.watch_approvals, c.approvals_intro_seen), (false, false));
+        c.set_watch_approvals(true);
+        assert_eq!((c.watch_approvals, c.approvals_intro_seen), (true, true));
+        c.set_watch_approvals(false);
+        assert_eq!((c.watch_approvals, c.approvals_intro_seen), (false, true));
     }
 
     #[test]
