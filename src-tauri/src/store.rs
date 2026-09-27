@@ -10,7 +10,7 @@ pub const DEFAULT_PET_SCALE: f64 = 0.6;
 pub const MIN_PET_SCALE: f64 = 0.4;
 pub const MAX_PET_SCALE: f64 = 1.0;
 pub const DEFAULT_DIAGNOSTICS_LEVEL: &str = "info";
-/// How long a watched permission request can be held for an answer in Perch; the UI offers exactly these.
+/// How long a watched permission request can be held for an answer in Devlings; the UI offers exactly these.
 pub const APPROVAL_HOLDS: [u64; 4] = [30, 60, 120, 240];
 pub const DEFAULT_APPROVAL_HOLD_SECS: u64 = 60;
 
@@ -41,7 +41,7 @@ pub struct Config {
     pub last_update_check: Option<i64>,
     /// Answer permission requests of watched sessions from the pet (design v1.0 D3). Off by default.
     pub watch_approvals: bool,
-    /// How long a watched request is held for an answer in Perch: one of `APPROVAL_HOLDS`.
+    /// How long a watched request is held for an answer in Devlings: one of `APPROVAL_HOLDS`.
     pub approval_hold_secs: u64,
     /// The one-time "answer permission prompts" intro card was answered.
     pub approvals_intro_seen: bool,
@@ -157,7 +157,7 @@ pub struct ProjectEntry {
     pub ask_session_id: Option<String>,
     #[serde(default)]
     pub transcript_path: Option<String>,
-    /// Trusted in Perch: Asks here use the folder's own Claude Code settings even if Claude Code hasn't trusted it
+    /// Trusted in Devlings: Asks here use the folder's own Claude Code settings even if Claude Code hasn't trusted it
     /// (design v1.0 D6).
     #[serde(default)]
     pub trusted: bool,
@@ -187,7 +187,7 @@ impl Projects {
         true
     }
 
-    /// Sets Perch-level trust for a known project. Returns whether it changed, so callers save only then.
+    /// Sets Devlings-level trust for a known project. Returns whether it changed, so callers save only then.
     pub fn set_trusted(&mut self, path: &str, trusted: bool) -> Result<bool, String> {
         let p = self.get_mut(path).ok_or("Unknown project.")?;
         let changed = p.trusted != trusted;

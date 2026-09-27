@@ -50,7 +50,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             &MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?,
         ],
     )?;
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID).tooltip("Perch").menu(&menu);
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID).tooltip("Devlings").menu(&menu);
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
     }

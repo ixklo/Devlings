@@ -55,10 +55,10 @@ fn install_on_port(app: &AppHandle, new_port: bool) -> CmdResult<Snapshot> {
     match &relay {
         RelayExe::Usable(_) => {}
         RelayExe::Ephemeral(exe) => {
-            log::warn!("Perch runs from a temporary location, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+            log::warn!("Devlings runs from a temporary location, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
         }
         RelayExe::Unsafe(exe) => {
-            log::warn!("Perch's path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
+            log::warn!("Devlings' path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display())
         }
     }
     let (port, token) = {
@@ -309,14 +309,14 @@ pub fn stop_ask(app: AppHandle, project: String) {
     if lock(&s.approvals).deny_ask_run(&project, approvals::STOPPED_MESSAGE) > 0 {
         state::emit_snapshot(&app);
     }
-    // A run that is still starting has no process yet (and `kill` of pid 0 would hit Perch's own
+    // A run that is still starting has no process yet (and `kill` of pid 0 would hit Devlings' own
     // process group); `ask` stops it as soon as it has one.
     if let Some(pid) = pid.filter(|&pid| pid != STARTING) {
         runner::kill_tree(pid);
     }
 }
 
-/// Trusts a project's folder in Perch: its next Ask uses the folder's own Claude Code settings (design v1.0 D6).
+/// Trusts a project's folder in Devlings: its next Ask uses the folder's own Claude Code settings (design v1.0 D6).
 #[tauri::command]
 pub fn trust_project(app: AppHandle, project: String) -> CmdResult<Snapshot> {
     set_project_trust(&app, &project, true)
@@ -340,7 +340,7 @@ fn set_project_trust(app: &AppHandle, project: &str, trusted: bool) -> CmdResult
                 log::error!("Couldn't save projects.json: {e}");
                 return Err(format!("Couldn't save that: {e}"));
             }
-            log::info!("{} {project} in Perch", if trusted { "Trusted" } else { "Stopped trusting" });
+            log::info!("{} {project} in Devlings", if trusted { "Trusted" } else { "Stopped trusting" });
         }
     }
     Ok(publish(app))
@@ -389,7 +389,7 @@ pub fn finish_onboarding(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn answer_approval(app: AppHandle, id: String, decision: Decision) -> CmdResult<Snapshot> {
     let resolved = lock(&app.state::<AppState>().approvals).answer(&id, decision)?;
-    log::info!("Permission request for {} answered in Perch ({decision:?})", approvals::log_safe(&resolved.raw_tool));
+    log::info!("Permission request for {} answered in Devlings ({decision:?})", approvals::log_safe(&resolved.raw_tool));
     state::after_resolved(&app, vec![resolved]);
     Ok(state::snapshot(&app))
 }

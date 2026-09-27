@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import css from "./styles.css?raw";
 
 /**
- * WCAG AA contrast for Perch's colour tokens (styles.css), light and dark: 4.5:1 for text, 3:1 for
+ * WCAG AA contrast for Devlings' colour tokens (styles.css), light and dark: 4.5:1 for text, 3:1 for
  * UI parts (focus rings, control edges, status glyphs). Each pair is a foreground and background that
  * actually meet somewhere in the UI; change a token and this fails if it drops below AA.
  */

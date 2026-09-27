@@ -56,7 +56,7 @@ export function usageSummary(u: UsageInfo, now: number, locale?: string): string
 
 /**
  * The mini chat's footer line, only when the plan is near or at its limit, e.g. "Near your 5-hour limit (82%),
- * resets 3:10 PM · as of 2:05 PM". Null otherwise, including for statuses Perch doesn't know.
+ * resets 3:10 PM · as of 2:05 PM". Null otherwise, including for statuses Devlings doesn't know.
  */
 export function usageWarning(u: UsageInfo, now: number, locale?: string): string | null {
   const limit = limitName(u.kind);

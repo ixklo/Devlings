@@ -25,6 +25,7 @@ const DEFAULT_SPRITES: [&str; 2] = ["spritesheet.webp", "spritesheet.png"];
 #[serde(rename_all = "lowercase")]
 pub enum PetSource {
     Bundled,
+    /// The app's own pets folder. Serialized as "perch", the app's name before v1.1, which the frontend expects.
     Perch,
     Codex,
 }
@@ -215,7 +216,7 @@ pub fn discover(roots: &[(PetSource, PathBuf)]) -> Vec<Pet> {
     out
 }
 
-/// The pets that ship with Perch, in the order pickers and the menu list them: the three birds,
+/// The pets that ship with Devlings, in the order pickers and the menu list them: the three birds,
 /// then the other species. `scripts/pets` builds exactly these (its `PET_IDS`).
 pub const BUNDLED_ORDER: [&str; 9] = ["perch", "ember", "plum", "fox", "cat", "axolotl", "capybara", "robot", "ghost"];
 
@@ -260,7 +261,7 @@ pub fn codex_home(env: Option<OsString>, home: &Path) -> PathBuf {
     env.filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| home.join(".codex"))
 }
 
-/// Pet roots in merge order: bundled resources (plus the source tree in debug builds), Perch's own folder, then Codex's.
+/// Pet roots in merge order: bundled resources (plus the source tree in debug builds), Devlings' own folder, then Codex's.
 pub fn roots(resource_dir: Option<PathBuf>, data_dir: &Path, codex_home: &Path) -> Vec<(PetSource, PathBuf)> {
     let mut out = Vec::new();
     if let Some(r) = resource_dir {

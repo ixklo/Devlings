@@ -1,12 +1,12 @@
-//! Permission prompts Perch can answer (design v1.0 D3–D5).
+//! Permission prompts Devlings can answer (design v1.0 D3–D5).
 //!
 //! - **Watch**: a PermissionRequest hook from any other Claude Code session. Claude Code shows its own prompt at the
-//!   same moment and never waits for Perch. With `watchApprovals` on, the hook's worker holds the HTTP response
-//!   (at most `MAX_HOLDS` at once) until the user answers in Perch, the request is resolved elsewhere, the hold
+//!   same moment and never waits for Devlings. With `watchApprovals` on, the hook's worker holds the HTTP response
+//!   (at most `MAX_HOLDS` at once) until the user answers in Devlings, the request is resolved elsewhere, the hold
 //!   ends, or the feature is turned off.
-//! - **Ask**: a `can_use_tool` control request from one of Perch's own Ask runs, answered on that run's stdin.
+//! - **Ask**: a `can_use_tool` control request from one of Devlings' own Ask runs, answered on that run's stdin.
 //!
-//! A request Perch isn't holding (watch off, too many holds, the hold ended) stays as a marker until the session
+//! A request Devlings isn't holding (watch off, too many holds, the hold ended) stays as a marker until the session
 //! resolves it, so "needs input" clears only once nothing of that session is waiting.
 
 use std::{
@@ -29,18 +29,18 @@ use crate::{
 
 /// Concurrent watch holds. Beyond this, a request is answered "no decision" at once.
 pub const MAX_HOLDS: usize = 16;
-/// The longest watch hold; the hook entry's own timeout (300 s) is longer, so Perch always answers first.
+/// The longest watch hold; the hook entry's own timeout (300 s) is longer, so Devlings always answers first.
 pub const MAX_HOLD: Duration = Duration::from_secs(240);
 /// An Ask request nobody answers is denied after this long.
 pub const ASK_CAP_MS: i64 = 10 * 60_000;
-pub const DENY_MESSAGE: &str = "The user declined this in Perch.";
-pub const NO_ANSWER_MESSAGE: &str = "No answer in Perch.";
-pub const STOPPED_MESSAGE: &str = "Stopped in Perch.";
-pub const NEW_CHAT_MESSAGE: &str = "The user started a new chat in Perch.";
-pub const QUIT_MESSAGE: &str = "Perch quit before this was answered.";
+pub const DENY_MESSAGE: &str = "The user declined this in Devlings.";
+pub const NO_ANSWER_MESSAGE: &str = "No answer in Devlings.";
+pub const STOPPED_MESSAGE: &str = "Stopped in Devlings.";
+pub const NEW_CHAT_MESSAGE: &str = "The user started a new chat in Devlings.";
+pub const QUIT_MESSAGE: &str = "Devlings quit before this was answered.";
 const GONE: &str = "That request was already answered or is no longer waiting.";
 const NO_ALWAYS: &str = "Claude Code didn't offer a rule for this request.";
-/// Why a request can only be denied in Perch: part of it can't be shown.
+/// Why a request can only be denied in Devlings: part of it can't be shown.
 pub const TOO_LONG: &str = "Too long to review here. Answer in Claude Code.";
 /// Markers are forgotten this long after their request arrived.
 pub const MARKER_KEEP_MS: i64 = 60 * 60_000;
@@ -65,7 +65,7 @@ pub enum Decision {
     Always,
 }
 
-/// A request the user can answer in Perch (snapshot `approvals`).
+/// A request the user can answer in Devlings (snapshot `approvals`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingApproval {
@@ -178,7 +178,7 @@ fn summary(input: &Value) -> String {
 }
 
 /// The input keys a built-in tool's card covers: its headline, the description, and fields that are part of the
-/// tool's normal shape (shown in the details). None for tools Perch doesn't know.
+/// tool's normal shape (shown in the details). None for tools Devlings doesn't know.
 fn known_keys(tool: &str) -> Option<&'static [&'static str]> {
     Some(match tool {
         "Bash" | "PowerShell" => &["command", "description", "timeout", "run_in_background"],
@@ -200,7 +200,7 @@ fn trivial(v: &Value) -> bool {
     matches!(v, Value::Null | Value::Bool(false)) || v.as_str() == Some("")
 }
 
-/// Whether the headline (with the description) leaves out something being approved: a tool Perch doesn't know,
+/// Whether the headline (with the description) leaves out something being approved: a tool Devlings doesn't know,
 /// an extra non-trivial key, or a headline that had to be cut.
 fn is_lossy(tool: &str, input: &Value, head: &Headline) -> bool {
     if head.truncated {
@@ -240,15 +240,15 @@ impl Dialog {
     /// The denial an Ask run gets, worded so Claude carries on sensibly.
     pub fn ask_deny_message(self) -> &'static str {
         match self {
-            Dialog::Question => "Perch can't show questions yet. Make a reasonable assumption and say what you assumed.",
-            Dialog::Plan => "The user will review the plan in Perch's chat.",
+            Dialog::Question => "Devlings can't show questions yet. Make a reasonable assumption and say what you assumed.",
+            Dialog::Plan => "The user will review the plan in the Devlings chat.",
         }
     }
 
     /// The note the mini chat shows.
     pub fn chat_note(self) -> &'static str {
         match self {
-            Dialog::Question => "Claude had a question. Perch can't show questions yet, so Claude was asked to assume and say so.",
+            Dialog::Question => "Claude had a question. Devlings can't show questions yet, so Claude was asked to assume and say so.",
             Dialog::Plan => "Claude has a plan ready. Review it below, then reply to go ahead.",
         }
     }
@@ -390,7 +390,7 @@ struct Entry {
     input: Value,
     suggestions: Vec<Value>,
     created_at: i64,
-    /// None for a marker: a request Perch no longer holds, waiting to be resolved elsewhere.
+    /// None for a marker: a request Devlings no longer holds, waiting to be resolved elsewhere.
     responder: Option<Responder>,
 }
 
@@ -429,7 +429,7 @@ impl Resolved {
         let (kind, label) = match self.outcome {
             Outcome::Allowed | Outcome::Cancelled => (Kind::Step, normalize::step_label(&self.raw_tool, &self.input)),
             Outcome::Denied => (Kind::Blocked, format!("Declined: {}", self.tool_name)),
-            Outcome::NoAnswer => (Kind::Blocked, format!("No answer in Perch: {}", self.tool_name)),
+            Outcome::NoAnswer => (Kind::Blocked, format!("No answer in Devlings: {}", self.tool_name)),
         };
         PetEvent {
             session_id: self.session_id.clone(),
@@ -486,7 +486,7 @@ fn new_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Every request Perch knows is waiting, in arrival order.
+/// Every request Devlings knows is waiting, in arrival order.
 #[derive(Default)]
 pub struct Registry {
     entries: Vec<Entry>,
@@ -684,7 +684,7 @@ impl Registry {
         self.take_where(|e| e.responder.is_none() && now - e.created_at >= MARKER_KEEP_MS).len()
     }
 
-    /// Perch is quitting: held hooks get "no decision" and Ask requests are denied with `message`.
+    /// Devlings is quitting: held hooks get "no decision" and Ask requests are denied with `message`.
     pub fn release_all(&mut self, message: &str) -> usize {
         let hooks = self.release_watch();
         let asks = self.take_where(|e| e.view.source == Source::Ask);
@@ -698,7 +698,7 @@ impl Registry {
 pub struct WatchPolicy {
     /// `approvalHoldSecs` (capped at `MAX_HOLD`).
     pub hold: Duration,
-    /// The session is one of Perch's own Ask runs, which are answered on their stdin instead.
+    /// The session is one of Devlings' own Ask runs, which are answered on their stdin instead.
     pub own_ask: bool,
 }
 
@@ -820,7 +820,7 @@ mod tests {
         );
         assert_eq!(
             parse(hook_answer(Decision::Deny, &kept)),
-            json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The user declined this in Perch."}}})
+            json!({"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "The user declined this in Devlings."}}})
         );
     }
 
@@ -839,7 +839,7 @@ mod tests {
         );
         assert_eq!(
             parse(host_answer("r1", Decision::Deny, &input, &kept)),
-            json!({"type": "control_response", "response": {"subtype": "success", "request_id": "r1", "response": {"behavior": "deny", "message": "The user declined this in Perch."}}})
+            json!({"type": "control_response", "response": {"subtype": "success", "request_id": "r1", "response": {"behavior": "deny", "message": "The user declined this in Devlings."}}})
         );
         // A missing or odd input still answers with an object.
         assert_eq!(parse(host_answer("r2", Decision::Allow, &Value::Null, &[]))["response"]["response"]["updatedInput"], json!({}));
@@ -978,7 +978,7 @@ mod tests {
             v.always_detail.as_deref(),
             Some("Lets Claude Code edit files for the rest of this session; adds C:\\Users\\me\\proj as a working folder for this session")
         );
-        // Not a hook body Perch can hold.
+        // Not a hook body Devlings can hold.
         assert!(Request::from_hook(&json!({"hook_event_name": "PermissionRequest"})).is_none());
         assert!(Request::from_hook(&json!({"session_id": 5})).is_none());
         let odd = Request::from_hook(&json!({"session_id": "s", "tool_name": 3, "tool_input": "x", "permission_suggestions": "y"})).unwrap();
@@ -1060,7 +1060,7 @@ mod tests {
         // Extra, non-trivial keys.
         assert!(lossy("Bash", json!({"command": "ls", "dangerouslyDisableSandbox": true})));
         assert!(lossy("Bash", json!({"command": "ls", "cwd": "C:\\other"})));
-        // Tools Perch doesn't know.
+        // Tools Devlings doesn't know.
         assert!(lossy("mcp__fs__write_file", json!({"path": "a", "content": "x"})));
         assert!(lossy("SomethingNew", json!({"a": 1})));
         // A headline that had to be cut.
@@ -1123,9 +1123,9 @@ mod tests {
         assert_eq!(dialog_kind("askuserquestion"), None);
         assert_eq!(
             Dialog::Question.ask_deny_message(),
-            "Perch can't show questions yet. Make a reasonable assumption and say what you assumed."
+            "Devlings can't show questions yet. Make a reasonable assumption and say what you assumed."
         );
-        assert_eq!(Dialog::Plan.ask_deny_message(), "The user will review the plan in Perch's chat.");
+        assert_eq!(Dialog::Plan.ask_deny_message(), "The user will review the plan in the Devlings chat.");
         assert!(!Dialog::Question.chat_note().is_empty() && !Dialog::Plan.chat_note().is_empty());
     }
 
@@ -1139,7 +1139,7 @@ mod tests {
             let sid = format!("s-{tool}");
             assert_eq!(on_watch_request(&reg, &body(&sid, tool, json!({"questions": []})), policy, 1, &|| {}), "{}", "{tool}");
             assert!(t0.elapsed() < Duration::from_secs(1), "{tool}");
-            // Needs input stays until the native dialog is answered, but there's nothing to click in Perch.
+            // Needs input stays until the native dialog is answered, but there's nothing to click in Devlings.
             assert!(lock(&reg).waiting(&sid), "{tool}");
         }
         assert!(lock(&reg).pending().is_empty());
@@ -1397,7 +1397,7 @@ mod tests {
         let lines = fake.lines();
         assert_eq!(lines[0]["response"]["request_id"], "r1");
         assert_eq!(lines[0]["response"]["response"], json!({"behavior": "allow", "updatedInput": {"command": "ls"}}));
-        assert_eq!(lines[1]["response"]["response"], json!({"behavior": "deny", "message": "The user declined this in Perch."}));
+        assert_eq!(lines[1]["response"]["response"], json!({"behavior": "deny", "message": "The user declined this in Devlings."}));
     }
 
     #[test]
@@ -1428,7 +1428,7 @@ mod tests {
         other.close();
         join.join().unwrap();
         other_join.join().unwrap();
-        assert_eq!(fake.lines()[0]["response"]["response"], json!({"behavior": "deny", "message": "Stopped in Perch."}));
+        assert_eq!(fake.lines()[0]["response"]["response"], json!({"behavior": "deny", "message": "Stopped in Devlings."}));
         assert!(other_fake.lines().is_empty());
     }
 
@@ -1445,7 +1445,7 @@ mod tests {
         assert_eq!(reg.pending().len(), 1);
         stdin.close();
         join.join().unwrap();
-        assert_eq!(fake.lines()[0]["response"], json!({"subtype": "success", "request_id": "r1", "response": {"behavior": "deny", "message": "No answer in Perch."}}));
+        assert_eq!(fake.lines()[0]["response"], json!({"subtype": "success", "request_id": "r1", "response": {"behavior": "deny", "message": "No answer in Devlings."}}));
     }
 
     #[test]
@@ -1459,7 +1459,7 @@ mod tests {
         assert!(reg.pending().is_empty());
         stdin.close();
         join.join().unwrap();
-        assert_eq!(fake.lines()[0]["response"]["response"]["message"], "Perch quit before this was answered.");
+        assert_eq!(fake.lines()[0]["response"]["response"]["message"], "Devlings quit before this was answered.");
     }
 
     #[test]
@@ -1479,7 +1479,7 @@ mod tests {
         let d = r(Outcome::Denied).event(5);
         assert_eq!((d.kind, d.label.as_deref()), (Kind::Blocked, Some("Declined: Bash")));
         let n = r(Outcome::NoAnswer).event(5);
-        assert_eq!((n.kind, n.label.as_deref()), (Kind::Blocked, Some("No answer in Perch: Bash")));
+        assert_eq!((n.kind, n.label.as_deref()), (Kind::Blocked, Some("No answer in Devlings: Bash")));
     }
 
     #[test]
@@ -1512,7 +1512,7 @@ mod tests {
         applied: mpsc::Receiver<Value>,
     }
 
-    /// A real hook server wired the way Perch wires it: events clear requests and update threads in order,
+    /// A real hook server wired the way Devlings wires it: events clear requests and update threads in order,
     /// PermissionRequest bodies are held on their worker.
     fn world(enabled: bool, hold: Duration) -> World {
         let reg = Arc::new(Mutex::new(Registry::default()));
@@ -1641,7 +1641,7 @@ mod tests {
         lock(&w.reg).answer(&id, Decision::Deny).unwrap();
         let (answer, _) = held.join().unwrap();
         let v: Value = serde_json::from_str(&answer).unwrap();
-        assert_eq!(v["hookSpecificOutput"]["decision"], json!({"behavior": "deny", "message": "The user declined this in Perch."}));
+        assert_eq!(v["hookSpecificOutput"]["decision"], json!({"behavior": "deny", "message": "The user declined this in Devlings."}));
         w.server.stop();
     }
 

@@ -72,7 +72,7 @@ pub struct AppState {
     /// The last `.stage` layout sent to the pet. The first one is sent at startup, before the pet's page
     /// listens, so the page also asks for it once it's ready (`get_pet_placement`).
     pub placement: Mutex<Option<crate::overlay::Placement>>,
-    /// Design D17: whether Perch has hidden the pet window (tray, Ctrl+Alt+P, "Hide for 1 hour"),
+    /// Design D17: whether Devlings has hidden the pet window (tray, Ctrl+Alt+P, "Hide for 1 hour"),
     /// and whether the pet or settings window is minimized (from its resize events). Kept here so
     /// the cursor poll can pause without asking the main thread.
     pub pet_hidden: AtomicBool,
@@ -140,7 +140,7 @@ pub struct SetupStatus {
     pub hooks_installed: bool,
     pub auth: Option<AuthVerdict>,
     pub hook_server_error: Option<String>,
-    /// Something the user should do that doesn't block setup, e.g. "Move Perch to Applications…".
+    /// Something the user should do that doesn't block setup, e.g. "Move Devlings to Applications…".
     pub setup_hint: Option<String>,
     pub needs_setup: bool,
 }
@@ -337,7 +337,7 @@ pub fn after_resolved(app: &AppHandle, resolved: Vec<Resolved>) {
     emit_snapshot(app);
 }
 
-/// Perch is quitting: nothing may keep waiting on it. Held hooks get "no decision" and Ask requests are denied.
+/// Devlings is quitting: nothing may keep waiting on it. Held hooks get "no decision" and Ask requests are denied.
 pub fn shutdown(app: &AppHandle) {
     let Some(s) = app.try_state::<AppState>() else { return };
     let released = lock(&s.approvals).release_all(approvals::QUIT_MESSAGE);
@@ -382,7 +382,7 @@ pub fn start_hook_server(app: &AppHandle) {
     }
 }
 
-/// The installed hooks compared with this build's, or None when Perch has no port and token yet.
+/// The installed hooks compared with this build's, or None when Devlings has no port and token yet.
 pub fn hook_status(app: &AppHandle) -> Option<Result<HookStatus, String>> {
     let s = app.state::<AppState>();
     let (port, token) = {
@@ -407,7 +407,7 @@ fn migrate_hooks(app: &AppHandle) {
     let relay = match hooks_installer::relay_exe() {
         Ok(RelayExe::Ephemeral(exe)) => {
             // Writing this path would leave hooks pointing at a program that is gone after this run.
-            log::warn!("Hook migration skipped: Perch is running from a temporary location ({})", exe.display());
+            log::warn!("Hook migration skipped: Devlings is running from a temporary location ({})", exe.display());
             return;
         }
         Ok(relay) => relay,
@@ -417,7 +417,7 @@ fn migrate_hooks(app: &AppHandle) {
         }
     };
     if let RelayExe::Unsafe(exe) = &relay {
-        log::warn!("Perch's path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display());
+        log::warn!("Devlings' path has shell characters, so Stop, StopFailure and SessionEnd use HTTP ({})", exe.display());
     }
     let path = hooks_installer::settings_path();
     let target = HookTarget { port, token: &token, exe: relay.usable() };
@@ -510,7 +510,7 @@ fn restore_launch_at_login(app: &AppHandle) {
     let launcher = app.autolaunch();
     if should_restore_launch_at_login(on, launcher.is_enabled().ok(), cfg!(debug_assertions)) {
         match launcher.enable() {
-            Ok(()) => log::info!("Start-at-login was on in Perch's settings but missing; restored it"),
+            Ok(()) => log::info!("Start-at-login was on in Devlings' settings but missing; restored it"),
             Err(e) => log::warn!("Couldn't restore start-at-login: {e}"),
         }
     }
@@ -634,7 +634,7 @@ pub fn run_ask(app: AppHandle, project: String, mut child: Child, stdin: StdinWr
             handle_event(&app, ask_event(&session_id, &project, Kind::Failed, "Plan limit reached", Some(text)));
         }
         StreamItem::CanUseTool { request_id, request } => {
-            // Claude Code asks before running a tool (design v1.0 D4); held until answered in Perch.
+            // Claude Code asks before running a tool (design v1.0 D4); held until answered in Devlings.
             let req = approvals::Request::from_can_use_tool(&session_id, &project, &request);
             if let Some(dialog) = approvals::dialog_kind(&req.tool_name) {
                 // A question or a plan is never a plain Allow: turn it down with a message Claude can act on.
@@ -720,7 +720,7 @@ mod tests {
     }
 
     /// The regression this gap is about: Claude Code's own account cache can be stale, so Recheck
-    /// must never paper over that by reusing a verdict Perch already had. Two calls with a counting
+    /// must never paper over that by reusing a verdict Devlings already had. Two calls with a counting
     /// fake must mean two real `claude auth status` calls, not one memoized and replayed.
     #[test]
     fn recheck_never_reuses_a_cached_auth_verdict() {

@@ -2,10 +2,10 @@
 //!
 //! A `claude -p` run never shows Claude Code's workspace-trust dialog and treats its folder as trusted, so it would
 //! run a repository's project hooks, `env` block, helper commands, project skills and `.mcp.json` servers. Before
-//! each Ask, Perch checks whether the folder is trusted (by Claude Code or in Perch) and what it would run; when it
+//! each Ask, Devlings checks whether the folder is trusted (by Claude Code or in Devlings) and what it would run; when it
 //! is untrusted and has project configuration, the Ask gets `--setting-sources user` and a notice.
 //!
-//! Everything here reads files and never writes them; Claude Code's `.claude.json` is strictly read-only to Perch.
+//! Everything here reads files and never writes them; Claude Code's `.claude.json` is strictly read-only to Devlings.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -390,7 +390,7 @@ impl AskPolicy {
 }
 
 /// The decision for an Ask in `folder`:
-/// - trusted in Perch, or by Claude Code (`claude_json`, scoped to the folder's repository): normal flags, no notice;
+/// - trusted in Devlings, or by Claude Code (`claude_json`, scoped to the folder's repository): normal flags, no notice;
 /// - otherwise, nothing to skip (no `.claude` folder, no `.mcp.json`): normal flags, no notice;
 /// - otherwise: `--setting-sources user` and a notice listing what was found.
 pub fn ask_policy(folder: &Path, perch_trusted: bool, claude_json: &Path, user_claude_dir: &Path) -> AskPolicy {

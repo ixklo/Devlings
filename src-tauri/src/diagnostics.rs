@@ -18,8 +18,9 @@ use crate::{
     state::{self, AppState},
 };
 
-/// The log file is `<app log dir>/perch.log`; rotated files are `perch_<date>.log`.
-pub const LOG_FILE_STEM: &str = "perch";
+/// The log file is `<app log dir>/devlings.log`; rotated files are `devlings_<date>.log`. Logs written before the
+/// rename (`perch.log`, `perch_<date>.log`) stay in the same folder and are left alone.
+pub const LOG_FILE_STEM: &str = "devlings";
 pub const MAX_LOG_BYTES: u128 = 1_000_000;
 /// At most this many log files exist: the active one plus rotated ones.
 pub const MAX_LOG_FILES: usize = 5;
@@ -84,7 +85,7 @@ pub fn redact(text: &str, token: Option<&str>, home: Option<&Path>) -> String {
     out
 }
 
-/// Replaces every run of exactly 64 hex digits, the shape of Perch's hook token.
+/// Replaces every run of exactly 64 hex digits, the shape of Devlings' hook token.
 fn redact_token_shapes(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
@@ -198,8 +199,8 @@ pub fn render(r: &Report) -> String {
     };
     let tail = if r.log_tail.is_empty() { "(empty)".to_string() } else { r.log_tail.join("\n") };
     format!(
-        "Perch diagnostics\n\
-         App: Perch {}\n\
+        "Devlings diagnostics\n\
+         App: Devlings {}\n\
          OS: {} {}\n\
          Claude Code: {claude}\n\
          Login: {}\n\
@@ -228,12 +229,12 @@ fn hooks_text(app: &AppHandle, declined: bool) -> String {
     };
     let relay = match hooks_installer::relay_exe() {
         Ok(RelayExe::Usable(_)) => "relay command",
-        Ok(RelayExe::Ephemeral(_)) => "HTTP for Stop/StopFailure/SessionEnd (Perch runs from a temporary location)",
-        Ok(RelayExe::Unsafe(_)) => "HTTP for Stop/StopFailure/SessionEnd (Perch's path has shell characters)",
+        Ok(RelayExe::Ephemeral(_)) => "HTTP for Stop/StopFailure/SessionEnd (Devlings runs from a temporary location)",
+        Ok(RelayExe::Unsafe(_)) => "HTTP for Stop/StopFailure/SessionEnd (the Devlings program path has shell characters)",
         Err(_) => "unknown",
     };
     let status = format!("{status}; async events via {relay}");
-    if declined { format!("{status}; declined in Perch") } else { status }
+    if declined { format!("{status}; declined in Devlings") } else { status }
 }
 
 /// The redacted diagnostics text.
@@ -327,12 +328,15 @@ mod tests {
     fn tails_across_rotated_files() {
         let dir = tempfile::tempdir().unwrap();
         assert!(tail(dir.path(), 5).is_empty());
-        fs::write(dir.path().join("perch_2026-09-01_10-00-00.log"), "a1\na2\n").unwrap();
-        fs::write(dir.path().join("perch_2026-09-02_10-00-00.log"), "b1\nb2\nb3\n").unwrap();
-        fs::write(dir.path().join("perch.log"), "c1\nc2\n").unwrap();
+        fs::write(dir.path().join("devlings_2026-09-01_10-00-00.log"), "a1\na2\n").unwrap();
+        fs::write(dir.path().join("devlings_2026-09-02_10-00-00.log"), "b1\nb2\nb3\n").unwrap();
+        fs::write(dir.path().join("devlings.log"), "c1\nc2\n").unwrap();
         fs::write(dir.path().join("other.log"), "zz\n").unwrap();
+        // Logs from before the rename share the folder (the app identifier didn't change) but aren't this app's.
+        fs::write(dir.path().join("perch.log"), "old\n").unwrap();
+        fs::write(dir.path().join("perch_2026-08-01_10-00-00.log"), "older\n").unwrap();
         let names: Vec<String> = log_files(dir.path()).iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect();
-        assert_eq!(names, vec!["perch_2026-09-01_10-00-00.log", "perch_2026-09-02_10-00-00.log", "perch.log"]);
+        assert_eq!(names, vec!["devlings_2026-09-01_10-00-00.log", "devlings_2026-09-02_10-00-00.log", "devlings.log"]);
         assert_eq!(tail(dir.path(), 3), vec!["b3", "c1", "c2"]);
         assert_eq!(tail(dir.path(), 100), vec!["a1", "a2", "b1", "b2", "b3", "c1", "c2"]);
         assert_eq!(tail(dir.path(), 0), Vec::<String>::new());
@@ -354,7 +358,7 @@ mod tests {
         };
         let text = render(&r);
         for want in [
-            "Perch 1.0.0",
+            "Devlings 1.0.0",
             "windows x86_64",
             "Claude Code: 2.1.282 at C:\\cc\\claude.exe (found via PATH)",
             "Login: subscription (pro)",

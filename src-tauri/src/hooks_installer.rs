@@ -1,4 +1,4 @@
-//! Perch's entries in Claude Code's user `settings.json` (design v1.0 §3).
+//! Devlings' entries in Claude Code's user `settings.json` (design v1.0 §3).
 
 use std::{
     fs,
@@ -9,7 +9,7 @@ use std::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-/// Frequent events: HTTP, silent and cheap when Perch isn't running.
+/// Frequent events: HTTP, silent and cheap when Devlings isn't running.
 pub const HTTP_EVENTS: [&str; 7] = [
     "SessionStart",
     "UserPromptSubmit",
@@ -19,18 +19,20 @@ pub const HTTP_EVENTS: [&str; 7] = [
     "Notification",
     "PermissionDenied",
 ];
-/// Answered synchronously; Perch always answers before this long hold ends (its own holds are at most 240 s).
+/// Answered synchronously; Devlings always answers before this long hold ends (its own holds are at most 240 s).
 pub const PERMISSION_EVENT: &str = "PermissionRequest";
-/// HTTP versions of these show error noise when Perch is quit, so they go through the async relay.
+/// HTTP versions of these show error noise when Devlings is quit, so they go through the async relay.
 pub const RELAY_EVENTS: [&str; 3] = ["Stop", "StopFailure", "SessionEnd"];
 pub const HTTP_TIMEOUT_SECS: u64 = 2;
 pub const PERMISSION_TIMEOUT_SECS: u64 = 300;
 pub const RELAY_FLAG: &str = "--hook-relay";
 pub const MAX_BACKUPS: usize = 5;
-const BACKUP_PREFIX: &str = "settings.json.perch-backup-";
+const BACKUP_PREFIX: &str = "settings.json.devlings-backup-";
+/// Backups made before the app was renamed (v1.1). Never written; they still count, so they're pruned in turn.
+const LEGACY_BACKUP_PREFIX: &str = "settings.json.perch-backup-";
 const WRITE_ATTEMPTS: usize = 3;
 
-/// Where Perch's hooks point: its server's port and token, and the executable that relays async events.
+/// Where Devlings' hooks point: its server's port and token, and the executable that relays async events.
 #[derive(Debug, Clone, Copy)]
 pub struct HookTarget<'a> {
     pub port: u16,
@@ -60,11 +62,11 @@ impl RelayExe {
         }
     }
 
-    /// What the user can do about a relay Perch can't use, for the setup status.
+    /// What the user can do about a relay Devlings can't use, for the setup status.
     pub fn setup_hint(&self) -> Option<String> {
         matches!(self, RelayExe::Ephemeral(_)).then(|| {
-            "Move Perch to Applications and open it from there. Until then, Claude Code may show hook errors \
-             while Perch is closed."
+            "Move Devlings to Applications and open it from there. Until then, Claude Code may show hook errors \
+             while Devlings is closed."
                 .to_string()
         })
     }
@@ -92,15 +94,15 @@ pub fn is_relay_safe(path: &Path) -> bool {
     !p.is_empty() && !p.chars().any(special)
 }
 
-/// How the hooks in settings.json compare with what this build of Perch would install.
+/// How the hooks in settings.json compare with what this build of Devlings would install.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookStatus {
-    /// No Perch entries at all.
+    /// No Devlings entries at all.
     NotInstalled,
     /// Exactly the expected v1 entries.
     Current,
-    /// Perch entries that differ in set or shape (an older version, another port, a moved executable).
+    /// Devlings entries that differ in set or shape (an older version, another port, a moved executable).
     Outdated,
 }
 
@@ -122,7 +124,7 @@ pub fn is_perch_url(u: &str) -> bool {
     port.parse::<u16>().is_ok() && is_token(token)
 }
 
-/// A hook command that runs Perch's relay: it contains `--hook-relay <port> <64 hex>`.
+/// A hook command that runs Devlings' relay: it contains `--hook-relay <port> <64 hex>`.
 pub fn is_perch_command(c: &str) -> bool {
     c.split(RELAY_FLAG).skip(1).any(|rest| {
         let mut words = rest.split_whitespace();
@@ -146,11 +148,11 @@ pub fn relay_command(exe: &Path, port: u16, token: &str) -> String {
     format!("\"{}\" {RELAY_FLAG} {port} {token}", exe.display())
 }
 
-/// Every hook object Perch installs, with its event.
+/// Every hook object Devlings installs, with its event.
 pub fn expected(t: HookTarget) -> Vec<(&'static str, Value)> {
     let url = hook_url(t.port, t.token);
     let http = |timeout: u64| json!({ "type": "http", "url": url, "timeout": timeout });
-    // Without a usable executable, the relay events fall back to HTTP (noisy while Perch is quit, but they work).
+    // Without a usable executable, the relay events fall back to HTTP (noisy while Devlings is quit, but they work).
     let relay = match t.exe {
         Some(exe) => json!({ "type": "command", "command": relay_command(exe, t.port, t.token), "async": true }),
         None => http(HTTP_TIMEOUT_SECS),
@@ -161,7 +163,7 @@ pub fn expected(t: HookTarget) -> Vec<(&'static str, Value)> {
     out
 }
 
-/// Every Perch hook object found in `settings`, with its event.
+/// Every Devlings hook object found in `settings`, with its event.
 fn perch_hooks(settings: &Value) -> Vec<(String, Value)> {
     let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else { return Vec::new() };
     let mut out = Vec::new();
@@ -178,7 +180,7 @@ fn perch_hooks(settings: &Value) -> Vec<(String, Value)> {
 }
 
 /// What a hook entry means to Claude Code: event, type, URL or command, timeout (in ms, so 2 and 2.0 match)
-/// and async. Key order and fields Perch doesn't set don't count.
+/// and async. Key order and fields Devlings doesn't set don't count.
 type Meaning = (String, Option<String>, Option<String>, Option<String>, Option<i64>, bool);
 
 fn meaning(event: &str, h: &Value) -> Meaning {
@@ -258,7 +260,7 @@ pub fn install(settings: Value, t: HookTarget) -> Result<Value, String> {
 }
 
 /// The program the relay hooks run: this executable, or the AppImage file itself (its mount path changes every launch).
-/// Found once per run: the path doesn't change while Perch runs, and the setup status asks every second.
+/// Found once per run: the path doesn't change while Devlings runs, and the setup status asks every second.
 pub fn relay_exe() -> Result<RelayExe, String> {
     static RELAY: std::sync::OnceLock<Result<RelayExe, String>> = std::sync::OnceLock::new();
     RELAY
@@ -269,7 +271,7 @@ pub fn relay_exe() -> Result<RelayExe, String> {
             }
             std::env::current_exe()
                 .map(RelayExe::classify)
-                .map_err(|e| format!("Couldn't find Perch's own program file: {e}"))
+                .map_err(|e| format!("Couldn't find the Devlings program file: {e}"))
         })
         .clone()
 }
@@ -306,9 +308,10 @@ pub fn read_settings(path: &Path) -> Result<Value, String> {
     parse_settings(path, read_raw(path)?.as_deref())
 }
 
-/// Orders backup file names oldest first: `settings.json.perch-backup-<stamp>[-<n>]`. None for other names.
+/// Orders backup file names oldest first: `settings.json.devlings-backup-<stamp>[-<n>]` (or the pre-rename
+/// `settings.json.perch-backup-…`). None for other names.
 fn backup_key(name: &str) -> Option<(i64, u32)> {
-    let rest = name.strip_prefix(BACKUP_PREFIX)?;
+    let rest = name.strip_prefix(BACKUP_PREFIX).or_else(|| name.strip_prefix(LEGACY_BACKUP_PREFIX))?;
     let (stamp, n) = match rest.split_once('-') {
         Some((stamp, n)) => (stamp, n.parse().ok()?),
         None => (rest, 0),
@@ -329,7 +332,7 @@ fn backup_path(path: &Path, stamp: i64) -> PathBuf {
         .unwrap_or(first)
 }
 
-/// Deletes all but the newest `keep` Perch backups next to `path`.
+/// Deletes all but the newest `keep` Devlings backups next to `path`.
 fn prune_backups(path: &Path, keep: usize) {
     let Some(dir) = path.parent() else { return };
     let Ok(entries) = fs::read_dir(dir) else { return };
@@ -372,7 +375,7 @@ fn update_file_with(
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path).map_err(io)?,
         _ => path.to_path_buf(),
     };
-    let tmp = target.with_file_name("settings.json.perch-tmp");
+    let tmp = target.with_file_name("settings.json.devlings-tmp");
     for _ in 0..WRITE_ATTEMPTS {
         let raw = read_raw(path)?;
         let current = parse_settings(path, raw.as_deref())?;
@@ -413,7 +416,7 @@ fn update_file_with(
         prune_backups(path, MAX_BACKUPS);
         return Ok(true);
     }
-    Err(format!("{} kept changing while Perch was updating it. Try again in a moment.", path.display()))
+    Err(format!("{} kept changing while Devlings was updating it. Try again in a moment.", path.display()))
 }
 
 fn update_file(path: &Path, stamp: i64, change: impl FnMut(Value) -> Result<Option<Value>, String>) -> Result<bool, String> {
@@ -424,7 +427,7 @@ pub fn install_file(path: &Path, t: HookTarget, stamp: i64) -> Result<(), String
     update_file(path, stamp, |v| install(v, t).map(Some)).map(|_| ())
 }
 
-/// Removes Perch's entries. Returns whether the file changed.
+/// Removes Devlings' entries. Returns whether the file changed.
 pub fn uninstall_file(path: &Path, stamp: i64) -> Result<bool, String> {
     if !path.exists() {
         return Ok(false);
@@ -435,7 +438,7 @@ pub fn uninstall_file(path: &Path, stamp: i64) -> Result<bool, String> {
     })
 }
 
-/// Reinstalls once when Perch's entries exist but differ from this build's; never touches a current or hook-free file.
+/// Reinstalls once when Devlings' entries exist but differ from this build's; never touches a current or hook-free file.
 pub fn migrate_file(path: &Path, t: HookTarget, stamp: i64) -> Result<Migration, String> {
     let mut found = Migration::NotInstalled;
     let changed = update_file(path, stamp, |current| match status(&current, t) {
@@ -469,9 +472,9 @@ mod tests {
 
     fn exe() -> PathBuf {
         if cfg!(windows) {
-            PathBuf::from(r"C:\Users\me\AppData\Local\Perch\perch.exe")
+            PathBuf::from(r"C:\Users\me\AppData\Local\Devlings\devlings.exe")
         } else {
-            PathBuf::from("/opt/Perch/perch")
+            PathBuf::from("/opt/Devlings/devlings")
         }
     }
 
@@ -518,7 +521,7 @@ mod tests {
 
     #[test]
     fn perch_command_shape() {
-        assert!(is_perch_command(&format!("\"C:\\Program Files\\Perch\\perch.exe\" --hook-relay 4545 {TOKEN}")));
+        assert!(is_perch_command(&format!("\"C:\\Program Files\\Devlings\\devlings.exe\" --hook-relay 4545 {TOKEN}")));
         assert!(is_perch_command(&format!("/usr/bin/perch --hook-relay 1 {TOKEN}")));
         assert!(is_perch_command(&format!("perch  --hook-relay\t4545  {TOKEN} ")));
         assert!(!is_perch_command(&format!("perch --hook-relay 4545 {}", &TOKEN[1..])));
@@ -536,8 +539,8 @@ mod tests {
         assert!(is_perch_command(&cmd));
         #[cfg(windows)]
         assert_eq!(
-            relay_command(Path::new(r"C:\Program Files\Perch App\perch.exe"), 1, TOKEN),
-            format!("\"C:\\Program Files\\Perch App\\perch.exe\" --hook-relay 1 {TOKEN}")
+            relay_command(Path::new(r"C:\Program Files\Devlings App\devlings.exe"), 1, TOKEN),
+            format!("\"C:\\Program Files\\Devlings App\\devlings.exe\" --hook-relay 1 {TOKEN}")
         );
     }
 
@@ -547,10 +550,10 @@ mod tests {
             assert!(!is_relay_safe(Path::new(bad)), "{bad}");
             assert_eq!(RelayExe::classify(PathBuf::from(bad)), RelayExe::Unsafe(PathBuf::from(bad)));
         }
-        for good in ["/opt/Perch App/perch", "/home/jane/.local/bin/perch", "/opt/(x) [y] & 'z'/perch"] {
+        for good in ["/opt/Devlings App/devlings", "/home/jane/.local/bin/perch", "/opt/(x) [y] & 'z'/perch"] {
             assert!(is_relay_safe(Path::new(good)), "{good}");
         }
-        assert!(is_relay_safe(Path::new(r"C:\Users\Jane Doe\AppData\Local\Perch\perch.exe")) == cfg!(windows));
+        assert!(is_relay_safe(Path::new(r"C:\Users\Jane Doe\AppData\Local\Devlings\devlings.exe")) == cfg!(windows));
         let usable = RelayExe::classify(exe());
         assert_eq!(usable.usable(), Some(exe().as_path()));
     }
@@ -558,22 +561,22 @@ mod tests {
     #[test]
     fn ephemeral_paths_are_not_used() {
         for gone in [
-            "/private/var/folders/xy/T/AppTranslocation/0A1B/d/Perch.app/Contents/MacOS/perch",
-            "/Volumes/Perch 1.0.0/Perch.app/Contents/MacOS/perch",
+            "/private/var/folders/xy/T/AppTranslocation/0A1B/d/Devlings.app/Contents/MacOS/devlings",
+            "/Volumes/Devlings 1.0.0/Devlings.app/Contents/MacOS/devlings",
         ] {
             assert!(is_ephemeral(Path::new(gone)), "{gone}");
             assert_eq!(RelayExe::classify(PathBuf::from(gone)).usable(), None);
             assert!(matches!(RelayExe::classify(PathBuf::from(gone)), RelayExe::Ephemeral(_)));
         }
-        for stays in ["/Applications/Perch.app/Contents/MacOS/perch", "/Users/jane/Applications/Perch.app/Contents/MacOS/perch", "/opt/Volumes/perch"] {
+        for stays in ["/Applications/Devlings.app/Contents/MacOS/devlings", "/Users/jane/Applications/Devlings.app/Contents/MacOS/devlings", "/opt/Volumes/perch"] {
             assert!(!is_ephemeral(Path::new(stays)), "{stays}");
         }
     }
 
     #[test]
     fn only_an_ephemeral_path_asks_the_user_to_move_perch() {
-        let hint = RelayExe::Ephemeral(PathBuf::from("/Volumes/Perch/Perch.app/Contents/MacOS/perch")).setup_hint().unwrap();
-        assert!(hint.contains("Move Perch to Applications"), "{hint}");
+        let hint = RelayExe::Ephemeral(PathBuf::from("/Volumes/Devlings/Devlings.app/Contents/MacOS/devlings")).setup_hint().unwrap();
+        assert!(hint.contains("Move Devlings to Applications"), "{hint}");
         assert_eq!(RelayExe::Usable(exe()).setup_hint(), None);
         assert_eq!(RelayExe::Unsafe(PathBuf::from("/opt/a$b/perch")).setup_hint(), None);
     }
@@ -590,7 +593,7 @@ mod tests {
         assert_eq!(v["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 300);
         assert!(!v.to_string().contains("--hook-relay"));
         assert_eq!(status(&v, t), HookStatus::Current);
-        // Once a usable path exists (Perch moved to Applications), the HTTP fallback is outdated, and back.
+        // Once a usable path exists (Devlings moved to Applications), the HTTP fallback is outdated, and back.
         assert_eq!(status(&v, target(4545, &exe)), HookStatus::Outdated);
         assert_eq!(status(&install(json!({}), target(4545, &exe)).unwrap(), t), HookStatus::Outdated);
         assert_eq!(uninstall(v), json!({}));
@@ -762,14 +765,14 @@ mod tests {
         let path = dir.path().join("settings.json");
         std::fs::write(&path, foreign().to_string()).unwrap();
         install_file(&path, t, 1700000000).unwrap();
-        let backup = dir.path().join("settings.json.perch-backup-1700000000");
+        let backup = dir.path().join("settings.json.devlings-backup-1700000000");
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), foreign().to_string());
         assert!(is_installed(&read_settings(&path).unwrap(), t));
         assert!(uninstall_file(&path, 1700000001).unwrap());
         assert_eq!(read_settings(&path).unwrap(), foreign());
         assert!(!uninstall_file(&path, 1700000002).unwrap());
-        assert!(!dir.path().join("settings.json.perch-backup-1700000002").exists());
-        assert!(!dir.path().join("settings.json.perch-tmp").exists());
+        assert!(!dir.path().join("settings.json.devlings-backup-1700000002").exists());
+        assert!(!dir.path().join("settings.json.devlings-tmp").exists());
 
         std::fs::write(&path, "{ nope").unwrap();
         let err = install_file(&path, t, 1).unwrap_err();
@@ -793,8 +796,8 @@ mod tests {
         std::fs::write(&path, foreign().to_string()).unwrap();
         install_file(&path, target(4545, &exe), 50).unwrap();
         install_file(&path, target(4546, &exe), 50).unwrap();
-        assert_eq!(std::fs::read_to_string(dir.path().join("settings.json.perch-backup-50")).unwrap(), foreign().to_string());
-        assert!(dir.path().join("settings.json.perch-backup-50-1").exists());
+        assert_eq!(std::fs::read_to_string(dir.path().join("settings.json.devlings-backup-50")).unwrap(), foreign().to_string());
+        assert!(dir.path().join("settings.json.devlings-backup-50-1").exists());
     }
 
     #[test]
@@ -815,18 +818,51 @@ mod tests {
             .map(|n| n[BACKUP_PREFIX.len()..].to_string())
             .collect();
         left.sort();
-        // 7 and 20 were the oldest; files that aren't Perch backups by name are left alone.
+        // 7 and 20 were the oldest; files that aren't Devlings backups by name are left alone.
         assert_eq!(left, vec!["100", "1000", "300", "300-1", "900", "notes"]);
     }
 
     #[test]
     fn backup_names_order_by_stamp_then_counter() {
+        assert_eq!(backup_key("settings.json.devlings-backup-1700000000"), Some((1700000000, 0)));
+        assert_eq!(backup_key("settings.json.devlings-backup-12-3"), Some((12, 3)));
+        assert_eq!(backup_key("settings.json.devlings-backup-x"), None);
+        assert_eq!(backup_key("settings.json.devlings-backup-"), None);
+        assert_eq!(backup_key("other.json.perch-backup-1"), None);
+        assert!(backup_key("settings.json.devlings-backup-9").unwrap() < backup_key("settings.json.devlings-backup-10").unwrap());
+        // Backups made before the rename still count, so they're pruned in turn.
         assert_eq!(backup_key("settings.json.perch-backup-1700000000"), Some((1700000000, 0)));
         assert_eq!(backup_key("settings.json.perch-backup-12-3"), Some((12, 3)));
         assert_eq!(backup_key("settings.json.perch-backup-x"), None);
-        assert_eq!(backup_key("settings.json.perch-backup-"), None);
-        assert_eq!(backup_key("other.json.perch-backup-1"), None);
-        assert!(backup_key("settings.json.perch-backup-9").unwrap() < backup_key("settings.json.perch-backup-10").unwrap());
+        assert!(backup_key("settings.json.perch-backup-9").unwrap() < backup_key("settings.json.devlings-backup-10").unwrap());
+    }
+
+    #[test]
+    fn backups_from_before_the_rename_count_toward_the_five() {
+        let exe = exe();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "{}").unwrap();
+        for stamp in 1..=5 {
+            std::fs::write(dir.path().join(format!("settings.json.perch-backup-{stamp}")), "{}").unwrap();
+        }
+        install_file(&path, target(4545, &exe), 1000).unwrap();
+        let mut left: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("-backup-"))
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            vec![
+                "settings.json.devlings-backup-1000",
+                "settings.json.perch-backup-2",
+                "settings.json.perch-backup-3",
+                "settings.json.perch-backup-4",
+                "settings.json.perch-backup-5"
+            ]
+        );
     }
 
     #[test]
@@ -880,7 +916,7 @@ mod tests {
         assert_eq!(v["model"], "sonnet");
         assert!(is_installed(&v, t));
         // The backup holds what was replaced: the other writer's version.
-        assert_eq!(std::fs::read_to_string(dir.path().join("settings.json.perch-backup-5")).unwrap(), r#"{"model":"sonnet"}"#);
+        assert_eq!(std::fs::read_to_string(dir.path().join("settings.json.devlings-backup-5")).unwrap(), r#"{"model":"sonnet"}"#);
 
         let mut n = 0;
         let err = update_file_with(
@@ -897,7 +933,7 @@ mod tests {
         assert_eq!(n, 3);
         assert!(err.contains("kept changing"), "{err}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), r#"{"model":"m3"}"#);
-        assert!(!dir.path().join("settings.json.perch-tmp").exists());
+        assert!(!dir.path().join("settings.json.devlings-tmp").exists());
     }
 
     #[test]
@@ -917,7 +953,7 @@ mod tests {
         old["model"] = json!("opus");
         std::fs::write(&path, old.to_string()).unwrap();
         assert_eq!(migrate_file(&path, t, 2).unwrap(), Migration::Migrated);
-        assert!(dir.path().join("settings.json.perch-backup-2").exists());
+        assert!(dir.path().join("settings.json.devlings-backup-2").exists());
         let v = read_settings(&path).unwrap();
         assert_eq!(status(&v, t), HookStatus::Current);
         assert_eq!(v["model"], "opus");
@@ -927,12 +963,51 @@ mod tests {
         assert_eq!(migrate_file(&path, t, 3).unwrap(), Migration::UpToDate);
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), modified);
-        assert!(!dir.path().join("settings.json.perch-backup-3").exists());
+        assert!(!dir.path().join("settings.json.devlings-backup-3").exists());
 
         // A moved executable counts as outdated.
         let moved = Path::new("/new/home/perch");
         assert_eq!(migrate_file(&path, HookTarget { exe: Some(moved), ..t }, 4).unwrap(), Migration::Migrated);
         assert!(read_settings(&path).unwrap().to_string().contains("/new/home/perch"));
+    }
+
+    /// v1.1 renamed the app. Perch 1.0's relay entries run perch.exe from Perch's folder, which the Windows installer
+    /// removes; the port and token live in the shared app-data folder, so only the executable differs. On first launch
+    /// that counts as outdated, and the entries are rewritten once, with a backup, to run devlings.exe.
+    #[test]
+    fn hooks_from_perch_migrate_to_the_devlings_exe() {
+        let perch = Path::new(r"C:\Users\me\AppData\Local\Perch\perch.exe");
+        let devlings = Path::new(r"C:\Users\me\AppData\Local\Devlings\devlings.exe");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let before = install(foreign(), target(4545, perch)).unwrap();
+        std::fs::write(&path, before.to_string()).unwrap();
+
+        let t = target(4545, devlings);
+        assert_eq!(status(&before, t), HookStatus::Outdated);
+        assert_eq!(migrate_file(&path, t, 10).unwrap(), Migration::Migrated);
+
+        let after = read_settings(&path).unwrap();
+        assert_eq!(status(&after, t), HookStatus::Current);
+        for event in ["Stop", "StopFailure", "SessionEnd"] {
+            let commands: Vec<&str> = after["hooks"][event]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|g| g["hooks"].as_array().unwrap())
+                .filter_map(|h| h["command"].as_str())
+                .filter(|c| is_perch_command(c))
+                .collect();
+            assert_eq!(commands, vec![relay_command(devlings, 4545, TOKEN)], "{event}");
+        }
+        assert!(!after.to_string().contains("perch.exe"), "{after}");
+        // Everything that isn't ours is untouched, and the file as Perch left it is backed up.
+        assert_eq!(uninstall(after.clone()), foreign());
+        let backup = dir.path().join("settings.json.devlings-backup-10");
+        assert_eq!(read_settings(&backup).unwrap(), before);
+        // Once.
+        assert_eq!(migrate_file(&path, t, 11).unwrap(), Migration::UpToDate);
+        assert!(!dir.path().join("settings.json.devlings-backup-11").exists());
     }
 
     /// Design D2: the PermissionRequest entry went from 75 s to 300 s; earlier v1 installs migrate once.
@@ -947,7 +1022,7 @@ mod tests {
         assert_eq!(status(&old, t), HookStatus::Outdated);
         std::fs::write(&path, old.to_string()).unwrap();
         assert_eq!(migrate_file(&path, t, 7).unwrap(), Migration::Migrated);
-        assert!(dir.path().join("settings.json.perch-backup-7").exists());
+        assert!(dir.path().join("settings.json.devlings-backup-7").exists());
         let v = read_settings(&path).unwrap();
         assert_eq!(v["hooks"]["PermissionRequest"], json!([{ "hooks": [ { "type": "http", "url": hook_url(4545, TOKEN), "timeout": 300 } ] }]));
         assert_eq!(status(&v, t), HookStatus::Current);
@@ -984,7 +1059,7 @@ mod tests {
         assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert!(is_installed(&read_settings(&real).unwrap(), t));
         assert_eq!(std::fs::metadata(&real).unwrap().permissions().mode() & 0o777, 0o600);
-        let backup = dir.path().join("settings.json.perch-backup-9");
+        let backup = dir.path().join("settings.json.devlings-backup-9");
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), foreign().to_string());
         assert_eq!(std::fs::metadata(&backup).unwrap().permissions().mode() & 0o777, 0o600);
     }

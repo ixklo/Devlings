@@ -12,7 +12,7 @@ async function boot() {
   }
   const label = windowLabel();
   document.body.dataset.window = label;
-  document.title = label === "pet" ? "Perch" : "Perch Settings";
+  document.title = label === "pet" ? "Devlings" : "Devlings Settings";
   const App =
     label === "pet"
       ? (await import("./pet/PetApp")).PetApp

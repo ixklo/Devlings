@@ -1,7 +1,7 @@
 //! Desktop notifications for threads (design v0.2 §3) and, on Windows, clicking one to open its thread.
 //!
 //! Windows shows toasts through `tauri-winrt-notification` directly, so the toast's `Activated` callback runs in
-//! Perch's own process (it always is running, in the tray) and can open the thread. macOS and Linux keep
+//! Devlings' own process (it always is running, in the tray) and can open the thread. macOS and Linux keep
 //! `tauri-plugin-notification`, where a click does nothing yet.
 
 use serde::Serialize;
@@ -298,8 +298,8 @@ mod tests {
     #[test]
     fn toasts_use_the_installed_app_id_except_from_cargo_target_folders() {
         let id = "io.github.perchpet.perch";
-        assert_eq!(registered_app_id("C:\\Users\\me\\AppData\\Local\\Perch", id), Some(id));
-        assert_eq!(registered_app_id("C:\\Program Files\\Perch", id), Some(id));
+        assert_eq!(registered_app_id("C:\\Users\\me\\AppData\\Local\\Devlings", id), Some(id));
+        assert_eq!(registered_app_id("C:\\Program Files\\Devlings", id), Some(id));
         assert_eq!(registered_app_id("C:\\Users\\me\\perch\\src-tauri\\target\\debug", id), None);
         assert_eq!(registered_app_id("C:\\Users\\me\\perch\\src-tauri\\target\\release", id), None);
         assert_eq!(registered_app_id("C:\\Users\\me\\perch\\target\\debug\\deps", id), Some(id), "only the folder itself, as in the plugin");

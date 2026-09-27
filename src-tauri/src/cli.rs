@@ -1,10 +1,10 @@
-//! Headless command-line modes, handled before any Tauri or single-instance setup so a running Perch never sees them.
+//! Headless command-line modes, handled before any Tauri or single-instance setup so a running Devlings never sees them.
 //!
-//! - `perch --uninstall-hooks`: removes Perch's hooks from Claude Code's settings.json and the start-at-login entry.
+//! - `devlings --uninstall-hooks`: removes Devlings' hooks from Claude Code's settings.json and the start-at-login entry.
 //!   Run by the Windows uninstaller. Exits 0 on success, 1 if settings.json couldn't be updated.
-//! - `perch --hook-relay <port> <token>`: posts the hook body on stdin to the running Perch and always exits 0,
+//! - `devlings --hook-relay <port> <token>`: posts the hook body on stdin to the running Devlings and always exits 0,
 //!   silently and within about a second. Claude Code runs it as an async command hook for Stop, StopFailure and
-//!   SessionEnd, whose HTTP versions show errors while Perch is quit.
+//!   SessionEnd, whose HTTP versions show errors while Devlings is quit.
 
 use std::{
     ffi::OsString,
@@ -22,8 +22,8 @@ pub const MAX_RELAY_BODY: u64 = crate::hook_server::MAX_BODY_BYTES as u64;
 const RELAY_STEP_TIMEOUT: Duration = Duration::from_secs(1);
 /// The relay exits by this deadline even if stdin never closes.
 const RELAY_DEADLINE: Duration = Duration::from_secs(5);
-/// The app name the autostart plugin registers under (the product name).
-const AUTOSTART_NAME: &str = "Perch";
+/// The app name the autostart plugin registers under: the product name, `productName` in tauri.conf.json.
+const AUTOSTART_NAME: &str = "Devlings";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
@@ -60,7 +60,7 @@ pub fn relay_request(port: u16, token: &str, body: &[u8]) -> Vec<u8> {
     req
 }
 
-/// Posts `body` to Perch's hook server with short timeouts and waits briefly for the answer.
+/// Posts `body` to Devlings' hook server with short timeouts and waits briefly for the answer.
 pub fn post_hook(port: u16, token: &str, body: &[u8]) -> std::io::Result<()> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let mut stream = TcpStream::connect_timeout(&addr, RELAY_STEP_TIMEOUT)?;
@@ -126,7 +126,7 @@ fn remove_autostart() {
     }
 }
 
-/// Removes Perch's hooks from `settings`, then the start-at-login entry. The entry goes even if the hooks couldn't.
+/// Removes Devlings' hooks from `settings`, then the start-at-login entry. The entry goes even if the hooks couldn't.
 pub fn uninstall(settings: &Path, stamp: i64, remove_autostart: impl FnOnce()) -> Result<bool, String> {
     let result = hooks_installer::uninstall_file(settings, stamp);
     remove_autostart();
@@ -147,7 +147,7 @@ pub fn run_headless() -> Option<i32> {
             Some(match result {
                 Ok(_) => 0,
                 Err(e) => {
-                    let _ = writeln!(std::io::stderr(), "Perch: {e}");
+                    let _ = writeln!(std::io::stderr(), "Devlings: {e}");
                     1
                 }
             })
@@ -217,15 +217,21 @@ mod tests {
     }
 
     #[test]
+    fn autostart_name_is_the_product_name() {
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["productName"], AUTOSTART_NAME);
+    }
+
+    #[test]
     fn autostart_locations() {
         let home = Path::new("/home/u");
         let files = autostart_files(home);
         if cfg!(target_os = "macos") {
-            assert_eq!(files, vec![home.join("Library").join("LaunchAgents").join("Perch.plist")]);
+            assert_eq!(files, vec![home.join("Library").join("LaunchAgents").join("Devlings.plist")]);
         } else if cfg!(windows) {
             assert!(files.is_empty());
         } else {
-            assert_eq!(files, vec![home.join(".config").join("autostart").join("Perch.desktop")]);
+            assert_eq!(files, vec![home.join(".config").join("autostart").join("Devlings.desktop")]);
         }
     }
 

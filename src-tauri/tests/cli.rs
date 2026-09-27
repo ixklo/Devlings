@@ -1,4 +1,5 @@
-//! Runs the real `perch` binary in its headless modes. Neither mode may start the app or print anything.
+//! Runs the real binary (`perch` in Cargo, `devlings` once bundled) in its headless modes. Neither mode may start
+//! the app or print anything.
 
 use std::{
     io::{Read, Write},
@@ -88,12 +89,12 @@ fn hook_relay_with_bad_arguments_exits_zero_without_starting_the_app() {
     assert!(took < Duration::from_secs(4), "{took:?}");
 }
 
-/// Removes Perch's hooks from `$CLAUDE_CONFIG_DIR/settings.json`. It also deletes the start-at-login entry, which on
+/// Removes the app's hooks from `$CLAUDE_CONFIG_DIR/settings.json`. It also deletes the start-at-login entry, which on
 /// Windows is the real per-user registry value, so there it only runs on GitHub Actions.
 #[test]
 fn uninstall_hooks_cleans_settings() {
     if cfg!(windows) && std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
-        eprintln!("skipped outside GitHub Actions on Windows: it would delete this machine's Perch start-at-login entry");
+        eprintln!("skipped outside GitHub Actions on Windows: it would delete this machine's Devlings start-at-login entry");
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -115,11 +116,11 @@ fn uninstall_hooks_cleans_settings() {
     std::fs::write(&settings, original.to_string()).unwrap();
     // A fake home keeps macOS and Linux autostart cleanup inside the temp folder.
     let autostart = if cfg!(target_os = "macos") {
-        Some(dir.path().join("Library").join("LaunchAgents").join("Perch.plist"))
+        Some(dir.path().join("Library").join("LaunchAgents").join("Devlings.plist"))
     } else if cfg!(windows) {
         None
     } else {
-        Some(dir.path().join(".config").join("autostart").join("Perch.desktop"))
+        Some(dir.path().join(".config").join("autostart").join("Devlings.desktop"))
     };
     if let Some(file) = &autostart {
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();

@@ -13,13 +13,13 @@ function withTrusted(...names: string[]): Snapshot {
 }
 
 describe("Settings → Trusted folders", () => {
-  it("is hidden while no folder is trusted in Perch", () => {
+  it("is hidden while no folder is trusted in Devlings", () => {
     fakeTransport({ list_pets: () => [] });
     render(<Settings snap={withTrusted()} />);
     expect(screen.queryByRole("region", { name: "Trusted folders" })).not.toBeInTheDocument();
   });
 
-  it("lists folders trusted in Perch, and Stop trusting calls untrust_project", async () => {
+  it("lists folders trusted in Devlings, and Stop trusting calls untrust_project", async () => {
     const { calls } = fakeTransport({ list_pets: () => [], untrust_project: () => withTrusted() });
     render(<Settings snap={withTrusted("app")} />);
     const section = screen.getByRole("region", { name: "Trusted folders" });

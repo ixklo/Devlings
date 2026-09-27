@@ -1,7 +1,7 @@
 [package]
 name = "perch"
 version = "1.0.0"
-description = "A desktop pet for Claude Code"
+description = "Desktop pets for Claude Code"
 edition = "2021"
 license = "MIT"
 
@@ -33,7 +33,7 @@ rand = "0.8"
 dirs = "5"
 tauri-plugin-log = "2"
 
-# Windows toasts (S1): used directly so a click reaches Perch's process. Same version notify-rust already pulls in.
+# Windows toasts (S1): used directly so a click reaches Devlings' process. Same version notify-rust already pulls in.
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.7.3"
 

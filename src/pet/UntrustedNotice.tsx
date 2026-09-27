@@ -8,7 +8,7 @@ interface Props {
   /** "Skipped: hooks (…) · MCP servers (…) · …" */
   skipped?: string;
   petName: string;
-  /** Trusted in Perch right now (from the snapshot), so every notice in the chat agrees. */
+  /** Trusted in Devlings right now (from the snapshot), so every notice in the chat agrees. */
   trusted: boolean;
   onTrust: () => Promise<unknown>;
   onUntrust: () => Promise<unknown>;
@@ -16,7 +16,7 @@ interface Props {
 
 /**
  * The untrusted-folder notice in the mini chat (v1.0 D6): a system row, not Claude's text. It says what the run
- * skipped and offers to trust the folder in Perch; once trusted, it offers to undo that.
+ * skipped and offers to trust the folder in Devlings; once trusted, it offers to undo that.
  */
 export function UntrustedNotice({ headline, skipped, petName, trusted, onTrust, onUntrust }: Props) {
   const [busy, setBusy] = useState(false);

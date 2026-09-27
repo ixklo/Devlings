@@ -123,7 +123,7 @@ describe("the live region", () => {
   it("announces an update ready to install", async () => {
     const { emit } = await setup();
     act(() => emit("snapshot", makeSnapshot({ update: { state: "ready", version: "1.0.1" } })));
-    expect(liveRegion()).toHaveTextContent("Perch 1.0.1 is ready to install");
+    expect(liveRegion()).toHaveTextContent("Devlings 1.0.1 is ready to install");
   });
 
   it("keeps the mini chat's streaming log out of it", () => {

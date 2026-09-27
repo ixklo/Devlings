@@ -20,7 +20,7 @@ describe("UpdateCard", () => {
   it("says which version is ready, with Restart and Later", () => {
     render(<UpdateCard version="1.0.1" onRestart={async () => {}} onLater={() => {}} />);
     const card = screen.getByRole("group", { name: /update ready/ });
-    expect(cardText(card)).toContain("Perch 1.0.1 is ready. Restart to install.");
+    expect(cardText(card)).toContain("Devlings 1.0.1 is ready. Restart to install.");
     expect(within(card).getByRole("button", { name: "Restart" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Later" })).toBeInTheDocument();
     expect(card).toHaveAttribute("data-hit");
@@ -116,6 +116,6 @@ describe("PetApp update card", () => {
     act(() => emit("snapshot", makeSnapshot({ update: READY })));
     expect(screen.queryByRole("group", { name: /update ready/ })).not.toBeInTheDocument();
     act(() => emit("snapshot", makeSnapshot({ update: { state: "ready", version: "1.0.2" } })));
-    expect(cardText(screen.getByRole("group", { name: /update ready/ }))).toContain("Perch 1.0.2 is ready.");
+    expect(cardText(screen.getByRole("group", { name: /update ready/ }))).toContain("Devlings 1.0.2 is ready.");
   });
 });

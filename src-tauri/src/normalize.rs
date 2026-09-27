@@ -118,7 +118,7 @@ pub enum StreamItem {
     LimitRejected { resets_at: Option<i64> },
     /// Host protocol: Claude Code asks whether a tool may run. `request` is the control request's body.
     CanUseTool { request_id: String, request: Value },
-    /// Host protocol: a control request Perch doesn't handle.
+    /// Host protocol: a control request Devlings doesn't handle.
     ControlRequest { request_id: String, subtype: String },
     /// Host protocol: Claude Code withdrew a request (for example, a hook allowed the tool first).
     ControlCancel { request_id: String },
@@ -459,7 +459,7 @@ mod tests {
         }
     }
 
-    /// Claude Code 2.1.282: an HTTP Stop hook with Perch not running adds a `system/notification`, which is ignored.
+    /// Claude Code 2.1.282: an HTTP Stop hook with Devlings not running adds a `system/notification`, which is ignored.
     #[test]
     fn fixture_2_1_282_stop_hook_error() {
         let items = stream(include_str!("../tests/fixtures/cc2.1.282_stream_stop_hook_error.ndjson"));

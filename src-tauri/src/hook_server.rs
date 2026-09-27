@@ -1,9 +1,9 @@
-//! Perch's localhost hook endpoint: `POST /hook/<token>` with a Claude Code hook body.
+//! Devlings' localhost hook endpoint: `POST /hook/<token>` with a Claude Code hook body.
 //!
 //! - Every request is read on its own worker thread, so a slow or held request never blocks the others.
 //!   At most `MAX_IN_FLIGHT` requests are read at once; beyond that the server answers 503 at once.
 //! - PermissionRequest bodies go to a synchronous handler on their worker; its return value is the response,
-//!   and it may block (Perch holds a request there while it waits for an answer). A held request gives its
+//!   and it may block (Devlings holds a request there while it waits for an answer). A held request gives its
 //!   worker slot back, so holds never starve other hooks; the handler bounds its own holds. The body also goes
 //!   to the processing thread in arrival order, like any other event.
 //! - Every other body is answered `{}` first, then handed to one processing thread in arrival order.
@@ -185,7 +185,7 @@ fn handle(mut req: tiny_http::Request, token: &str, ticket: Ticket, slot: Slot, 
         let answer = if answer.trim().is_empty() { EMPTY_ANSWER.to_string() } else { answer };
         return reply(req, 200, answer);
     }
-    // Answer first, so Claude Code never waits on Perch's own work.
+    // Answer first, so Claude Code never waits on Devlings' own work.
     reply(req, 200, EMPTY_ANSWER.to_string());
     ticket.send(event);
 }

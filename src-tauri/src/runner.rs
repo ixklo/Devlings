@@ -34,7 +34,7 @@ pub enum KillReason {
 }
 
 /// Ask runs speak Claude Code's host protocol (design v1.0 D4): the prompt goes in as a stream-json user message,
-/// and permission prompts come back as `can_use_tool` control requests that Perch answers on stdin.
+/// and permission prompts come back as `can_use_tool` control requests that Devlings answers on stdin.
 pub fn build_args(req: &AskRequest) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -63,7 +63,7 @@ pub fn control_response(request_id: &str, response: Value) -> String {
         .to_string()
 }
 
-/// Refuses a control request Perch doesn't handle, so Claude Code never waits on it.
+/// Refuses a control request Devlings doesn't handle, so Claude Code never waits on it.
 pub fn control_error(request_id: &str, error: &str) -> String {
     json!({ "type": "control_response", "response": { "subtype": "error", "request_id": request_id, "error": error } }).to_string()
 }
@@ -314,7 +314,7 @@ mod tests {
             ]
         );
         assert_eq!(build_args(&req(Some("abc")))[11..].to_vec(), vec!["--resume", "abc"]);
-        // Permission prompts come to Perch over stdin now; nothing turns them off.
+        // Permission prompts come to Devlings over stdin now; nothing turns them off.
         assert!(!build_args(&req(None)).contains(&"--permission-prompts".to_string()));
         // An untrusted folder's extra flags still come after everything, host protocol included.
         let mut untrusted = req(Some("abc"));
@@ -415,7 +415,7 @@ mod tests {
             if let StreamItem::CanUseTool { request_id, request } = &i {
                 assert!(!fake.is_closed(), "stdin must stay open while a request waits");
                 // What `answer_approval` does when the user clicks Deny.
-                stdin.send(control_response(request_id, serde_json::json!({"behavior": "deny", "message": "The user declined this in Perch."})));
+                stdin.send(control_response(request_id, serde_json::json!({"behavior": "deny", "message": "The user declined this in Devlings."})));
                 requests.push((request_id.clone(), request.clone()));
             }
         });
@@ -428,7 +428,7 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(
             lines[0],
-            serde_json::json!({"type": "control_response", "response": {"subtype": "success", "request_id": "8de93467-bf47-45db-85b1-34b4905e586e", "response": {"behavior": "deny", "message": "The user declined this in Perch."}}})
+            serde_json::json!({"type": "control_response", "response": {"subtype": "success", "request_id": "8de93467-bf47-45db-85b1-34b4905e586e", "response": {"behavior": "deny", "message": "The user declined this in Devlings."}}})
         );
     }
 
