@@ -34,7 +34,7 @@ Free and open source (MIT). Perch is not affiliated with Anthropic.
 
 ## Install
 
-Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run: pick and name your pet, let it watch your sessions, and check Claude Code.
+Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run, in three steps: pick and name your pet and let it watch your sessions, see how asking from the pet works (with a check that Claude Code is ready), and choose whether it answers permission prompts for your other sessions.
 
 The installers aren't code-signed by a paid certificate, so each OS shows an unfamiliar-software warning the first time:
 

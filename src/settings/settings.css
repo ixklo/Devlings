@@ -526,6 +526,13 @@ body[data-window="settings"] {
   text-wrap: balance;
 }
 
+.onboarding .step-sub {
+  margin: 6px 0 -6px;
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
 .lede {
   margin: -4px 0 4px;
   color: var(--ink-2);

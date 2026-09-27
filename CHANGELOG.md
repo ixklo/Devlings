@@ -24,6 +24,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 
 ### Changed
 
+- Onboarding now explains what Perch does in three short steps: watching your sessions (with the hooks), asking from the pet (your subscription, never an API key, and how Asks are counted), and answering permission prompts, with the switch for your other sessions right there.
 - Text, muted labels, badges, switches and focus rings now meet WCAG AA contrast in light and dark mode (a test keeps them there). The look is the same; a few greys and edges are a touch darker.
 - With your system's reduced-motion setting on, nothing pulses, spins or slides; the pet holds still and the countdown on a permission card keeps its pace.
 - Asks now answer permission prompts in Perch instead of denying every tool that needs approval.

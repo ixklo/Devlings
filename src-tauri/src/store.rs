@@ -68,6 +68,12 @@ impl Config {
             self.approvals_intro_seen = true;
         }
     }
+
+    /// Onboarding done. It explains permission prompts, so the one-time upgrade intro is answered too.
+    pub fn finish_onboarding(&mut self) {
+        self.onboarded = true;
+        self.approvals_intro_seen = true;
+    }
 }
 
 /// A hold the UI offers, or an error for anything else.
@@ -382,6 +388,16 @@ mod tests {
         assert_eq!((c.watch_approvals, c.approvals_intro_seen), (true, true));
         c.set_watch_approvals(false);
         assert_eq!((c.watch_approvals, c.approvals_intro_seen), (false, true));
+    }
+
+    #[test]
+    fn finishing_onboarding_also_answers_the_approvals_intro() {
+        let mut c = Config::default();
+        assert_eq!((c.onboarded, c.approvals_intro_seen, c.watch_approvals), (false, false, false));
+        c.finish_onboarding();
+        // Onboarding explains permission prompts (step 3), so the upgrade intro card never shows,
+        // and finishing leaves the switch as the user set it.
+        assert_eq!((c.onboarded, c.approvals_intro_seen, c.watch_approvals), (true, true, false));
     }
 
     #[test]

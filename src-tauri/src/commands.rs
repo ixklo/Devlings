@@ -379,12 +379,8 @@ pub fn mark_credits_notice_seen(app: AppHandle) -> Snapshot {
 #[tauri::command]
 pub fn finish_onboarding(app: AppHandle) -> Snapshot {
     let s = app.state::<AppState>();
-    {
-        let mut c = lock(&s.config);
-        c.onboarded = true;
-        // A fresh install learns about approvals during onboarding, so the upgrade intro card never shows.
-        c.approvals_intro_seen = true;
-    }
+    // A fresh install learns about approvals during onboarding, so the upgrade intro card never shows.
+    lock(&s.config).finish_onboarding();
     s.save_config();
     publish(&app)
 }
