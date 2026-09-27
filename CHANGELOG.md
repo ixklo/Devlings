@@ -12,6 +12,7 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 ### Changed
 
 - **Calmer long states.** After a minute of work the pet pauses briefly between typing loops; after a failure the storm cloud settles after a few seconds and only stirs now and then; "done" settles after 20 seconds. "Needs you" keeps moving until you answer.
+- The hidden-threads count sits on the **Show threads** button under the pet instead of in a pill above it, so the pet doesn't get taller.
 
 ## [1.1.0] - 2026-09-27
 
