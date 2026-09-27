@@ -29,9 +29,11 @@ Perch checks GitHub for updates at launch and once a day, and installs signed up
 | Linux (AppImage) | `Perch_[X.Y.Z]_amd64.AppImage` |
 | Linux (.deb) | `Perch_[X.Y.Z]_amd64.deb` |
 
+Each installer is also attached under a name without the version (`Perch-windows-x64-setup.exe`, `Perch-macos-universal.dmg`, `Perch-linux-x86_64.AppImage`, `Perch-linux-amd64.deb`), so links to the latest release keep working. They're byte-for-byte copies: same checksum, and the same attestation verifies either name.
+
 ## Checksums and provenance
 
-Each file's SHA-256 is in `SHA256SUMS.txt`, attached to this release. Every asset also has a GitHub build-provenance attestation, generated in CI from this exact source at this tag:
+Each file's SHA-256 is in `SHA256SUMS.txt`, attached to this release. Every asset also has a GitHub build-provenance attestation, generated in CI from this exact source at this tag. Attestations are tied to a file's digest, not its name, so a version-free copy verifies exactly like its versioned original:
 
 ```
 gh attestation verify <downloaded-file> --repo yeetstick/perch

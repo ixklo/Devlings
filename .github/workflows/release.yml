@@ -165,6 +165,11 @@ jobs:
           cat release-assets.json
       - name: Build latest.json
         run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json
+      # Version-free copies of the four installers, so README and website links of the form
+      # releases/latest/download/<name> never go stale. They get no .sig (latest.json above only
+      # uses the versioned files), and SHA256SUMS.txt and the attestations below cover them too.
+      - name: Stable download names
+        run: node scripts/stable-assets.mjs --assets-dir release-assets
       - name: Write SHA256SUMS.txt
         run: |
           set -e
@@ -172,10 +177,18 @@ jobs:
           rm -f SHA256SUMS.txt
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Upload latest.json and SHA256SUMS.txt to the release
+      - name: Upload latest.json, SHA256SUMS.txt and the stable-name copies to the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS.txt --repo "$REPO" --clobber
+        run: |
+          set -e
+          gh release upload "$TAG" --repo "$REPO" --clobber \
+            release-assets/latest.json \
+            release-assets/SHA256SUMS.txt \
+            release-assets/Perch-windows-x64-setup.exe \
+            release-assets/Perch-macos-universal.dmg \
+            release-assets/Perch-linux-x86_64.AppImage \
+            release-assets/Perch-linux-amd64.deb
       - name: Attest build provenance for every asset
         uses: actions/attest-build-provenance@v2
         with:
