@@ -1,12 +1,21 @@
-<p align="center"><img src="docs/screenshots/bubbles.png" width="420" alt="Perch, a pixel-art bird sitting on a branch, with two thread cards above it: one running, one done"></p>
+<p align="center"><img src="docs/screenshots/demo.gif" width="273" alt="Perch, a teal pixel-art bird on a branch, going through its moods: idle, working at a laptop, holding up a question mark, inspecting with a magnifying glass, sad under a storm cloud, and waving"></p>
 
 <h1 align="center">Perch</h1>
 
 <p align="center">A pixel-art pet that floats on your desktop and keeps you posted on Claude Code.</p>
 
+<p align="center">
+  <a href="https://github.com/yeetstick/perch/releases/latest"><img src="https://img.shields.io/github/v/release/yeetstick/perch?label=release" alt="Latest release"></a>
+  <a href="https://github.com/yeetstick/perch/releases"><img src="https://img.shields.io/github/downloads/yeetstick/perch/total" alt="Total downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/yeetstick/perch" alt="MIT license"></a>
+  <a href="https://github.com/yeetstick/perch/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/yeetstick/perch/ci.yml?branch=main&label=CI" alt="CI status"></a>
+</p>
+
+<p align="center"><b>Download:</b> <a href="https://github.com/yeetstick/perch/releases/latest/download/Perch-windows-x64-setup.exe">Windows</a> · <a href="https://github.com/yeetstick/perch/releases/latest/download/Perch-macos-universal.dmg">macOS</a> (beta) · <a href="https://github.com/yeetstick/perch/releases/latest/download/Perch-linux-x86_64.AppImage">Linux AppImage</a> or <a href="https://github.com/yeetstick/perch/releases/latest/download/Perch-linux-amd64.deb">.deb</a> (beta) · <a href="https://github.com/yeetstick/perch/releases">All releases</a> · <a href="https://yeetstick.github.io/perch/">Website</a></p>
+
 ---
 
-Perch sits above your other windows. It shows what every Claude Code session is doing, pops a card up when one finishes or needs you, and lets you ask Claude Code something without switching to VS Code or a terminal.
+Perch is a free, open-source desktop pet for Claude Code. It sits above your other windows so you can see every Claude Code session at a glance, get a card when one finishes or needs you, answer permission prompts from the pet, and ask Claude Code something without switching to VS Code or a terminal.
 
 - **Watch.** Any Claude Code session (VS Code, terminal, desktop app) shows up as a card above the pet: running, needs input, ready or blocked. Click a card to jump back to that project.
 - **Ask.** Click the pet or the pencil, pick a project folder and type. Perch runs your own Claude Code in that folder and streams the answer into a small chat above the pet. Follow-ups continue the same conversation.
@@ -15,7 +24,7 @@ Perch sits above your other windows. It shows what every Claude Code session is 
 - **Pick a pet.** Three pets are built in, and you can name yours. Perch also reads pets in the Codex pet format (see below).
 - **Stays out of the way.** Everything around the pet is click-through, so the window never blocks what's behind it.
 
-<p align="center"><img src="docs/screenshots/states.png" width="640" alt="The pet's moods, left to right: idle, working at a laptop, asking a question, inspecting with a magnifying glass, sad under a storm cloud"></p>
+<p align="center"><img src="docs/screenshots/bubbles.png" width="420" alt="Perch, a pixel-art bird sitting on a branch, with two thread cards above it: one running, one done"></p>
 
 <table>
   <tr>
@@ -34,14 +43,14 @@ Free and open source (MIT). Perch is not affiliated with Anthropic.
 
 ## Install
 
-Download the installer for your system from [Releases](../../releases). Perch walks you through setup on first run, in three steps: pick and name your pet and let it watch your sessions, see how asking from the pet works (with a check that Claude Code is ready), and choose whether it answers permission prompts for your other sessions.
+Download the installer for your system from the links at the top of this page (they always point at the latest version) or from [Releases](../../releases). Perch walks you through setup on first run, in three steps: pick and name your pet and let it watch your sessions, see how asking from the pet works (with a check that Claude Code is ready), and choose whether it answers permission prompts for your other sessions.
 
 The installers aren't code-signed by a paid certificate, so each OS shows an unfamiliar-software warning the first time:
 
 - **Windows:** SmartScreen says "Windows protected your PC". Click **More info**, then **Run anyway**.
 - **macOS:** Gatekeeper blocks the first launch. Since macOS 15, Control-click → Open no longer bypasses this, so instead: open **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway** next to Perch, then confirm in the dialog that follows. macOS builds are ad-hoc signed (not notarized), which is why this step is needed.
-- **Linux (AppImage):** make it executable first — `chmod +x Perch_*.AppImage` — then run it.
-- **Linux (.deb):** `sudo apt install ./Perch_*.deb` (or double-click it in a graphical package installer).
+- **Linux (AppImage):** make it executable first — `chmod +x Perch*.AppImage` — then run it.
+- **Linux (.deb):** `sudo apt install ./Perch*.deb` (or double-click it in a graphical package installer).
 
 ## Updates
 
@@ -178,6 +187,6 @@ npm run build && cargo test --manifest-path src-tauri/Cargo.toml   # Rust tests
 
 Opening `npm run dev` in a normal browser shows the pet (`/?window=pet`) and settings (`/?window=settings`) with mock data.
 
-To rebuild the built-in pets: `cd scripts/pets && npm install && node build.mjs && node validate.mjs`.
+To rebuild the built-in pets: `cd scripts/pets && npm install && node build.mjs && node validate.mjs`. To re-render the demo GIFs and social preview from them: `node render-demo.mjs` in the same folder. The website lives in [`site/`](site/) and deploys to GitHub Pages from `main`.
 
 Design docs: [v0.1](docs/specs/2026-09-25-perch-design.md), [v0.2 redesign](docs/specs/2026-09-26-perch-v0.2-design.md), [v1.0](docs/specs/2026-09-26-perch-v1.0-design.md). Release gates: [docs/release/v1.0.0.md](docs/release/v1.0.0.md).
