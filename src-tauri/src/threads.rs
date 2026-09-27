@@ -79,7 +79,8 @@ fn status_for(kind: Kind) -> Option<ThreadStatus> {
         Kind::Done => Some(ThreadStatus::Ready),
         Kind::Failed => Some(ThreadStatus::Blocked),
         Kind::Started => Some(ThreadStatus::Idle),
-        Kind::Ended => None,
+        // Untrusted never reaches here (`apply` ignores it).
+        Kind::Ended | Kind::Untrusted => None,
     }
 }
 
@@ -140,6 +141,10 @@ pub fn pet_state(visible: &[ThreadInfo], setup: bool) -> PetState {
 
 impl Threads {
     pub fn apply(&mut self, e: &PetEvent) -> Applied {
+        // A mini-chat notice for an Ask (design v1.0 D6), not thread activity.
+        if e.kind == Kind::Untrusted {
+            return Applied::default();
+        }
         if e.kind == Kind::Ended {
             self.tombstones.insert(e.session_id.clone(), e.at);
             return self.apply_live(e);
@@ -270,6 +275,17 @@ mod tests {
 
     fn ids(v: &[ThreadInfo]) -> Vec<&str> {
         v.iter().map(|t| t.session_id.as_str()).collect()
+    }
+
+    #[test]
+    fn an_untrusted_folder_notice_never_changes_a_thread() {
+        let mut t = Threads::default();
+        assert_eq!(t.apply(&ev("a", Kind::Untrusted, 0)), Applied::default());
+        assert!(t.get("a").is_none(), "no thread appears");
+        t.apply(&ev("a", Kind::Step, 1));
+        let before = t.get("a").cloned();
+        assert_eq!(t.apply(&ev("a", Kind::Untrusted, 2)), Applied::default());
+        assert_eq!(t.get("a").cloned(), before, "a running thread stays as it was");
     }
 
     #[test]

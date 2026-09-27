@@ -115,6 +115,10 @@ pub struct ProjectEntry {
     pub ask_session_id: Option<String>,
     #[serde(default)]
     pub transcript_path: Option<String>,
+    /// Trusted in Perch: Asks here use the folder's own Claude Code settings even if Claude Code hasn't trusted it
+    /// (design v1.0 D6).
+    #[serde(default)]
+    pub trusted: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -136,8 +140,17 @@ impl Projects {
             permission_mode: PermissionMode::default(),
             ask_session_id: None,
             transcript_path: None,
+            trusted: false,
         });
         true
+    }
+
+    /// Sets Perch-level trust for a known project. Returns whether it changed, so callers save only then.
+    pub fn set_trusted(&mut self, path: &str, trusted: bool) -> Result<bool, String> {
+        let p = self.get_mut(path).ok_or("Unknown project.")?;
+        let changed = p.trusted != trusted;
+        p.trusted = trusted;
+        Ok(changed)
     }
 
     pub fn get(&self, path: &str) -> Option<&ProjectEntry> {
@@ -391,6 +404,31 @@ mod tests {
     #[test]
     fn windows_paths_ignore_case_and_slashes() {
         assert!(same_path("C:\\A\\Proj", "c:/a/proj/"));
+    }
+
+    #[test]
+    fn projects_are_untrusted_until_trusted_in_perch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("projects.json");
+        // A v0.2 projects.json has no `trusted` key.
+        std::fs::write(&path, r#"{"list":[{"path":"/home/u/app","name":"app","lastSeen":1}]}"#).unwrap();
+        let mut p: Projects = load(&path);
+        assert!(!p.get("/home/u/app").unwrap().trusted);
+        assert!(p.touch("/home/u/new", 2));
+        assert!(!p.get("/home/u/new").unwrap().trusted);
+
+        assert_eq!(p.set_trusted("/home/u/app/", true), Ok(true));
+        assert_eq!(p.set_trusted("/home/u/app", true), Ok(false), "already trusted");
+        assert_eq!(p.set_trusted("/nowhere", true), Err("Unknown project.".to_string()));
+        save(&path, &p).unwrap();
+        let reloaded: Projects = load(&path);
+        assert!(reloaded.get("/home/u/app").unwrap().trusted);
+        assert!(!reloaded.get("/home/u/new").unwrap().trusted);
+        assert_eq!(serde_json::to_value(&reloaded.list[0]).unwrap()["trusted"], json!(true));
+
+        let mut p = reloaded;
+        assert_eq!(p.set_trusted("/home/u/app", false), Ok(true));
+        assert!(!p.get("/home/u/app").unwrap().trusted);
     }
 
     #[test]
