@@ -353,8 +353,7 @@ pub fn recheck_setup(app: &AppHandle) {
     let override_path = lock(&s.config).claude_path.clone();
     let home = dirs::home_dir().unwrap_or_default();
     let path_env = std::env::var_os("PATH");
-    let cands = locator::candidates(override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
-    let located = locator::locate(&cands, runner::version_of);
+    let located = locator::relocate(override_path.as_deref().map(Path::new), path_env.as_deref(), &home, runner::version_of);
     match &located {
         Ok(l) => {
             let via = locator::describe_source(&l.path, override_path.as_deref().map(Path::new), path_env.as_deref(), &home);
@@ -371,6 +370,24 @@ pub fn recheck_setup(app: &AppHandle) {
     *lock(&s.claude) = located;
     *lock(&s.auth) = auth;
     refresh_hooks_installed(app);
+}
+
+/// Re-locates Claude Code if the remembered path no longer runs (design gap G3.5): checked before
+/// every Ask spawn, and on a plain setup recheck. A stale user-chosen path is skipped like any
+/// missing candidate (see `locator::relocate`), so this falls back to auto-detection on its own.
+/// Returns the binary to run, refreshing `s.claude`/`s.auth` first if it had to re-locate.
+pub fn ensure_claude_located(app: &AppHandle) -> Result<PathBuf, String> {
+    let located = lock(&app.state::<AppState>().claude).clone();
+    let stale = match &located {
+        Ok(l) => locator::is_stale(&l.path, runner::version_of),
+        Err(_) => true,
+    };
+    if !stale {
+        return located.map(|l| l.path);
+    }
+    log::info!("Claude Code's remembered path is stale; re-locating");
+    recheck_setup(app);
+    lock(&app.state::<AppState>().claude).clone().map(|l| l.path)
 }
 
 pub fn boot(app: AppHandle) {

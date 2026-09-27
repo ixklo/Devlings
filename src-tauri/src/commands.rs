@@ -189,7 +189,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
         state::emit_snapshot(&app);
         return Err("That folder no longer exists, so it was removed from your projects.".into());
     }
-    let bin = lock(&s.claude).as_ref().map(|l| l.path.clone()).map_err(|e| e.clone())?;
+    let bin = state::ensure_claude_located(&app)?;
     let verdict = runner::auth_status(&bin);
     *lock(&s.auth) = Some(verdict.clone());
     if let AuthVerdict::Refused { reason } = verdict {
@@ -204,7 +204,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     };
     s.save_projects();
     log::info!("Ask in {project} (mode {}, {})", mode.flag(), if resume.is_some() { "follow-up" } else { "new chat" });
-    let req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
+    let mut req = AskRequest { bin, project: project.clone(), prompt, mode_flag: mode.flag(), resume };
     // Check and reserve in one short lock (an update install claims itself before reading `running`),
     // then start the process outside it.
     {
@@ -216,6 +216,31 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     }
     let child = match runner::spawn(&req) {
         Ok(child) => child,
+        // The remembered binary passed its last staleness check but vanished right before spawn
+        // (e.g. the VS Code extension updated mid-session): re-locate once and retry.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            log::warn!("Ask in {project}: {} wasn't found; re-locating Claude Code", req.bin.display());
+            state::recheck_setup(&app);
+            let relocated = lock(&s.claude).as_ref().map(|l| l.path.clone()).map_err(|e| e.clone());
+            match relocated {
+                Ok(bin) => {
+                    req.bin = bin;
+                    match runner::spawn(&req) {
+                        Ok(child) => child,
+                        Err(e2) => {
+                            lock(&s.running).remove(&project);
+                            log::error!("Ask in {project} couldn't start Claude Code after re-locating: {e2}");
+                            return Err(format!("Couldn't start Claude Code: {e2}"));
+                        }
+                    }
+                }
+                Err(err) => {
+                    lock(&s.running).remove(&project);
+                    log::error!("Ask in {project}: Claude Code still not found after re-locating: {err}");
+                    return Err(err);
+                }
+            }
+        }
         Err(e) => {
             lock(&s.running).remove(&project);
             log::error!("Ask in {project} couldn't start Claude Code: {e}");

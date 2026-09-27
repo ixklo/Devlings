@@ -22,6 +22,7 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 ### Fixed
 
 - "Open in VS Code" now also checks common install locations and the `vscode://` link, not just `code` on PATH, so it works for people who have VS Code without its command-line shortcut set up.
+- Perch re-locates the Claude Code binary on its own if the remembered path stops working (for example, after the VS Code extension updates), instead of showing "Claude Code not found" until a manual recheck.
 
 ## [0.2.0] - 2026-09-26
 
