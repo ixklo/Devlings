@@ -12,10 +12,11 @@ use std::{
     io::Read,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        mpsc::{self, Sender},
+        mpsc::{self, RecvTimeoutError, Sender},
         Arc,
     },
     thread::JoinHandle,
+    time::{Duration, Instant},
 };
 
 use serde_json::Value;
@@ -25,6 +26,9 @@ pub const MAX_IN_FLIGHT: usize = 32;
 pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 /// An oversized body is read and thrown away up to this much, so the answer still reaches the client.
 const MAX_DRAIN_BYTES: u64 = 64 * 1024 * 1024;
+/// How long later events wait behind a request that hasn't finished arriving (a stalled or very slow client)
+/// before they are processed without it.
+pub const REORDER_WAIT: Duration = Duration::from_secs(2);
 pub const EMPTY_ANSWER: &str = "{}";
 pub const PERMISSION_EVENT: &str = "PermissionRequest";
 
@@ -57,9 +61,33 @@ impl<T> Reorder<T> {
         Self { next: 0, pending: BTreeMap::new() }
     }
 
-    /// Records item `seq` and returns every item that is now next in line.
+    /// Records item `seq` and returns every item that is now next in line. A number that was already given up
+    /// on (see `skip_gap`) is dropped.
     fn push(&mut self, seq: u64, item: Option<T>) -> Vec<T> {
+        if seq < self.next {
+            if item.is_some() {
+                log::debug!("Dropped a hook event that arrived after its place in line was skipped");
+            }
+            return Vec::new();
+        }
         self.pending.insert(seq, item);
+        self.release()
+    }
+
+    /// Whether items are held back behind a number that hasn't arrived.
+    fn waiting(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// Stops waiting for the missing number(s) before the earliest held item, and returns what is now ready.
+    fn skip_gap(&mut self) -> Vec<T> {
+        if let Some(&first) = self.pending.keys().next() {
+            self.next = self.next.max(first);
+        }
+        self.release()
+    }
+
+    fn release(&mut self) -> Vec<T> {
         let mut ready = Vec::new();
         while let Some(item) = self.pending.remove(&self.next) {
             self.next += 1;
@@ -179,19 +207,38 @@ impl HookServer {
         let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(port);
         let server = Arc::new(server);
 
-        // One thread applies events, in the order their requests arrived. It ends once the listener and every
-        // worker are gone.
+        // One thread applies events, in the order their requests arrived. A request that stalls mid-body holds
+        // later events back for at most REORDER_WAIT. The thread ends once the listener and every worker are gone.
         let (queue, events) = mpsc::channel::<(u64, Option<Value>)>();
         std::thread::Builder::new()
             .name("perch-hook-events".into())
             .spawn(move || {
                 let mut order = Reorder::new();
-                for (seq, item) in events {
-                    for event in order.push(seq, item) {
+                // The number being waited for, and since when.
+                let mut stall: Option<(u64, Instant)> = None;
+                loop {
+                    let next = match stall {
+                        Some((_, since)) => events.recv_timeout(REORDER_WAIT.saturating_sub(since.elapsed())),
+                        None => events.recv().map_err(|_| RecvTimeoutError::Disconnected),
+                    };
+                    let ready = match next {
+                        Ok((seq, item)) => order.push(seq, item),
+                        Err(RecvTimeoutError::Timeout) => {
+                            log::debug!("Stopped waiting for a hook request that didn't finish arriving");
+                            order.skip_gap()
+                        }
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    };
+                    for event in ready {
                         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_event(event))).is_err() {
                             log::error!("A hook event handler panicked; the event was dropped");
                         }
                     }
+                    stall = match stall {
+                        _ if !order.waiting() => None,
+                        Some((n, since)) if n == order.next => Some((n, since)),
+                        _ => Some((order.next, Instant::now())),
+                    };
                 }
             })
             .map_err(|e| format!("Couldn't start the hook event thread: {e}"))?;
@@ -382,6 +429,43 @@ mod tests {
         assert_eq!(r.push(2, None), vec!["d"]);
         assert_eq!(r.push(4, Some("e")), vec!["e"]);
         assert!(r.pending.is_empty());
+    }
+
+    #[test]
+    fn reorder_can_give_up_on_a_gap() {
+        let mut r = Reorder::new();
+        assert!(!r.waiting());
+        assert!(r.push(1, Some("b")).is_empty());
+        assert!(r.push(2, Some("c")).is_empty());
+        assert!(r.waiting());
+        assert_eq!(r.skip_gap(), vec!["b", "c"]);
+        assert!(!r.waiting());
+        // The skipped number arriving late is dropped, not buffered forever.
+        assert!(r.push(0, Some("a")).is_empty());
+        assert!(r.pending.is_empty());
+        assert_eq!(r.push(3, Some("d")), vec!["d"]);
+        // Nothing to skip: a no-op.
+        assert!(r.skip_gap().is_empty());
+    }
+
+    #[test]
+    fn a_stalled_request_does_not_hold_up_later_events() {
+        use std::io::Write;
+        let (server, base, rx) = channel_server();
+        // Headers promise a body that never finishes arriving, so this request's worker waits on it. (Bodies under
+        // a few KB are read by tiny_http before the request is handed over, so only a large one can stall here.)
+        let mut stalled = std::net::TcpStream::connect(("127.0.0.1", server.port)).unwrap();
+        stalled
+            .write_all(b"POST /hook/abc HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 100000\r\n\r\n{\"hook")
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        let t0 = Instant::now();
+        assert_eq!(post(&base, "/hook/abc", r#"{"hook_event_name":"Stop","n":1}"#).0, 200);
+        let got = rx.recv_timeout(REORDER_WAIT + Duration::from_secs(3)).expect("a later event was held up for good");
+        assert_eq!(got["n"], 1);
+        assert!(t0.elapsed() >= REORDER_WAIT - Duration::from_millis(100), "released before the wait: {:?}", t0.elapsed());
+        drop(stalled);
+        server.stop();
     }
 
     #[test]
