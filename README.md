@@ -54,12 +54,15 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 |---|---|
 | Click the pet, or the pencil | Ask Claude Code about a project |
 | Click a card | Open that chat, or jump to the project (VS Code if found, otherwise the folder) |
+| Click a notification (Windows) | The same as clicking that thread's card |
 | Hover a card, click × | Mark it seen |
 | Bell | Turn notifications on or off |
 | Chevron | Collapse the cards (a badge shows the count) |
 | Drag the pet | Move it (arrow keys nudge it, Esc sends it home) |
 | Right-click the pet | Settings, change pet, hide for an hour, quit |
 | Ctrl+Alt+P | Show or hide the pet |
+
+Clicking a notification to open its thread works on Windows only for now. On macOS and Linux, notifications still appear, but clicking one does nothing.
 
 ## Pets
 

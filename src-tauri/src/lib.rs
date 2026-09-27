@@ -8,6 +8,7 @@ mod locator;
 mod locks;
 mod money_guard;
 mod normalize;
+mod notify;
 mod overlay;
 mod pets;
 mod runner;

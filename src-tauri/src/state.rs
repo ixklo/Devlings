@@ -14,7 +14,6 @@ use std::{
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::{
     events::{Kind, PetEvent, Source},
@@ -24,6 +23,7 @@ use crate::{
     locks::lock,
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
+    notify,
     overlay::HitRect,
     pets::{self, Pet},
     runner::{self, KillReason},
@@ -233,23 +233,10 @@ fn maybe_notify(app: &AppHandle, ev: &PetEvent, status: ThreadStatus) {
     if !enabled || focused {
         return;
     }
-    let short = |t: &str| threads::excerpt(t).map(|x| x.chars().take(120).collect::<String>());
-    let body = match status {
-        ThreadStatus::NeedsInput => "Needs your approval".to_string(),
-        ThreadStatus::Ready => ev.text.as_deref().and_then(short).unwrap_or_else(|| "Done".to_string()),
-        ThreadStatus::Blocked => ev
-            .text
-            .as_deref()
-            .and_then(short)
-            .or_else(|| ev.label.clone())
-            .unwrap_or_else(|| "Something went wrong".to_string()),
-        ThreadStatus::Running | ThreadStatus::Idle => return,
-    };
-    let project = lock(&s.threads)
-        .get(&ev.session_id)
-        .map(|t| t.project_name.clone())
-        .unwrap_or_else(|| store::project_name(&ev.project));
-    let _ = app.notification().builder().title(format!("{pet} · {project}")).body(body).show();
+    let thread = lock(&s.threads).get(&ev.session_id).cloned();
+    if let Some(notice) = notify::notice_for(&pet, ev, status, thread.as_ref()) {
+        notify::show(app, notice);
+    }
 }
 
 pub fn on_hook_body(app: &AppHandle, body: Value) {

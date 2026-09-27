@@ -1,4 +1,5 @@
-import type { ThreadInfo, ThreadStatus } from "./types";
+import { projectName } from "./paths";
+import type { Snapshot, ThreadInfo, ThreadOpen, ThreadStatus } from "./types";
 
 const PRIORITY: Record<ThreadStatus, number> = { needs_input: 0, blocked: 1, ready: 2, running: 3, idle: 4 };
 
@@ -43,4 +44,31 @@ export function threadLine(t: ThreadInfo): string {
   }
   if (t.status === "needs_input") return t.label ?? "Waiting for your approval";
   return t.label ?? t.excerpt ?? (t.status === "running" ? "Working…" : "Idle");
+}
+
+/**
+ * The thread a `pet-open {view: "thread"}` request (a notification click) is about: the listed one if it's still on
+ * the cards, else one rebuilt from the request, so the click can do exactly what the card would. Null when there's
+ * nothing to open.
+ */
+export function threadForOpen(o: ThreadOpen, snap: Snapshot | null): ThreadInfo | null {
+  const live = snap?.threads.find((t) => t.sessionId === o.sessionId);
+  if (live) return live;
+  const askProject = snap?.projects.find((p) => p.askSessionId === o.sessionId)?.path;
+  const source = o.source ?? (askProject !== undefined ? "ask" : undefined);
+  const project = o.project ?? askProject;
+  if (source === undefined || project === undefined) return null;
+  // An Ask chat needs its folder; a Watch session without one is still marked seen.
+  if (source === "ask" && !project) return null;
+  return {
+    sessionId: o.sessionId,
+    project,
+    projectName: project ? projectName(project) : "Claude Code",
+    source,
+    status: "idle",
+    label: null,
+    excerpt: null,
+    updatedAt: 0,
+    unread: false,
+  };
 }

@@ -151,7 +151,12 @@ export interface Placement {
   stageRoom: number;
 }
 
-export type PetOpen = { view: "compose" } | { view: "thread"; sessionId: string };
+/**
+ * `thread` opens a thread the way a click on its card does. A notification click (Windows, v1.0 S1) also carries the
+ * thread's `project` and `source`, so it still works after the thread has left the cards.
+ */
+export type ThreadOpen = { view: "thread"; sessionId: string; project?: string; source?: Source };
+export type PetOpen = { view: "compose" } | ThreadOpen;
 export type SettingsView = "settings" | "onboarding";
 
 export interface ChatTurn {
