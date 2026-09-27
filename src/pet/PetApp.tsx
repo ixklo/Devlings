@@ -13,6 +13,7 @@ import {
   resolveClip,
 } from "../sprite/petAnimation";
 import { usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { showApprovalsIntro } from "./ApprovalCard";
 import { BubbleStack } from "./BubbleStack";
 import { ComposerCard } from "./ComposerCard";
 import { ControlBar } from "./ControlBar";
@@ -59,6 +60,11 @@ function badgeFor(threads: ThreadInfo[]): Badge | null {
       ? "err"
       : "neutral";
   return { count: threads.length, tone };
+}
+
+/** A pending permission request makes the pet wait, like a thread that needs input (setup still wins). */
+export function petStateFor(snap: Snapshot): PetState {
+  return snap.approvals.length > 0 && snap.petState !== "setup" ? "needs_input" : snap.petState;
 }
 
 function setupDetail(snap: Snapshot): string {
@@ -232,7 +238,10 @@ export function PetApp() {
   const collapsed = config.threadsCollapsed;
   const threads = snap.threads;
   const barVisible = hover || view.kind !== "bubbles" || threads.length > 0;
-  const clip = resolveClip(snap.petState, anim, reduced);
+  const petState = petStateFor(snap);
+  // Approval buttons re-arm whenever the stage moves as a whole.
+  const layoutKey = `${placement.cardsBelow}|${placement.shiftX}|${placement.stageRoom}`;
+  const clip = resolveClip(petState, anim, reduced);
   const toggleComposer = () => setView((v) => (v.kind === "bubbles" ? { kind: "compose" } : BUBBLES));
   const closeView = () => setView(BUBBLES);
 
@@ -247,7 +256,7 @@ export function PetApp() {
   const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
-    <main className="overlay" data-pet-state={snap.petState} data-cards-below={placement.cardsBelow}>
+    <main className="overlay" data-pet-state={petState} data-cards-below={placement.cardsBelow}>
       <div
         className="stage"
         style={
@@ -278,6 +287,7 @@ export function PetApp() {
             initialPrompt={view.initialPrompt}
             conversation={conversation}
             onClose={closeView}
+            layoutKey={layoutKey}
           />
         )}
         {view.kind === "bubbles" && (
@@ -293,6 +303,11 @@ export function PetApp() {
                 ? { version: updateVersion, onRestart: api.installUpdate, onLater: () => setLaterUpdate(updateVersion) }
                 : null
             }
+            approvals={snap.approvals}
+            approvalsHidden={collapsed}
+            holdMs={config.approvalHoldSecs * 1000}
+            layoutKey={layoutKey}
+            intro={!collapsed && showApprovalsIntro(snap) ? { petName: config.petName } : null}
           />
         )}
       </div>
@@ -302,7 +317,7 @@ export function PetApp() {
           scale={config.petScale || 0.6}
           clip={clip}
           onClipDone={onClipDone}
-          label={`${config.petName}, ${STATE_LABEL[snap.petState]}. Click to ask, drag to move.`}
+          label={`${config.petName}, ${STATE_LABEL[petState]}. Click to ask, drag to move.`}
           badge={collapsed ? badgeFor(threads) : null}
           onActivate={toggleComposer}
           onHover={() => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeSnapshot, makeThread } from "../test/fixtures";
 import { relativeTime } from "./time";
-import { sortThreads, stackBubbles, threadForOpen, threadLine } from "./threads";
+import { sortThreads, stackBubbles, stackCards, threadForOpen, threadLine } from "./threads";
 import type { ThreadInfo } from "./types";
 
 describe("sortThreads", () => {
@@ -14,6 +14,33 @@ describe("sortThreads", () => {
       makeThread({ sessionId: "blocked", status: "blocked", updatedAt: 3 }),
     ];
     expect(sortThreads(threads).map((t) => t.sessionId)).toEqual(["needs", "blocked", "ready", "run-new", "run-old"]);
+  });
+});
+
+describe("stackCards", () => {
+  const threads = Array.from({ length: 4 }, (_, i) => makeThread({ sessionId: `t${i}`, updatedAt: 10 - i }));
+  const approval = (sessionId: string) => ({ sessionId, id: `a-${sessionId}` });
+
+  it("matches stackBubbles without approvals", () => {
+    const { approvals, threads: shown, more } = stackCards([], threads, false);
+    expect(approvals).toEqual([]);
+    expect(shown.map((t) => t.sessionId)).toEqual(stackBubbles(threads, false).shown.map((t) => t.sessionId));
+    expect(more).toBe(1);
+  });
+
+  it("puts approvals first, caps them at two and fills the rest with threads", () => {
+    const r = stackCards([approval("x"), approval("y"), approval("z")], threads, false);
+    expect(r.approvals.map((a) => a.id)).toEqual(["a-x", "a-y"]);
+    expect(r.threads.map((t) => t.sessionId)).toEqual(["t0"]);
+    expect(r.more).toBe(1 + 3);
+    const one = stackCards([approval("x")], threads, false);
+    expect(one.threads.map((t) => t.sessionId)).toEqual(["t0", "t1"]);
+  });
+
+  it("leaves out threads whose session has an approval card", () => {
+    const r = stackCards([approval("t0")], threads, true);
+    expect(r.threads.map((t) => t.sessionId)).toEqual(["t1", "t2", "t3"]);
+    expect(r.more).toBe(0);
   });
 });
 

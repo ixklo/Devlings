@@ -17,6 +17,27 @@ export function stackBubbles(threads: ThreadInfo[], expanded: boolean, max = MAX
   return { shown: sorted.slice(0, max), more: sorted.length - max };
 }
 
+/** Approval cards are tall; at most this many show before "+N more". */
+export const MAX_APPROVAL_CARDS = 2;
+
+/**
+ * What the bubble stack draws: approvals first (oldest nearest the pet), then
+ * threads in priority order, at most MAX_BUBBLES cards in all unless expanded.
+ * A thread whose session has an approval card is left out; the card stands in for it.
+ */
+export function stackCards<A extends { sessionId: string }>(approvals: A[], threads: ThreadInfo[], expanded: boolean) {
+  const waiting = new Set(approvals.map((a) => a.sessionId));
+  const sorted = sortThreads(threads.filter((t) => !waiting.has(t.sessionId)));
+  if (expanded) return { approvals, threads: sorted, more: 0 };
+  const shownApprovals = approvals.slice(0, MAX_APPROVAL_CARDS);
+  const shownThreads = sorted.slice(0, Math.max(0, MAX_BUBBLES - shownApprovals.length));
+  return {
+    approvals: shownApprovals,
+    threads: shownThreads,
+    more: approvals.length - shownApprovals.length + sorted.length - shownThreads.length,
+  };
+}
+
 export const STATUS_TEXT: Record<ThreadStatus, string> = {
   running: "Working",
   needs_input: "Needs you",

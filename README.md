@@ -10,6 +10,7 @@ Perch sits above your other windows. It shows what every Claude Code session is 
 
 - **Watch.** Any Claude Code session (VS Code, terminal, desktop app) shows up as a card above the pet: running, needs input, ready or blocked. Click a card to jump back to that project.
 - **Ask.** Click the pet or the pencil, pick a project folder and type. Perch runs your own Claude Code in that folder and streams the answer into a small chat above the pet. Follow-ups continue the same conversation.
+- **Answer permission prompts.** When Claude Code asks to run a command or edit a file, Allow or Deny it from a card above the pet (see [Permission prompts](#permission-prompts)).
 - **It reacts.** The pet types while Claude works, holds up a "?" when it needs you, inspects the result when it's ready, and gets a little storm cloud when something fails. Drag it and it runs; hover and it waves.
 - **Pick a pet.** Three pets are built in, and you can name yours. Perch also reads pets in the Codex pet format (see below).
 - **Stays out of the way.** Everything around the pet is click-through, so the window never blocks what's behind it.
@@ -56,6 +57,7 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 | Click a card | Open that chat, or jump to the project (VS Code if found, otherwise the folder) |
 | Click a notification (Windows) | The same as clicking that thread's card |
 | Hover a card, click × | Mark it seen |
+| Deny, Allow or Always allow on a permission card | Answer that Claude Code permission prompt (click only; no key answers it) |
 | Bell | Turn notifications on or off |
 | Chevron | Collapse the cards (a badge shows the count) |
 | Drag the pet | Move it (arrow keys nudge it, Esc sends it home) |
@@ -63,6 +65,19 @@ Upgrading from a 0.x release needs one manual install of the new version; after 
 | Ctrl+Alt+P | Show or hide the pet |
 
 Clicking a notification to open its thread works on Windows only for now. On macOS and Linux, notifications still appear, but clicking one does nothing.
+
+## Permission prompts
+
+When Claude Code wants to run a command, edit a file or fetch a page and needs your OK, Perch shows the request as a card above the pet: the project, the tool, the exact command, file path or URL, and Claude's own description of what it's doing. **Details** shows everything the tool will receive (a file's new content, an edit's old and new text); it opens by itself when the headline doesn't tell the whole story, for example for MCP tools, and a warning badge marks risky flags such as running outside the sandbox. Answer with **Deny** or **Allow**.
+
+- **No accidental answers.** Nothing is pre-selected and no key answers a card, so a stray Enter never approves anything. The buttons also stay inactive until a card has sat still for a moment, and go inactive again whenever it moves, so a card that just popped up or slid into place can't catch a click meant for something else.
+- **Too long to review:** if a request is too big to show in full, Perch only offers **Deny**; answer it in Claude Code instead.
+- **Questions and plans** (Claude asking you something, or asking you to approve a plan) are left to Claude Code's own dialog for your other sessions. In an Ask, Perch tells Claude to make a reasonable assumption and say so, or to present the plan in the chat for you to review.
+
+- **Asks from Perch:** always on. The request also shows inline in the mini chat. **Stop** or **New chat** turns down anything still waiting, and a request nobody answers is turned down after 10 minutes.
+- **Your other Claude Code sessions** (VS Code, the terminal): opt-in, under **Settings → Approvals** (or the one-time card after updating). Claude Code's own prompt still appears at the same time and keeps working, so you can answer in either place; whichever answers first wins, and the card goes away once the request is answered in Claude Code. Perch keeps a card open for 30 seconds, 1, 2 or 4 minutes (1 minute by default); after that the card goes and the request simply waits in Claude Code as usual. One side effect: a headless `claude -p` run started by some other tool has no prompt of its own, so while this is on it waits up to that long for your answer in Perch, and without one Claude Code turns the tool down, just as it would without Perch.
+- **Always allow** appears only when Claude Code itself suggests a rule for the request. It applies exactly that suggestion, and the line under it says what it does, for example "Adds the rule Bash(npm test:*) to this project's local settings". When every suggestion only lasts for the session, the button reads **Allow for this session**. A mode switch is only ever offered for the session, and never to the mode that skips all permission checks.
+- Perch's answers go to Claude Code over the same `127.0.0.1` hook connection (or, for Asks, Claude Code's own input), never anywhere else.
 
 ## Pets
 
@@ -127,7 +142,7 @@ Perch never uses an API key and has no login of its own.
 
 ## How watching works
 
-On first run, Perch asks to add a few `http` hooks to your Claude Code `settings.json`. Each hook sends session events to `http://127.0.0.1:<port>/hook/<random token>` with a short timeout. If Perch isn't running, the hook fails fast and Claude Code carries on. A backup of `settings.json` is saved before every change. **Settings → Watching → Remove** removes exactly Perch's entries and nothing else.
+On first run, Perch asks to add a few `http` hooks to your Claude Code `settings.json`. Each hook sends session events to `http://127.0.0.1:<port>/hook/<random token>` with a short timeout (the permission-request hook allows up to 5 minutes, so Perch can keep a card open while you decide; Claude Code's own prompt never waits for it). If Perch isn't running, the hook fails fast and Claude Code carries on. A backup of `settings.json` is saved before every change. **Settings → Watching → Remove** removes exactly Perch's entries and nothing else.
 
 ## Privacy
 

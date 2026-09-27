@@ -14,6 +14,14 @@ import { NoticeBar } from "./NoticeBar";
 
 const USAGE_URL = "https://claude.ai/settings/usage";
 
+/** How long a watched permission request stays open for an answer here (design v1.0 D3). */
+const HOLDS = [
+  { value: "30", label: "30 s", title: "30 seconds" },
+  { value: "60", label: "1 min", title: "1 minute" },
+  { value: "120", label: "2 min", title: "2 minutes" },
+  { value: "240", label: "4 min", title: "4 minutes" },
+];
+
 type Size = "s" | "m" | "l";
 export const SIZES: Record<Size, number> = { s: 0.45, m: 0.6, l: 0.8 };
 
@@ -152,6 +160,32 @@ export function Settings({ snap }: { snap: Snapshot }) {
             </button>
           </div>
         )}
+      </Section>
+
+      <Section title="Approvals">
+        <SwitchRow
+          label={`Answer permission prompts from ${pet}`}
+          description={
+            <>
+              When a Claude Code session asks to run something, Allow or Deny it from a card above {pet}. Claude
+              Code's own prompt stays available the whole time. Asks you start from {pet} always ask here.
+            </>
+          }
+          checked={config.watchApprovals}
+          onChange={(v) => void action.run(() => api.setWatchApprovals(v))}
+        />
+        <div className="row">
+          <div className="row-text">
+            <span className="row-label">Keep a request open for</span>
+            <p className="row-desc">After that, the card goes away and the request waits in Claude Code as usual.</p>
+          </div>
+          <Segmented
+            label="Keep a request open for"
+            value={HOLDS.some((h) => h.value === String(config.approvalHoldSecs)) ? String(config.approvalHoldSecs) : null}
+            options={HOLDS}
+            onChange={(secs) => void action.run(() => api.setApprovalHold(Number(secs)))}
+          />
+        </div>
       </Section>
 
       <TrustedFolders projects={snap.projects} petName={pet} action={action} />

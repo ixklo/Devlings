@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
+  ApprovalDecision,
   ChatTurn,
   HitRect,
   PermissionMode,
@@ -107,6 +108,10 @@ export const api = {
   openLogFolder: () => call<void>("open_log_folder"),
   trustProject: (project: string) => call<Snapshot>("trust_project", { project }),
   untrustProject: (project: string) => call<Snapshot>("untrust_project", { project }),
+  answerApproval: (id: string, decision: ApprovalDecision) => call<Snapshot>("answer_approval", { id, decision }),
+  setWatchApprovals: (enabled: boolean) => call<Snapshot>("set_watch_approvals", { enabled }),
+  setApprovalHold: (secs: number) => call<Snapshot>("set_approval_hold", { secs }),
+  markApprovalsIntroSeen: () => call<Snapshot>("mark_approvals_intro_seen"),
 
   // Events.
   onSnapshot: (cb: (s: Snapshot) => void) => transport.listen<Snapshot>("snapshot", cb),

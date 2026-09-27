@@ -17,9 +17,13 @@ All notable changes to Perch are documented here. The format follows [Keep a Cha
 - On Windows, clicking a notification brings up the pet and opens that thread, just like clicking its card: an Ask opens its chat, and a watched session opens its project. macOS and Linux notifications don't respond to clicks yet.
 - **Settings → Cost** shows your plan usage as Claude Code reported it during your last Ask, for example "42% of your 5-hour limit, resets 3:10 PM", always labelled with the time it was seen. The mini chat adds a short note when you're near or at a limit. Perch makes no extra requests for this, and it starts empty after a restart until your next Ask.
 - Asks in a folder Claude Code hasn't trusted no longer run that folder's project hooks, environment variables, helper commands, MCP servers or skills. Perch runs Claude Code without the folder's project settings, says in the chat what it skipped, and offers to trust the folder in Perch. Undo it from the chat or **Settings → Trusted folders**.
+- Answer Claude Code permission prompts from the pet. When an Ask wants to run something, the request shows in the mini chat and as a card with the exact command, Claude's description, and Deny, Allow and (when Claude Code offers a rule) Always allow. For your other Claude Code sessions it's opt-in (**Settings → Approvals**, or the one-time card after updating): the card appears alongside Claude Code's own prompt, which keeps working, and stays open for 30 seconds to 4 minutes.
+- A session shows "needs input" the moment Claude Code asks for permission, and goes back to working once it's answered anywhere.
+- Permission cards show everything being approved under **Details** (open by default when the headline leaves something out), badge risky flags, and only offer Deny for requests too long to show. Their buttons only work once the card has sat still for a moment, so a card that just appeared or moved can't catch a stray click. Claude's questions and plan approvals are never answered with a plain Allow.
 
 ### Changed
 
+- Asks now answer permission prompts in Perch instead of denying every tool that needs approval.
 - Perch does much less work while it sits idle. The idle animation plays, then rests for a few seconds; nothing animates or polls while the pet or the Settings window is hidden or minimized; the pointer check slows down when the pointer is far from the pet; and the "needs input" dot pulses three times, then stays lit.
 - `npm test` no longer passes with zero tests found (`vitest`'s `--passWithNoTests` is gone), so a worker-startup failure fails CI instead of silently reporting success.
 

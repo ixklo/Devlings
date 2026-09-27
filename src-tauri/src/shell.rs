@@ -361,13 +361,21 @@ pub fn vscode_url(path: &Path) -> String {
     url
 }
 
+/// `reg.exe` in the Windows system folder, never whatever `reg` comes first on PATH.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn reg_exe(system_root: Option<&OsStr>) -> PathBuf {
+    let root = system_root.filter(|r| !r.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows"));
+    root.join("System32").join("reg.exe")
+}
+
 /// Whether Windows has something registered for the `vscode:` URL scheme, so opening one never
 /// shows "How do you want to open this?". Shells out to `reg query` rather than adding a registry
 /// crate dependency for a single read-only lookup.
 #[cfg(windows)]
 fn windows_vscode_scheme_registered() -> bool {
+    let reg = reg_exe(std::env::var_os("SystemRoot").as_deref());
     ["HKCU\\Software\\Classes\\vscode", "HKCR\\vscode"].iter().any(|key| {
-        runner::background_command(Path::new("reg"))
+        runner::background_command(&reg)
             .args(["query", key])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -440,6 +448,14 @@ pub fn open_folder(app: &AppHandle, dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reg_runs_from_the_system_folder() {
+        assert_eq!(reg_exe(Some(OsStr::new("C:\\Windows"))), Path::new("C:\\Windows").join("System32").join("reg.exe"));
+        // Without SystemRoot, the standard location rather than whatever `reg` PATH finds first.
+        assert_eq!(reg_exe(None), Path::new("C:\\Windows").join("System32").join("reg.exe"));
+        assert_eq!(reg_exe(Some(OsStr::new(""))), Path::new("C:\\Windows").join("System32").join("reg.exe"));
+    }
 
     #[test]
     fn finds_the_first_match_on_path() {

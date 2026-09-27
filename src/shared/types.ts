@@ -50,6 +50,12 @@ export interface Config {
   autoUpdate: boolean;
   /** Epoch ms of the last update check. */
   lastUpdateCheck: number | null;
+  /** Answer permission requests of watched sessions from the pet. Off by default. */
+  watchApprovals: boolean;
+  /** How long a watched request is held for an answer in the pet: 30, 60, 120 or 240. */
+  approvalHoldSecs: number;
+  /** The one-time "answer permission prompts" intro card was answered. */
+  approvalsIntroSeen: boolean;
 }
 
 export type PetState = "idle" | "running" | "needs_input" | "ready" | "blocked" | "setup";
@@ -106,6 +112,8 @@ export interface Snapshot {
   running: string[];
   setup: SetupStatus;
   update: UpdateStatus;
+  /** Permission requests the user can answer from the pet, oldest first. */
+  approvals: PendingApproval[];
   /** The latest plan usage an Ask run reported, or null before the first one since launch (v1.0 S4). */
   usage: UsageInfo | null;
 }
@@ -125,6 +133,39 @@ export interface UsageInfo {
   kind?: string;
   /** Epoch ms when Perch saw it. */
   seenAt: number;
+}
+
+export type ApprovalDecision = "allow" | "deny" | "always";
+
+/** A Claude Code permission request waiting for an answer (v1.0 spec section 4). */
+export interface PendingApproval {
+  id: string;
+  sessionId: string;
+  project: string;
+  projectName: string;
+  /** "watch": another Claude Code session; "ask": one of the pet's own Ask runs. */
+  source: Source;
+  toolName: string;
+  /** Claude Code's own name for an MCP tool shown under a display name, e.g. "mcp__github__create_issue". */
+  rawToolName: string | null;
+  /** The exact command, file path or URL; otherwise the input as compact JSON. */
+  summary: string;
+  description: string | null;
+  /** The whole tool input as pretty JSON (at most 16 KB). */
+  details: string;
+  /** The headline leaves something out, so the card opens Details by default. */
+  lossy: boolean;
+  /** Part of the request can't be shown, so it can only be denied here. */
+  tooLong: boolean;
+  /** Short warnings for risky flags, e.g. "Runs outside the sandbox". */
+  risks: string[];
+  canAlwaysAllow: boolean;
+  /** "Allow for this session" or "Always allow"; null without canAlwaysAllow. */
+  alwaysLabel: string | null;
+  /** One line saying what the always button does. */
+  alwaysDetail: string | null;
+  /** Epoch ms when a watched request's hold ends; null for Ask requests. */
+  expiresAt: number | null;
 }
 
 export type UpdateState = "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "disabled";
