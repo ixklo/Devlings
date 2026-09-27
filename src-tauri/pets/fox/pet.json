@@ -1,0 +1,6 @@
+{
+  "id": "fox",
+  "displayName": "Pip",
+  "description": "A russet little fox with a white-tipped tail that swishes while your code builds.",
+  "spritesheetPath": "spritesheet.png"
+}

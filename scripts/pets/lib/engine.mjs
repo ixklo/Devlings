@@ -69,6 +69,67 @@ export function eyePair(src, { hi = 'W', fill = 'e' } = {}) {
   return { l, r: { w: l.w, h: l.h, rows } };
 }
 
+/**
+ * A symmetric sprite from its left half: each row is mirrored onto the right.
+ * `center` shares the last column instead of doubling it (odd widths).
+ * `right` recolours the mirrored half, e.g. { h: 'b' }, since the light comes
+ * from the top-left.
+ */
+export function sym(src, { center = false, right = {} } = {}) {
+  const half = sprite(src);
+  const rows = half.rows.map((r) => {
+    const mirrored = [...r].reverse().slice(center ? 1 : 0).map((ch) => right[ch] ?? ch);
+    return r + mirrored.join('');
+  });
+  return { w: rows[0].length, h: rows.length, rows };
+}
+
+/**
+ * Shade the edges facing away from the light: a pixel whose role is a key
+ * of `map` takes the mapped role when one of the `right` pixels to its right,
+ * or one of the `bottom` pixels below it, is empty.
+ */
+export function edgeShade(s, map, { right = 2, bottom = 1 } = {}) {
+  const rows = s.rows.map((r, y) =>
+    [...r]
+      .map((ch, x) => {
+        if (!(ch in map)) return ch;
+        for (let k = 1; k <= right; k++) if (!at(s, x + k, y)) return map[ch];
+        for (let k = 1; k <= bottom; k++) if (!at(s, x, y + k)) return map[ch];
+        return ch;
+      })
+      .join(''),
+  );
+  return { w: s.w, h: s.h, rows };
+}
+
+/** Draw `top` over `base` at (x, y) inside the base sprite (non-transparent pixels only). */
+export function stamp(base, top, x, y) {
+  const rows = base.rows.map((r) => [...r]);
+  for (let j = 0; j < top.h; j++) {
+    for (let i = 0; i < top.w; i++) {
+      const ch = at(top, i, j);
+      if (ch && rows[y + j] && x + i >= 0 && x + i < base.w) rows[y + j][x + i] = ch;
+    }
+  }
+  return { w: base.w, h: base.h, rows: rows.map((r) => r.join('')) };
+}
+
+/**
+ * Lean a sprite: row y shifts right by round((h - 1 - y) * k), so the bottom
+ * row stays put and the top moves most (a tail swishing from its base). The
+ * result is padded to fit; `ox` is how far the bottom row moved right inside
+ * it, so draw the result at x - ox to keep the base in place.
+ */
+export function shear(s, k) {
+  const shifts = s.rows.map((_, y) => Math.round((s.h - 1 - y) * k));
+  const min = Math.min(0, ...shifts);
+  const max = Math.max(0, ...shifts);
+  const w = s.w + max - min;
+  const rows = s.rows.map((r, y) => ('.'.repeat(shifts[y] - min) + r).padEnd(w, '.'));
+  return { w, h: s.h, rows, ox: -min };
+}
+
 /** Remove the given rows (squash) from a sprite. */
 export function dropRows(s, indices) {
   const drop = new Set(indices);
