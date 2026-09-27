@@ -12,8 +12,8 @@ Run on a Windows 11 machine with Claude Code logged in with a subscription, and 
 
 ## G2.2 — Upgrade from v0.2.0 keeps settings
 
-- [ ] Install v0.2.0 first, set a custom pet name, a non-default port (trigger "Port in use" to force one), and toggle notifications off.
-- [ ] Install the new build over it (don't uninstall first). Pet name, port and notification setting all survive.
+- [ ] Install v0.2.0 first, set a custom pet name, a non-default port (trigger "Port in use" to force one), toggle notifications off, and drag the pet to a memorable custom spot (not the default bottom-right).
+- [ ] Install the new build over it (don't uninstall first). Pet name, port and notification setting all survive, and the pet reappears at the **same visual spot** it was left at (M9/D9: a saved position now means the sprite's anchor, migrated once from v0.2's window-anchor meaning).
 - [ ] Hooks reinstall once (v0.2's 7 HTTP entries differ in shape from v1's set) — confirm via a new `settings.json.perch-backup-*` and the updated hook list, but confirm it does **not** reinstall again on a second launch with no change.
 
 ## G2.3 — In-app update, RC to RC; tampered signature refused
@@ -57,8 +57,12 @@ Work through the README's "Using it" table on a live pet with at least one activ
 
 ## G3.5 — Recovery from an extension path change and an off-screen position
 
-- [ ] Change the VS Code Claude Code extension's bundled binary path (simulate an extension update moving it) and confirm Perch's setup check catches the mismatch and Auto-detect (or Choose file…) recovers it.
+- [ ] Rename/move the VS Code Claude Code extension's currently-used version folder (simulating an update) and start an Ask: Perch re-locates the binary **on its own** (M9 — no manual Auto-detect click needed) and the Ask still runs; **Settings → Claude Code** shows the new path/version afterward.
+- [ ] Point **Choose file…** at a binary, then delete that file and start an Ask: Perch falls back to auto-detecting a working binary instead of failing.
 - [ ] Manually write an off-screen `x`/`y` into the pet's saved position (outside any connected monitor's bounds — e.g. after a monitor is disconnected) and relaunch: Perch clamps the pet back into the visible work area instead of leaving it unreachable.
+- [ ] Drag the pet flush against the top, left, right and bottom edges and into every corner of the primary monitor: the sprite itself reaches the physical edge (M9/D9 — only the sprite is clamped, not the whole window). Repeat on a secondary monitor with a different DPI scale if one is available.
+- [ ] With a card open (composer or a thread bubble), drag the pet to the top edge: the card flips to open **below** the pet instead of being pushed off-screen, without the pet jumping. Drag back down: it flips back above. Small drags right at the flip point don't flicker back and forth.
+- [ ] With a card open, drag the pet near the left and right edges: the card shifts sideways to stay fully on screen instead of being clipped.
 
 ## G3.6 — 60-minute soak; idle CPU and memory
 
