@@ -240,6 +240,40 @@ body[data-window="pet"] {
   color: var(--ink-3);
 }
 
+/* Not a button itself, so no lift on hover. */
+.update-card:hover,
+.update-card:active {
+  transform: none;
+  border-color: var(--line);
+}
+
+.update-card-main {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  padding: 10px 12px 0;
+}
+
+.update-card-main > .status {
+  margin-top: 1px;
+}
+
+.update-card .status-update {
+  color: var(--accent-ink);
+}
+
+.update-card-error {
+  margin: 8px 10px 0;
+}
+
+.update-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
 .more-pill {
   flex: none;
   height: 24px;

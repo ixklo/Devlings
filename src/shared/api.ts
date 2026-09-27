@@ -13,6 +13,7 @@ import type {
   PetOpen,
   SettingsView,
   Snapshot,
+  UpdateStatus,
 } from "./types";
 
 type Unlisten = () => void;
@@ -96,6 +97,13 @@ export const api = {
   openSettings: (view: SettingsView) => call<void>("open_settings", { view }),
   closeSettings: () => call<void>("close_settings"),
   openPetsFolder: () => call<void>("open_pets_folder"),
+
+  // New in v1.0.
+  checkForUpdate: () => call<UpdateStatus>("check_for_update"),
+  installUpdate: () => call<void>("install_update"),
+  setAutoUpdate: (enabled: boolean) => call<Snapshot>("set_auto_update", { enabled }),
+  getDiagnostics: () => call<string>("get_diagnostics"),
+  openLogFolder: () => call<void>("open_log_folder"),
 
   // Events.
   onSnapshot: (cb: (s: Snapshot) => void) => transport.listen<Snapshot>("snapshot", cb),

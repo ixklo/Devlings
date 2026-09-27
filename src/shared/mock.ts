@@ -5,6 +5,7 @@
 //
 // Preview switches (query string): open=compose|thread, setup=1,
 // collapsed=1, empty=1, onboarding=1, credits=seen, scale=0.45|0.6|0.8,
+// update=ready|downloading|error|disabled|none (none: checks find nothing),
 // debug=hits (outlines the click-through regions).
 
 import { placeholderAtlas } from "../sprite/placeholderAtlas";
@@ -23,6 +24,7 @@ import type {
   SetupStatus,
   Snapshot,
   ThreadInfo,
+  UpdateStatus,
 } from "./types";
 
 type Listener = (payload: unknown) => void;
@@ -132,6 +134,28 @@ function brokenSetup(): SetupStatus {
 }
 
 const PRIORITY: PetState[] = ["needs_input", "blocked", "ready", "running"];
+const NEXT_VERSION = "1.0.1";
+
+function initialUpdate(): UpdateStatus {
+  switch (params.get("update")) {
+    case "ready":
+      return { state: "ready", version: NEXT_VERSION, notes: "Bug fixes." };
+    case "downloading":
+      return { state: "downloading", version: NEXT_VERSION, progress: 42 };
+    case "error":
+      return { state: "error", error: "Couldn't check for updates." };
+    case "disabled":
+      return { state: "disabled", error: "Updates are off in development builds." };
+    default:
+      return { state: "idle" };
+  }
+}
+
+const DIAGNOSTICS = `Perch 0.2.0 (browser preview)
+OS: Windows 11 (x86_64)
+Claude Code: 2.1.282 at ~/.local/bin/claude.exe
+Hooks: installed on port 49152
+Auto-update: on`;
 
 class MockBackend {
   listeners = new Map<string, Set<Listener>>();
@@ -149,6 +173,8 @@ class MockBackend {
     petId: "perch",
     petScale: Number(params.get("scale")) || 0.6,
     threadsCollapsed: !!params.get("collapsed"),
+    autoUpdate: true,
+    lastUpdateCheck: null,
   };
   projects: ProjectEntry[] = [
     project("perch", 0, "edit_files", true),
@@ -160,6 +186,7 @@ class MockBackend {
   threads: ThreadInfo[] = initialThreads();
   running: string[] = params.get("empty") ? [] : [`${ROOT}perch`];
   setup: SetupStatus = params.get("setup") ? brokenSetup() : healthySetup();
+  update: UpdateStatus = initialUpdate();
   timers: number[] = [];
 
   constructor() {
@@ -188,6 +215,7 @@ class MockBackend {
       projects: this.projects.map((p) => ({ ...p })),
       running: [...this.running],
       setup: { ...this.setup },
+      update: { ...this.update },
     };
   }
 
@@ -242,6 +270,38 @@ class MockBackend {
       });
       this.publish();
     });
+  }
+
+  setUpdate(update: UpdateStatus) {
+    this.update = update;
+    this.publish();
+  }
+
+  /** Like the backend: the command resolves after the check; the download carries on in the background. */
+  checkForUpdate(): Promise<UpdateStatus> | UpdateStatus {
+    if (["checking", "available", "downloading", "ready", "disabled"].includes(this.update.state)) return { ...this.update };
+    this.config.lastUpdateCheck = Date.now();
+    this.setUpdate({ state: "checking" });
+    return new Promise((resolve) =>
+      window.setTimeout(() => {
+        if (params.get("update") === "none") {
+          this.setUpdate({ state: "idle" });
+          return resolve({ ...this.update });
+        }
+        this.setUpdate({ state: "available", version: NEXT_VERSION, notes: "Bug fixes." });
+        resolve({ ...this.update });
+        let progress = 0;
+        const tick = window.setInterval(() => {
+          progress += 10;
+          if (progress > 100) {
+            window.clearInterval(tick);
+            this.setUpdate({ state: "ready", version: NEXT_VERSION, notes: "Bug fixes." });
+            return;
+          }
+          this.setUpdate({ state: "downloading", version: NEXT_VERSION, notes: "Bug fixes.", progress });
+        }, 200);
+      }, 900),
+    );
   }
 
   invoke(cmd: string, a: Record<string, unknown> = {}): unknown {
@@ -390,6 +450,22 @@ class MockBackend {
         return null;
       case "open_pets_folder":
         console.info("[preview] open_pets_folder");
+        return null;
+      case "check_for_update":
+        return this.checkForUpdate();
+      case "install_update":
+        if (this.update.state !== "ready") throw "No update is ready to install yet.";
+        if (this.running.length) throw "Finish or stop the running ask first.";
+        console.info(`[preview] install_update: installing ${this.update.version} and restarting`);
+        this.setUpdate({ state: "idle" });
+        return null;
+      case "set_auto_update":
+        c.autoUpdate = !!a.enabled;
+        return this.publish();
+      case "get_diagnostics":
+        return DIAGNOSTICS;
+      case "open_log_folder":
+        console.info("[preview] open_log_folder");
         return null;
       default:
         throw `Unknown command: ${cmd}`;

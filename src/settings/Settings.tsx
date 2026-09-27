@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import { api } from "../shared/api";
-import { IconExternal, IconFolder, IconGithub, IconRefresh, IconTerminal } from "../shared/icons";
+import { IconExternal, IconRefresh, IconTerminal } from "../shared/icons";
 import type { Snapshot } from "../shared/types";
 import { idleClip, SpriteView, usePetSprite, useReducedMotion } from "../sprite/SpriteView";
+import { About } from "./About";
 import { Section, Segmented, SwitchRow } from "./controls";
 import { NameField } from "./NameField";
 import { PetPicker } from "./PetPicker";
@@ -10,7 +10,6 @@ import { SetupChecks } from "./SetupChecks";
 import { useAction } from "./useAction";
 import { NoticeBar } from "./NoticeBar";
 
-export const REPO_URL = "https://github.com/yeetstick/perch";
 const USAGE_URL = "https://claude.ai/settings/usage";
 
 type Size = "s" | "m" | "l";
@@ -28,12 +27,6 @@ export function Settings({ snap }: { snap: Snapshot }) {
   const action = useAction();
   const reduced = useReducedMotion();
   const avatar = usePetSprite(config.petId);
-  const [version, setVersion] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.appVersion().then(setVersion, () => setVersion(null));
-  }, []);
-
   const chooseBinary = async () => {
     const file = await api.chooseFile();
     if (file) await action.run(() => api.setClaudePath(file), "Using that Claude Code file.");
@@ -186,34 +179,7 @@ export function Settings({ snap }: { snap: Snapshot }) {
         </div>
       </Section>
 
-      <Section title="About">
-        <div className="row">
-          <div className="row-text">
-            <span className="row-label">Perch {version ? `v${version}` : ""}</span>
-            <p className="row-desc">Free and open source. Not affiliated with Anthropic.</p>
-          </div>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void api.openUrl(REPO_URL)}>
-            <IconGithub size={13} />
-            GitHub
-          </button>
-        </div>
-        <div className="row">
-          <div className="row-text">
-            <span className="row-label">More pets</span>
-            <p className="row-desc">
-              Pet format compatible with Codex pets; drop pets into <code>~/.codex/pets</code> or Perch's pets folder.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => void action.run(api.openPetsFolder)}
-          >
-            <IconFolder size={13} />
-            Open folder
-          </button>
-        </div>
-      </Section>
+      <About snap={snap} action={action} />
 
       <NoticeBar notice={action.notice} onDismiss={action.dismiss} />
     </div>
