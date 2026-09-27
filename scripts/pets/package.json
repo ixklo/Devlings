@@ -1,8 +1,8 @@
 {
-  "name": "perch-pet-art",
+  "name": "devlings-pet-art",
   "private": true,
   "version": "0.2.0",
-  "description": "Generator and validator for Perch's bundled pixel-art pets (Codex pet atlas format).",
+  "description": "Generator and validator for Devlings' bundled pixel-art pets (Codex pet atlas format).",
   "type": "module",
   "license": "MIT",
   "scripts": {

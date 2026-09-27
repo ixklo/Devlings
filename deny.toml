@@ -1,4 +1,4 @@
-# cargo-deny configuration for Perch's Rust dependency graph (the app that
+# cargo-deny configuration for Devlings' Rust dependency graph (the app that
 # ships in the installers, not this repo's dev tooling).
 #
 # Run locally:   cargo deny --manifest-path src-tauri/Cargo.toml check
@@ -31,7 +31,7 @@ ignore = [
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: unmaintained, compile-time-only proc macro pulled in by the Linux GTK bindings (glib-macros/gtk3-macros); not present in the shipped binary" },
 ]
 
-# Perch ships under MIT, so every dependency's license has to be compatible
+# Devlings ships under MIT, so every dependency's license has to be compatible
 # with MIT distribution. This is the exact allow-list from the release brief.
 [licenses]
 allow = [

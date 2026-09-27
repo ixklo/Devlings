@@ -1,6 +1,6 @@
 name: Linux build dependencies
 description: >
-  Installs the apt packages Perch's Tauri build needs on Ubuntu (used by
+  Installs the apt packages Devlings' Tauri build needs on Ubuntu (used by
   ci.yml's test and smoke jobs and by release.yml's build job, so the list
   only lives in one place).
 inputs:

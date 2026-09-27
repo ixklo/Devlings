@@ -5,7 +5,7 @@ filled-in copy of this file) and delete anything in [brackets], including
 this comment.
 -->
 
-# Perch [vX.Y.Z]
+# Devlings [vX.Y.Z]
 
 [One or two sentences: what this release is for.]
 
@@ -16,26 +16,32 @@ this comment.
 
 ## Upgrading
 
-[If nothing special is needed: "Updating from the previous version keeps your pet name, hooks and projects — Perch installs this in place." If a manual step is required, e.g. upgrading from a 0.x release: say exactly what to do.]
+[If nothing special is needed: "Updating from the previous version keeps your pet name, hooks and projects — Devlings installs this in place." If a manual step is required, e.g. upgrading from a 0.x release: say exactly what to do.]
 
-Perch checks GitHub for updates at launch and once a day, and installs signed updates in-app; this can be turned off in Settings → About.
+[For 1.1, the first release named Devlings: "Perch is now Devlings. Your pet, its name, projects, settings and hooks carry over. On Windows, installing Devlings (or Perch's in-app update) closes and removes Perch for you. On macOS, delete Perch from Applications after installing; on Linux, run `sudo apt remove perch` or delete the Perch AppImage. If Perch started at login there, also delete `~/Library/LaunchAgents/Perch.plist` (macOS) or `~/.config/autostart/Perch.desktop` (Linux)."]
+
+Devlings checks GitHub for updates at launch and once a day, and installs signed updates in-app; this can be turned off in Settings → About.
 
 ## Downloads
 
 | System | File |
 |---|---|
-| Windows 10/11 | `Perch_[X.Y.Z]_x64-setup.exe` |
-| macOS (Apple Silicon and Intel) | `Perch_[X.Y.Z]_universal.dmg` |
-| Linux (AppImage) | `Perch_[X.Y.Z]_amd64.AppImage` |
-| Linux (.deb) | `Perch_[X.Y.Z]_amd64.deb` |
+| Windows 10/11 | `Devlings_[X.Y.Z]_x64-setup.exe` |
+| macOS (Apple Silicon and Intel) | `Devlings_[X.Y.Z]_universal.dmg` |
+| Linux (AppImage) | `Devlings_[X.Y.Z]_amd64.AppImage` |
+| Linux (.deb) | `Devlings_[X.Y.Z]_amd64.deb` |
 
 ## Checksums and provenance
 
 Each file's SHA-256 is in `SHA256SUMS.txt`, attached to this release. Every asset also has a GitHub build-provenance attestation, generated in CI from this exact source at this tag:
 
 ```
-gh attestation verify <downloaded-file> --repo yeetstick/perch
+gh attestation verify <downloaded-file> --repo ixklo/devlings
 ```
+
+Files from v1.0.0 and earlier verify with `--repo yeetstick/perch`, the project's earlier address.
+
+[Attestations exist only for releases built while the repository is public (release.yml skips them for a private repository). For a release built while it was private, delete this whole section except the `SHA256SUMS.txt` sentence.]
 
 ## Known limits
 

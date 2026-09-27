@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sets Perch's version everywhere it's recorded: package.json, package-lock.json,
+// Sets Devlings' version everywhere it's recorded: package.json, package-lock.json,
 // src-tauri/Cargo.toml, src-tauri/Cargo.lock (the `perch` entry) and
 // src-tauri/tauri.conf.json. Run `npm run version:check` after to confirm.
 //
