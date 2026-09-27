@@ -51,7 +51,9 @@ allow = [
 ]
 confidence-threshold = 0.8
 exceptions = [
-    # { allow = ["Zlib"], crate = "some-crate" },
+    # Mozilla's root certificate list (data), pulled in by the updater's HTTPS client. CDLA-Permissive-2.0
+    # permits redistribution and places no obligations on our code; scoped to this one crate.
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
 ]
 
 [licenses.private]

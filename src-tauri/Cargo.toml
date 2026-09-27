@@ -20,6 +20,10 @@ tauri-plugin-notification = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+# In-app updates (M1). Driven from Rust; the webview gets no updater permissions.
+tauri-plugin-updater = "2"
+log = "0.4"
+semver = "1"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

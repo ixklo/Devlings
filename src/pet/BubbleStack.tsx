@@ -3,6 +3,7 @@ import { IconAlert, IconChevronRight } from "../shared/icons";
 import { MAX_BUBBLES, stackBubbles } from "../shared/threads";
 import type { ThreadInfo } from "../shared/types";
 import { ThreadCard } from "./ThreadCard";
+import { UpdateCard } from "./UpdateCard";
 
 interface SetupProps {
   detail: string;
@@ -61,13 +62,15 @@ interface Props {
   onToggleExpanded: () => void;
   onOpenThread: (thread: ThreadInfo) => void;
   setup?: { detail: string; onOpen: () => void } | null;
+  /** A downloaded update waiting for a restart; shown above the threads. */
+  update?: { version: string; onRestart: () => Promise<void>; onLater: () => void } | null;
 }
 
 /**
  * Thread cards above the pet. The first card in priority order sits nearest
  * the pet and carries the tail; beyond three, a "+N more" pill expands the stack.
  */
-export function BubbleStack({ threads, now, expanded, onToggleExpanded, onOpenThread, setup }: Props) {
+export function BubbleStack({ threads, now, expanded, onToggleExpanded, onOpenThread, setup, update }: Props) {
   const { shown, more } = stackBubbles(threads, expanded);
   const collapsible = expanded && threads.length > MAX_BUBBLES;
   return (
@@ -87,6 +90,16 @@ export function BubbleStack({ threads, now, expanded, onToggleExpanded, onOpenTh
         <button type="button" className="more-pill" data-hit="" onClick={onToggleExpanded} aria-expanded={true}>
           Show less
         </button>
+      )}
+      {update && (
+        <BubbleSlot key={`update-${update.version}`} index={shown.length}>
+          <UpdateCard
+            version={update.version}
+            tail={!setup && shown.length === 0}
+            onRestart={update.onRestart}
+            onLater={update.onLater}
+          />
+        </BubbleSlot>
       )}
     </div>
   );

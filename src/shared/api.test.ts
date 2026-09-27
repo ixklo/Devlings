@@ -40,6 +40,22 @@ describe("api contract", () => {
     ]);
   });
 
+  it("sends the v1.0 update and diagnostics commands", async () => {
+    const { calls } = fakeTransport();
+    await api.checkForUpdate();
+    await api.installUpdate();
+    await api.setAutoUpdate(false);
+    await api.getDiagnostics();
+    await api.openLogFolder();
+    expect(calls).toEqual([
+      ["check_for_update", undefined],
+      ["install_update", undefined],
+      ["set_auto_update", { enabled: false }],
+      ["get_diagnostics", undefined],
+      ["open_log_folder", undefined],
+    ]);
+  });
+
   it("keeps the v0.1 commands unchanged", async () => {
     const { calls } = fakeTransport();
     await api.ask("p", "hi");
