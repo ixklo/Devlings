@@ -12,7 +12,7 @@ Perch sits above your other windows. It shows what every Claude Code session is 
 - **Ask.** Click the pet or the pencil, pick a project folder and type. Perch runs your own Claude Code in that folder and streams the answer into a small chat above the pet. Follow-ups continue the same conversation.
 - **Answer permission prompts.** When Claude Code asks to run a command or edit a file, Allow or Deny it from a card above the pet (see [Permission prompts](#permission-prompts)).
 - **It reacts.** The pet types while Claude works, holds up a "?" when it needs you, inspects the result when it's ready, and gets a little storm cloud when something fails. Drag it and it runs; hover and it waves.
-- **Pick a pet.** Three pets are built in, and you can name yours. Perch also reads pets in the Codex pet format (see below).
+- **Pick a pet.** Nine pets are built in, and you can name yours. Perch also reads pets in the Codex pet format (see below).
 - **Stays out of the way.** Everything around the pet is click-through, so the window never blocks what's behind it.
 
 <p align="center"><img src="docs/screenshots/states.png" width="640" alt="The pet's moods, left to right: idle, working at a laptop, asking a question, inspecting with a magnifying glass, sad under a storm cloud"></p>
@@ -84,14 +84,28 @@ When Claude Code wants to run a command, edit a file or fetch a page and needs y
 
 ## Pets
 
-<p align="center"><img src="docs/screenshots/pets.png" width="420" alt="The three built-in pets: teal Perch, orange Ember and purple Plum"></p>
+<p align="center"><img src="docs/pets/lineup.png" width="100%" alt="The nine built-in pets side by side: the songbirds Perch (teal), Ember (orange) and Plum (purple), Pip the russet fox, Miso the charcoal cat, Nori the pink axolotl, Bean the brown capybara with an orange on its head, Bolt the steel robot with a blue visor, and Wisp the white ghost"></p>
+
+Nine pets are built in:
+
+| Pet | What it is |
+|---|---|
+| **Perch**, **Ember**, **Plum** | Round songbirds on a branch, in teal, orange and purple. Perch is the default. |
+| **Pip** | A russet fox with a white chest and tail tip. Its tail swishes while it works. |
+| **Miso** | A charcoal cat with amber eyes. Smug when it reviews, and it finishes with a big stretch. |
+| **Nori** | A pink axolotl. Its gill frills flutter while it waits for you. |
+| **Bean** | A round, calm capybara. It balances a tiny orange on its head while idle. |
+| **Bolt** | A light steel robot with a blue visor. Its antenna light blinks while it works. |
+| **Wisp** | A soft white ghost. It floats, and fades a little when things are quiet. |
+
+Pick one in onboarding, in **Settings → Pet**, or from the right-click menu (**Change pet**). If you've renamed your pet, the name stays when you switch; otherwise the new pet brings its own name.
 
 Perch uses the same sprite format as Codex pets: a 1536×1872 PNG or WebP atlas with 8 columns and 9 rows of 192×208 cells, plus a `pet.json`. Perch loads pets from:
 
 - its own pets folder (**Settings → About → Open folder**, next to "More pets")
 - `~/.codex/pets` (or `$CODEX_HOME/pets`), so pets you already have in Codex show up in Perch too
 
-Each pet is a folder with `pet.json` (`id`, `displayName`, `description`, `spritesheetPath`) and the sprite sheet. The built-in pets are generated from pixel maps in [`scripts/pets`](scripts/pets).
+Each pet is a folder with `pet.json` (`id`, `displayName`, `description`, `spritesheetPath`) and the sprite sheet. The built-in pets are generated from pixel maps in [`scripts/pets`](scripts/pets) (contact sheets for every pet are in [`docs/pets`](docs/pets)).
 
 ### Making your own pet
 
@@ -178,6 +192,6 @@ npm run build && cargo test --manifest-path src-tauri/Cargo.toml   # Rust tests
 
 Opening `npm run dev` in a normal browser shows the pet (`/?window=pet`) and settings (`/?window=settings`) with mock data.
 
-To rebuild the built-in pets: `cd scripts/pets && npm install && node build.mjs && node validate.mjs`.
+To rebuild the built-in pets: `cd scripts/pets && npm install && node build.mjs && node validate.mjs`; `npm test` there checks the generated files are current and the birds haven't changed.
 
 Design docs: [v0.1](docs/specs/2026-09-25-perch-design.md), [v0.2 redesign](docs/specs/2026-09-26-perch-v0.2-design.md), [v1.0](docs/specs/2026-09-26-perch-v1.0-design.md). Release gates: [docs/release/v1.0.0.md](docs/release/v1.0.0.md).

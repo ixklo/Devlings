@@ -7,12 +7,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PET_IDS } from '../lib/contract.mjs';
 import { PETS } from '../lib/pets.mjs';
-import { buildAtlas, encodePng, manifestOf } from '../lib/atlas.mjs';
+import { PNG } from 'pngjs';
+import { buildAtlas, manifestOf } from '../lib/atlas.mjs';
 import { validatePet, bundledPetDirs, checkBundledSet } from '../validate.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const petDir = (id) => path.join(ROOT, 'src-tauri', 'pets', id);
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+const sheet = (id) => fs.readFileSync(path.join(petDir(id), 'spritesheet.png'));
+
+/** The generated atlas has exactly the committed file's pixels (PNG bytes vary with zlib). */
+function assertSamePixels(id) {
+  const committed = PNG.sync.read(sheet(id));
+  const built = buildAtlas(id);
+  assert.equal(committed.width, built.width, id);
+  assert.equal(committed.height, built.height, id);
+  assert.ok(Buffer.from(committed.data).equals(Buffer.from(built.data)), `${id}: spritesheet.png is stale (run build.mjs)`);
+}
 
 // SHA-256 of the bird atlases as shipped in v1.0.0, before the generator
 // learned about species. The birds must never change by accident.
@@ -22,11 +33,11 @@ const BIRD_V1 = {
   plum: '7f46af5fcf560698112b723e25ba33e8c41a9377a4be24f4589931e71ae8d543',
 };
 
-test('the bird atlases are byte-identical to v1.0.0', () => {
+test('the bird atlases are byte-identical to v1.0.0, and the generator still draws them', () => {
   for (const [id, hash] of Object.entries(BIRD_V1)) {
     assert.equal(PETS[id].species, 'bird');
-    assert.equal(sha256(encodePng(buildAtlas(id))), hash, `generated ${id}`);
-    assert.equal(sha256(fs.readFileSync(path.join(petDir(id), 'spritesheet.png'))), hash, `committed ${id}`);
+    assert.equal(sha256(sheet(id)), hash, `committed ${id}`);
+    assertSamePixels(id);
   }
 });
 
@@ -41,8 +52,7 @@ test('nine bundled pets: the three birds and six new species', () => {
 
 test('the committed files are what the generator builds', () => {
   for (const id of PET_IDS) {
-    const committed = fs.readFileSync(path.join(petDir(id), 'spritesheet.png'));
-    assert.ok(committed.equals(encodePng(buildAtlas(id))), `${id}: spritesheet.png is stale (run build.mjs)`);
+    assertSamePixels(id);
     const manifest = JSON.parse(fs.readFileSync(path.join(petDir(id), 'pet.json'), 'utf8'));
     assert.deepEqual(manifest, manifestOf(id));
   }

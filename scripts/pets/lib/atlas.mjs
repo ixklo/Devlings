@@ -1,6 +1,5 @@
 // Builds a pet's atlas in memory: its species draws the frames, its palette
 // colours them. No files are written here (see build.mjs).
-import { PNG } from 'pngjs';
 import { ATLAS_W, ATLAS_H, CELL_W, CELL_H, newImage, paintLayer } from './engine.mjs';
 import { ATLAS_ROWS } from './contract.mjs';
 import { PETS } from './pets.mjs';
@@ -44,10 +43,6 @@ export function buildAtlas(id) {
   return img;
 }
 
-/** PNG bytes exactly as build.mjs writes them. */
-export function encodePng(img) {
-  return PNG.sync.write(img, { colorType: 6 });
-}
 
 /** The pet.json manifest of one pet. */
 export function manifestOf(id) {

@@ -166,7 +166,7 @@ export const PETS = {
   ghost: {
     species: 'ghost',
     displayName: 'Wisp',
-    description: 'A soft little ghost that floats beside your sessions and fades out when things are quiet.',
+    description: 'A soft little ghost that floats beside your sessions and fades a little when things are quiet.',
     colors: {
       o: '#8676bd',
       c: '#b8acdf',

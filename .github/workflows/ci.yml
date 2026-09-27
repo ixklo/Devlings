@@ -32,6 +32,9 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run version:check
+      - name: Pet generator (birds unchanged, bundled pets current and valid)
+        if: runner.os == 'Linux'
+        run: npm ci --prefix scripts/pets && npm test --prefix scripts/pets
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: cargo-deny
