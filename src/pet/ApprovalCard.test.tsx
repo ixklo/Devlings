@@ -247,6 +247,41 @@ describe("ApprovalCard arming", () => {
     expect(answers(calls)).toHaveLength(1);
   });
 
+  it("counts an assistive-technology press once armed (a click with no pointer press at all)", async () => {
+    // Screen readers and voice control activate buttons through accessibility actions: Chromium fires a click
+    // with detail 1 and no pointerdown. A real mouse click can't land on a button without pressing on it.
+    const { calls } = fakeTransport();
+    render(card());
+    const allow = screen.getByRole("button", { name: "Allow" });
+    fireEvent.click(allow, { detail: 1 });
+    await flush();
+    expect(answers(calls)).toEqual([]);
+    settle();
+    fireEvent.click(allow, { detail: 1 });
+    await flush();
+    expect(answers(calls)).toHaveLength(1);
+  });
+
+  it("still refuses a press that began before the card moved and re-armed", async () => {
+    const { calls, transport } = fakeTransport();
+    let moved: (() => void) | null = null;
+    transport.onMoved = vi.fn(async (cb: () => void) => {
+      moved = cb;
+      return () => {};
+    }) as never;
+    render(card());
+    await flush();
+    const allow = screen.getByRole("button", { name: "Allow" });
+    settle();
+    fireEvent.pointerDown(allow);
+    // The window moves while the button is held, then everything settles again before the release.
+    act(() => moved?.());
+    settle();
+    fireEvent.click(allow, { detail: 1 });
+    await flush();
+    expect(answers(calls)).toEqual([]);
+  });
+
   it("re-arms when the card moves", async () => {
     const { calls } = fakeTransport();
     render(card());
