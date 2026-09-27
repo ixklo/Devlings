@@ -105,6 +105,140 @@ pub fn display_name(project: &str) -> String {
     if name.is_empty() { "Claude Code".to_string() } else { name }
 }
 
+/// Flattens a Markdown snippet to one readable line, as the cards do (`plainLine` in src/shared/threads.ts): links
+/// keep their text, code spans keep their content as written, emphasis markers go only where they wrap words (so
+/// `snake_case` and `2*3*4` survive), and line markers (`#`, `>`, `-`, `1.`) go.
+pub fn plain_line(md: &str) -> String {
+    let mut inline = String::new();
+    for (i, part) in split_code_spans(md).into_iter().enumerate() {
+        if i % 2 == 1 {
+            inline.push_str(part.trim_matches('`'));
+        } else {
+            let mut prose = strip_links(part);
+            for marker in ["**", "__", "~~", "*", "_"] {
+                prose = strip_emphasis(&prose, marker);
+            }
+            inline.push_str(&prose);
+        }
+    }
+    inline.lines().map(strip_line_marker).map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+/// Alternating prose and code spans (a run of backticks up to the next run of the same length), prose first.
+fn split_code_spans(s: &str) -> Vec<&str> {
+    let run_at = |i: usize| s[i..].bytes().take_while(|&b| b == b'`').count();
+    let mut parts = Vec::new();
+    let (mut start, mut i) = (0, 0);
+    while let Some(off) = s[i..].find('`') {
+        let open = i + off;
+        let n = run_at(open);
+        let mut j = open + n;
+        let mut close = None;
+        while let Some(off) = s[j..].find('`') {
+            let at = j + off;
+            let m = run_at(at);
+            if m == n {
+                close = Some(at + m);
+                break;
+            }
+            j = at + m;
+        }
+        match close {
+            Some(end) => {
+                parts.push(&s[start..open]);
+                parts.push(&s[open..end]);
+                start = end;
+                i = end;
+            }
+            None => i = open + n,
+        }
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
+/// `[text](target)` becomes `text`.
+fn strip_links(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        let link = after.find(']').and_then(|close| {
+            let text = &after[..close];
+            let tail = after[close + 1..].strip_prefix('(')?;
+            let end = tail.find(')')?;
+            (!text.contains('[')).then(|| (text, &tail[end + 1..]))
+        });
+        match link {
+            Some((text, tail)) => {
+                out.push_str(&rest[..open]);
+                out.push_str(text);
+                rest = tail;
+            }
+            None => {
+                out.push_str(&rest[..=open]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Removes `marker` pairs that wrap text: the opening one isn't preceded by a word character and is followed by a
+/// non-space, the closing one follows a non-space and isn't followed by a word character.
+fn strip_emphasis(s: &str, marker: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mk: Vec<char> = marker.chars().collect();
+    let n = mk.len();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let at = |i: usize| chars.get(i..i + n) == Some(&mk[..]);
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let opens = at(i) && (i == 0 || !is_word(chars[i - 1])) && chars.get(i + n).is_some_and(|c| !c.is_whitespace());
+        if opens {
+            let close = (i + n + 1..chars.len()).find(|&j| {
+                at(j) && !chars[j - 1].is_whitespace() && chars.get(j + n).is_none_or(|&c| !is_word(c))
+            });
+            if let Some(j) = close {
+                out.extend(&chars[i + n..j]);
+                i = j + n;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// A heading, quote, bullet or numbered-list marker at the start of a line.
+fn strip_line_marker(line: &str) -> &str {
+    let l = line.trim_start();
+    let hashes = l.bytes().take_while(|&b| b == b'#').count();
+    if (1..=6).contains(&hashes) && l[hashes..].starts_with(char::is_whitespace) {
+        return &l[hashes..];
+    }
+    if let Some(rest) = l.strip_prefix('>') {
+        return rest;
+    }
+    if let Some(rest) = l.strip_prefix(['-', '*', '+']) {
+        if rest.starts_with(char::is_whitespace) {
+            return rest;
+        }
+    }
+    let digits = l.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0 {
+        if let Some(rest) = l[digits..].strip_prefix(['.', ')']) {
+            if rest.starts_with(char::is_whitespace) {
+                return rest;
+            }
+        }
+    }
+    l
+}
+
 /// One line of at most EXCERPT_CHARS characters, or None when there is no text.
 pub fn excerpt(text: &str) -> Option<String> {
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -335,6 +469,26 @@ mod tests {
         assert_eq!(long.chars().count(), EXCERPT_CHARS);
         assert!(long.ends_with('…'));
         assert_eq!(excerpt(&"y".repeat(EXCERPT_CHARS)).unwrap().chars().count(), EXCERPT_CHARS);
+    }
+
+    #[test]
+    fn plain_line_flattens_markdown_like_the_cards() {
+        // The same cases as src/shared/threads.test.ts.
+        assert_eq!(
+            plain_line("1. **Say what it holds:** `unpaidInvoices` beats\n## Heading\n- see [the docs](https://x.y)"),
+            "Say what it holds: unpaidInvoices beats Heading see the docs"
+        );
+        assert_eq!(plain_line("Renamed `get_user_id` to `fetch_user_id`."), "Renamed get_user_id to fetch_user_id.");
+        assert_eq!(plain_line("Fixed src/my_file_name.rs and 2*3*4 math"), "Fixed src/my_file_name.rs and 2*3*4 math");
+        assert_eq!(
+            plain_line("**Done.** Tests pass in `snake_case_module`, *all* of them"),
+            "Done. Tests pass in snake_case_module, all of them"
+        );
+        assert_eq!(plain_line("Kept `**kwargs` and `a_b_c` as they were"), "Kept **kwargs and a_b_c as they were");
+        assert_eq!(plain_line("a * b * c, _emphasis_ and ~~gone~~"), "a * b * c, emphasis and gone");
+        assert_eq!(plain_line("> quoted\n\n  * item\n+ other\n3) third"), "quoted item other third");
+        assert_eq!(plain_line("an `unclosed span and [half a link"), "an `unclosed span and [half a link");
+        assert_eq!(plain_line("  \n "), "");
     }
 
     #[test]
