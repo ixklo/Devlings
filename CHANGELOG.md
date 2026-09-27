@@ -34,10 +34,10 @@ The first stable release: Perch updates itself, answers Claude Code's permission
 ### Fixed
 
 - The pet can sit flush against every screen edge and corner: cards open below it when there isn't room above, shift sideways near a side edge, and are capped to the room on screen. A saved position from 0.2 lands on the same spot.
-- Cards at the default bottom-right spot are shifted on screen from the first launch, not only after the pet has been moved.
 - "Open in VS Code" also checks common install locations and the `vscode://` link, not just `code` on PATH.
 - Perch finds the Claude Code binary again on its own when the remembered path stops working (for example after the VS Code extension updates).
 - An unseen "done" or "blocked" card stays until you've seen it, even when its session ends right after finishing.
+- If start-at-login is on in Perch's settings but the entry went missing (for example after uninstalling and reinstalling), Perch puts it back.
 - The plan shown in Settings is labelled "as reported by Claude Code", since Claude Code's own cache can lag behind your plan.
 
 ### Security
