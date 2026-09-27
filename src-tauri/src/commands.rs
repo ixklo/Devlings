@@ -563,6 +563,12 @@ pub async fn open_log_folder(app: AppHandle) -> CmdResult<()> {
     shell::open_folder(&app, &dir)
 }
 
+/// The pet's current `.stage` layout, for a page that missed the startup `pet-placement` event.
+#[tauri::command]
+pub fn get_pet_placement(app: AppHandle) -> Option<crate::overlay::Placement> {
+    *lock(&app.state::<AppState>().placement)
+}
+
 #[tauri::command]
 pub fn save_pet_position(app: AppHandle, x: i32, y: i32) {
     let s = app.state::<AppState>();

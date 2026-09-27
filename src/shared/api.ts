@@ -81,6 +81,8 @@ export const api = {
   setNotifications: (enabled: boolean) => call<Snapshot>("set_notifications", { enabled }),
   setLaunchAtLogin: (enabled: boolean) => call<Snapshot>("set_launch_at_login", { enabled }),
   savePetPosition: (x: number, y: number) => call<void>("save_pet_position", { x, y }),
+  /** The current `.stage` layout; the startup `pet-placement` event is sent before the page listens. */
+  getPetPlacement: () => call<Placement | null>("get_pet_placement"),
   showPetMenu: () => call<void>("show_pet_menu"),
 
   // New in v0.2.

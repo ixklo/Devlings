@@ -146,8 +146,20 @@ export function PetApp() {
   }, []);
 
   // The backend flips/shifts `.stage` as the sprite's on-screen spot changes (design D9).
+  // Its first layout is sent at startup, before this page listens, so ask for the current one too; a live
+  // event that arrives first wins.
   useEffect(() => {
-    const unlisten = api.onPetPlacement(setPlacement);
+    let live = false;
+    const unlisten = api.onPetPlacement((p) => {
+      live = true;
+      setPlacement(p);
+    });
+    unlisten
+      .then(() => api.getPetPlacement())
+      .then((p) => {
+        if (p && !live) setPlacement(p);
+      })
+      .catch(() => {});
     return () => {
       unlisten.then((f) => f());
     };

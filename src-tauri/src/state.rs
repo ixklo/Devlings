@@ -69,6 +69,9 @@ pub struct AppState {
     /// Whether cards currently open below the sprite instead of above it (design D9). Runtime
     /// only, for the flip's hysteresis; not persisted, so a restart re-derives it from scratch.
     pub cards_below: AtomicBool,
+    /// The last `.stage` layout sent to the pet. The first one is sent at startup, before the pet's page
+    /// listens, so the page also asks for it once it's ready (`get_pet_placement`).
+    pub placement: Mutex<Option<crate::overlay::Placement>>,
     /// Design D17: whether Perch has hidden the pet window (tray, Ctrl+Alt+P, "Hide for 1 hour"),
     /// and whether the pet or settings window is minimized (from its resize events). Kept here so
     /// the cursor poll can pause without asking the main thread.
@@ -110,6 +113,7 @@ impl AppState {
             hit_regions: Mutex::new(None),
             pet_visibility_gen: AtomicU64::new(0),
             cards_below: AtomicBool::new(false),
+            placement: Mutex::new(None),
             pet_hidden: AtomicBool::new(false),
             pet_minimized: AtomicBool::new(false),
             settings_minimized: AtomicBool::new(false),
