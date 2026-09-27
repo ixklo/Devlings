@@ -270,12 +270,11 @@ pub fn start_hook_server(app: &AppHandle) {
     };
     let (Some(port), Some(token)) = (port, token) else { return };
     let handle = app.clone();
-    // Runs on a hook server worker thread. PermissionRequest bodies get no decision yet ("{}").
-    let on_body = move |body: Value| {
-        on_hook_body(&handle, body);
-        EMPTY_ANSWER.to_string()
-    };
-    match HookServer::start(port, token, on_body) {
+    // Already answered; runs on the hook server's single processing thread, in arrival order.
+    let on_event = move |body: Value| on_hook_body(&handle, body);
+    // Runs on the request's worker and its answer is the response. No decision yet: the approvals feature holds here.
+    let on_permission = |_body: Value| EMPTY_ANSWER.to_string();
+    match HookServer::start(port, token, on_event, on_permission) {
         Ok(server) => {
             let bound_port = server.port;
             log::info!("Hook server listening on 127.0.0.1:{bound_port}");

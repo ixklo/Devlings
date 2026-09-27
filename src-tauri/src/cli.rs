@@ -17,7 +17,8 @@ use std::{
 use crate::hooks_installer::{self, RELAY_FLAG};
 
 pub const UNINSTALL_FLAG: &str = "--uninstall-hooks";
-pub const MAX_RELAY_BODY: u64 = 1024 * 1024;
+/// Same cap as the hook server: a bigger body would be ignored there anyway.
+pub const MAX_RELAY_BODY: u64 = crate::hook_server::MAX_BODY_BYTES as u64;
 const RELAY_STEP_TIMEOUT: Duration = Duration::from_secs(1);
 /// The relay exits by this deadline even if stdin never closes.
 const RELAY_DEADLINE: Duration = Duration::from_secs(5);
@@ -159,7 +160,7 @@ pub fn run_headless() -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hook_server::{HookServer, EMPTY_ANSWER};
+    use crate::hook_server::{HookServer, MAX_BODY_BYTES};
     use serde_json::{json, Value};
     use std::{sync::mpsc, time::Instant};
 
@@ -185,6 +186,11 @@ mod tests {
     }
 
     #[test]
+    fn relay_and_server_share_the_body_cap() {
+        assert_eq!(MAX_RELAY_BODY, MAX_BODY_BYTES as u64);
+    }
+
+    #[test]
     fn builds_a_plain_http_post() {
         let req = String::from_utf8(relay_request(4545, "tok", br#"{"a":1}"#)).unwrap();
         assert_eq!(
@@ -196,12 +202,7 @@ mod tests {
     #[test]
     fn relays_a_body_to_the_hook_server() {
         let (tx, rx) = mpsc::channel();
-        let tx = std::sync::Mutex::new(tx);
-        let server = HookServer::start(0, TOKEN.into(), move |v| {
-            tx.lock().unwrap().send(v).unwrap();
-            EMPTY_ANSWER.to_string()
-        })
-        .unwrap();
+        let server = HookServer::start(0, TOKEN.into(), move |v| tx.send(v).unwrap(), |_| String::new()).unwrap();
         let body = json!({"hook_event_name": "Stop", "session_id": "s1", "last_assistant_message": "héllo"}).to_string();
         post_hook(server.port, TOKEN, body.as_bytes()).unwrap();
         let got: Value = rx.recv_timeout(Duration::from_secs(2)).unwrap();
