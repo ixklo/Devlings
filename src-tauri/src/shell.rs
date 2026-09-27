@@ -266,22 +266,24 @@ pub fn vscode_cli_candidates(
 }
 
 /// Builds a `vscode://file/<path>/` URL (step 3): forward slashes, a trailing slash so VS Code
-/// treats it as a folder, and percent-encoding for the characters that would otherwise break the
-/// URL (spaces, `#`, `%`, and anything non-ASCII). Everything else, including a drive letter's
-/// `:` or a UNC path's doubled leading slash, is passed through unescaped.
+/// treats it as a folder, and percent-encoding for everything that isn't an RFC 3986 unreserved
+/// character (`A-Za-z0-9-._~`) plus `/` and `:` (kept unescaped for path separators and a drive
+/// letter's colon). That's stricter than the minimum needed for a valid URL, deliberately: `?`
+/// starts a query string on any platform, and a folder named e.g. `a?b` would otherwise silently
+/// truncate the path to `a`.
 pub fn vscode_url(path: &Path) -> String {
     let normalized = path.to_string_lossy().replace('\\', "/");
     let with_leading_slash = if normalized.starts_with('/') { normalized } else { format!("/{normalized}") };
     let mut url = String::from("vscode://file");
     for ch in with_leading_slash.chars() {
-        if ch == ' ' || ch == '#' || ch == '%' || !ch.is_ascii() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '.' | '_' | '~' | '/' | ':') {
+            url.push(ch);
+        } else {
             let mut buf = [0u8; 4];
             for byte in ch.encode_utf8(&mut buf).as_bytes() {
                 url.push('%');
                 url.push_str(&format!("{byte:02X}"));
             }
-        } else {
-            url.push(ch);
         }
     }
     if !url.ends_with('/') {
@@ -449,6 +451,8 @@ mod tests {
         assert_eq!(vscode_url(Path::new("/already/there/")), "vscode://file/already/there/");
         // A literal percent must be escaped so it isn't read as the start of another escape.
         assert_eq!(vscode_url(Path::new("/proj/100%")), "vscode://file/proj/100%25/");
+        // A literal `?` must be escaped too, or it starts a query string and truncates the path.
+        assert_eq!(vscode_url(Path::new("/proj/a?b")), "vscode://file/proj/a%3Fb/");
     }
 
     #[test]
