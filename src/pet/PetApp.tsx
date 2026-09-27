@@ -232,6 +232,17 @@ export function PetApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Back after a while away: one wave, through the same path as a hover (so never during a drag or a jump, at most
+  // once per cooldown, and not at all with reduced motion).
+  useEffect(() => {
+    const unlisten = api.onPetWelcome(() => {
+      if (!reducedRef.current) dispatch({ type: "hover", now: performance.now() });
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   useEffect(() => {
     refreshHits();
   }, [view, expanded, hover, snap, src, laterUpdate, refreshHits]);

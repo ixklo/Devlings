@@ -12,6 +12,7 @@ mod normalize;
 mod notify;
 mod overlay;
 mod pets;
+mod presence;
 mod runner;
 mod shell;
 mod state;

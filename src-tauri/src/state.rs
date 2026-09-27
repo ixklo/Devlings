@@ -25,8 +25,9 @@ use crate::{
     money_guard::AuthVerdict,
     normalize::{self, StreamItem},
     notify,
-    overlay::HitRect,
+    overlay::{self, HitRect},
     pets::{self, Pet},
+    presence::{self, Presence},
     runner::{self, KillReason, StdinWriter},
     shell,
     store::{self, Config, ProjectEntry, Projects},
@@ -86,6 +87,8 @@ pub struct AppState {
     /// The system says it won't show Devlings' notifications (Windows: notifications off for all apps or for this
     /// one). Re-read at launch, on a setup recheck, when Settings opens and when notifications are switched on.
     pub system_notifications_off: AtomicBool,
+    /// Whether the user has been away from the computer, for the welcome-back wave (design v1.2).
+    pub presence: Mutex<Presence>,
 }
 
 impl AppState {
@@ -123,6 +126,7 @@ impl AppState {
             pet_geometry_gen: AtomicU64::new(0),
             usage: Mutex::new(None),
             system_notifications_off: AtomicBool::new(false),
+            presence: Mutex::new(Presence::default()),
         })
     }
 
@@ -582,6 +586,9 @@ fn tick(app: &AppHandle) {
     let changed = lock(&s.last_view).as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
+    }
+    if presence::idle_ms().is_some_and(|idle| lock(&s.presence).sample(idle)) {
+        let _ = app.emit_to(overlay::PET, "pet-welcome", ());
     }
 }
 
