@@ -24,6 +24,10 @@ pub struct Config {
     pub pet_id: String,
     pub pet_scale: f64,
     pub threads_collapsed: bool,
+    /// Check for updates at launch and daily (M1).
+    pub auto_update: bool,
+    /// Epoch ms of the last update check.
+    pub last_update_check: Option<i64>,
 }
 
 impl Config {
@@ -57,6 +61,8 @@ impl Default for Config {
             pet_id: DEFAULT_PET_ID.to_string(),
             pet_scale: DEFAULT_PET_SCALE,
             threads_collapsed: false,
+            auto_update: true,
+            last_update_check: None,
         }
     }
 }
@@ -218,6 +224,23 @@ mod tests {
         std::fs::write(&p, r#"{"petName":"Bo","petScale":3.0,"petId":" "}"#).unwrap();
         let c = load::<Config>(&p).normalized();
         assert_eq!((c.pet_scale, c.pet_id.as_str(), c.pet_name.as_str()), (1.0, "perch", "Bo"));
+    }
+
+    #[test]
+    fn update_config_keys_default_for_old_files() {
+        let c = Config::default();
+        assert_eq!((c.auto_update, c.last_update_check), (true, None));
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!((&v["autoUpdate"], &v["lastUpdateCheck"]), (&json!(true), &json!(null)));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("config.json");
+        // A v0.2 config file has neither key.
+        std::fs::write(&p, r#"{"petName":"Bo","petId":"ember","threadsCollapsed":true}"#).unwrap();
+        let c = load::<Config>(&p);
+        assert_eq!((c.auto_update, c.last_update_check, c.pet_name.as_str()), (true, None, "Bo"));
+        std::fs::write(&p, r#"{"autoUpdate":false,"lastUpdateCheck":1700000000000}"#).unwrap();
+        let c = load::<Config>(&p);
+        assert_eq!((c.auto_update, c.last_update_check), (false, Some(1_700_000_000_000)));
     }
 
     #[test]

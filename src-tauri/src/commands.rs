@@ -154,6 +154,7 @@ pub async fn ask(app: AppHandle, project: String, prompt: String) -> CmdResult<(
     if prompt.trim().is_empty() {
         return Err("Type something first.".into());
     }
+    crate::updater::ensure_not_installing(&app)?;
     if !s.config.lock().unwrap().credits_notice_seen {
         return Err("credits_notice".into());
     }
