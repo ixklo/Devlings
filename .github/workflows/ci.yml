@@ -40,6 +40,8 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: cargo-deny
+        # A container action, so Linux runners only; the dependency graph is checked for every target from there.
+        if: runner.os == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: src-tauri/Cargo.toml
