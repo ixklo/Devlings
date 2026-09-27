@@ -52,10 +52,14 @@ const urlByName = new Map(assets.map((a) => [a.name, a.url]));
 // Each entry maps a classifier over an artifact's base filename (the *.sig
 // file's name with ".sig" removed) to the updater platform key(s) it
 // satisfies. macOS ships one universal binary, so its single .app.tar.gz
-// covers both Apple Silicon and Intel.
+// covers both Apple Silicon and Intel. The updater looks for
+// "{os}-{arch}-{installer}" before "{os}-{arch}", so a .deb install needs its
+// own "linux-x86_64-deb" entry; without it, it would fall back to the
+// AppImage and refuse it as "not a valid deb package".
 const CLASSIFIERS = [
   { test: (name) => /\.(exe|msi)$/i.test(name), keys: ["windows-x86_64"] },
   { test: (name) => /\.app\.tar\.gz$/i.test(name), keys: ["darwin-x86_64", "darwin-aarch64"] },
+  { test: (name) => /\.deb$/i.test(name), keys: ["linux-x86_64-deb"] },
   { test: (name) => /appimage/i.test(name), keys: ["linux-x86_64"] },
 ];
 
@@ -84,7 +88,7 @@ if (unrecognized.length > 0) {
   fail(`couldn't classify these signature files by platform: ${unrecognized.join(", ")}`);
 }
 
-const REQUIRED_KEYS = ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64"];
+const REQUIRED_KEYS = ["windows-x86_64", "darwin-x86_64", "darwin-aarch64", "linux-x86_64", "linux-x86_64-deb"];
 const missing = REQUIRED_KEYS.filter((k) => !platforms[k]);
 if (missing.length > 0) {
   fail(`missing updater platform(s): ${missing.join(", ")} (found sig files: ${sigFiles.join(", ")})`);
