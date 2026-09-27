@@ -1,5 +1,5 @@
 /* Perch design tokens, shared by the pet overlay and the settings window.
-   Neutral, ChatGPT-desktop-like: white / #1f1f1f surfaces, hairline borders,
+   Neutral desktop look: white / #1f1f1f surfaces, hairline borders,
    soft shadows, one teal accent reserved for focus and selection. */
 
 :root {
