@@ -3,7 +3,6 @@ import { IconAlert, IconChevronRight } from "../shared/icons";
 import { stackCards } from "../shared/threads";
 import type { PendingApproval, ThreadInfo } from "../shared/types";
 import { ApprovalCard, ApprovalGhost, ApprovalsIntroCard } from "./ApprovalCard";
-import { CountPill, type HiddenCount } from "./CountPill";
 import { ThreadCard } from "./ThreadCard";
 import { UpdateCard } from "./UpdateCard";
 import { useApprovalGhosts, type ApprovalItem } from "./useApprovalGhosts";
@@ -77,8 +76,6 @@ interface Props {
   layoutKey?: unknown;
   /** The one-time "answer permission prompts" intro, shown at the top. */
   intro?: { petName: string } | null;
-  /** Collapsed cards: the pill that stands in for them, in their place. */
-  folded?: { hidden: HiddenCount; onShow: (hadFocus: boolean) => void } | null;
 }
 
 type Stacked = ApprovalItem & { sessionId: string };
@@ -88,8 +85,7 @@ const itemKey = (it: ApprovalItem) => `approval-${it.kind === "live" ? it.approv
 /**
  * Cards above the pet, nearest first: setup, permission requests, then threads
  * in priority order. The nearest card carries the tail; beyond three cards, a
- * "+N more" pill expands the stack. Collapsed, the requests and threads fold
- * into one count pill in their place.
+ * "+N more" pill expands the stack.
  */
 export function BubbleStack({
   threads,
@@ -104,7 +100,6 @@ export function BubbleStack({
   approvalsHidden = false,
   layoutKey,
   intro,
-  folded,
 }: Props) {
   const ghosts = useApprovalGhosts(approvals);
   // A placeholder keeps a gone request's place (and never hides a thread card).
@@ -120,11 +115,9 @@ export function BubbleStack({
       ? "approval"
       : shown.threads.length
         ? "thread"
-        : folded
-          ? "folded"
-          : update
-            ? "update"
-            : "intro";
+        : update
+          ? "update"
+          : "intro";
   return (
     <div className="bubbles" role="region" aria-label="Claude Code sessions">
       {setup && <SetupCard detail={setup.detail} onOpen={setup.onOpen} tail />}
@@ -159,11 +152,6 @@ export function BubbleStack({
         <button type="button" className="more-pill" data-hit="" onClick={onToggleExpanded} aria-expanded={true}>
           Show less
         </button>
-      )}
-      {folded && (
-        <BubbleSlot key="count-pill" index={shown.approvals.length + shown.threads.length}>
-          <CountPill hidden={folded.hidden} onShow={folded.onShow} />
-        </BubbleSlot>
       )}
       {update && (
         <BubbleSlot key={`update-${update.version}`} index={shown.approvals.length + shown.threads.length}>

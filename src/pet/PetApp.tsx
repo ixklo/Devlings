@@ -18,7 +18,7 @@ import { showApprovalsIntro } from "./ApprovalCard";
 import { BubbleStack } from "./BubbleStack";
 import { ComposerCard } from "./ComposerCard";
 import { ControlBar } from "./ControlBar";
-import { hiddenCount } from "./CountPill";
+import { hiddenCount } from "./hiddenCount";
 import { PetSprite } from "./PetSprite";
 import { activateThread } from "./ThreadCard";
 import { ThreadView } from "./ThreadView";
@@ -267,7 +267,9 @@ export function PetApp() {
   const { config } = snap;
   const collapsed = config.threadsCollapsed;
   const threads = snap.threads;
-  const barVisible = hover || view.kind !== "bubbles" || threads.length > 0;
+  // What collapsing hides, counted on the chevron; the bar stays up while anything is hidden.
+  const hidden = collapsed ? hiddenCount(threads, snap.approvals) : null;
+  const barVisible = hover || view.kind !== "bubbles" || threads.length > 0 || hidden !== null;
   const petState = petStateFor(snap);
   // Approval buttons re-arm whenever the stage moves as a whole.
   const layoutKey = `${placement.cardsBelow}|${placement.shiftX}|${placement.stageRoom}`;
@@ -283,14 +285,6 @@ export function PetApp() {
   };
 
   const openSetup = () => api.openSettings(config.onboarded ? "settings" : "onboarding").catch(() => {});
-  // The count pill: the same as the chevron's "Show threads". It leaves once the threads show, so a
-  // pill that held focus hands it to the pet first, as a closing card does.
-  const showThreads = (hadFocus: boolean) => {
-    if (hadFocus) mainRef.current?.querySelector<HTMLElement>(".pet")?.focus({ preventScroll: true });
-    setExpanded(false);
-    api.setThreadsCollapsed(false).catch(() => {});
-  };
-  const hidden = collapsed ? hiddenCount(threads, snap.approvals) : null;
   const updateVersion = visibleUpdate(snap.update, snap.running, laterUpdate);
 
   return (
@@ -346,7 +340,6 @@ export function PetApp() {
             holdMs={config.approvalHoldSecs * 1000}
             layoutKey={layoutKey}
             intro={!collapsed && showApprovalsIntro(snap) ? { petName: config.petName } : null}
-            folded={hidden ? { hidden, onShow: showThreads } : null}
           />
         )}
       </div>
@@ -379,6 +372,7 @@ export function PetApp() {
           notifications={config.notifications}
           systemNotificationsOff={snap.setup.systemNotificationsOff}
           collapsed={collapsed}
+          hidden={hidden}
           onCompose={toggleComposer}
           onToggleNotifications={() => api.setNotifications(!config.notifications).catch(() => {})}
           onToggleCollapsed={() => {

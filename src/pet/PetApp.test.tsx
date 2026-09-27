@@ -153,7 +153,7 @@ describe("PetApp notification clicks (v1.0 S1)", () => {
   });
 });
 
-describe("PetApp hidden-threads pill", () => {
+describe("PetApp hidden-threads count on the Show threads button", () => {
   const collapsedSnap = (over: Partial<Snapshot> = {}) =>
     makeSnapshot({ config: makeConfig({ threadsCollapsed: true }), ...over });
 
@@ -168,17 +168,22 @@ describe("PetApp hidden-threads pill", () => {
     return { ...fake, ...utils, pet };
   }
 
-  const pill = () => document.querySelector<HTMLButtonElement>(".count-pill");
+  const toolbar = () => screen.getByRole("toolbar", { name: "Pet controls" });
+  const controlBar = () => document.querySelector(".control-bar") as HTMLElement;
+  /** The bar's collapse button: "Show threads" or "Hide threads", with or without a count. */
+  const chevron = () => within(toolbar()).getByRole("button", { name: /^(Show|Hide) threads/ });
+  const bubbles = () => document.querySelector(".bubbles") as HTMLElement;
 
   it("never draws a badge on the pet, collapsed or not, in any tone", async () => {
-    const tones: ThreadInfo[][] = [
-      [makeThread({ status: "running" }), makeThread({ status: "ready" })],
-      [makeThread({ status: "needs_input" })],
-      [makeThread({ status: "blocked" })],
+    const cases: Partial<Snapshot>[] = [
+      { threads: [makeThread({ status: "running" }), makeThread({ status: "ready" })] },
+      { threads: [makeThread({ status: "needs_input" })] },
+      { threads: [makeThread({ status: "blocked" })] },
+      { approvals: [makeApproval()] },
     ];
-    for (const threads of tones) {
+    for (const over of cases) {
       for (const threadsCollapsed of [true, false]) {
-        const { pet, unmount } = await setupSnap(makeSnapshot({ threads, config: makeConfig({ threadsCollapsed }) }));
+        const { pet, unmount } = await setupSnap(makeSnapshot({ ...over, config: makeConfig({ threadsCollapsed }) }));
         expect(pet.children).toHaveLength(1);
         expect(pet.firstElementChild).toHaveClass("sprite");
         expect(pet).toHaveTextContent(/^$/);
@@ -188,121 +193,118 @@ describe("PetApp hidden-threads pill", () => {
     }
   });
 
-  it("folds two collapsed threads into a neutral pill in the cards' place", async () => {
+  it("shows two collapsed threads as a neutral 2 on the chevron, and nothing in the cards' place", async () => {
     const { pet } = await setupSnap(collapsedSnap({ threads: [makeThread(), makeThread({ status: "ready" })] }));
-    const button = screen.getByRole("button", { name: "2 threads hidden. Show threads." });
-    expect(button).toBe(pill());
-    expect(button).toHaveTextContent(/^2 threads$/);
-    expect(button).toHaveClass("is-neutral");
-    expect(button.closest(".stage .bubbles")).not.toBeNull();
+    const button = screen.getByRole("button", { name: "Show threads, 2 hidden" });
+    expect(button).toBe(chevron());
+    expect(button).toHaveTextContent(/^2$/);
+    expect(button).toHaveClass("has-count", "is-neutral");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button.closest(".dock .control-bar")).not.toBeNull();
     expect(pet.contains(button)).toBe(false);
     expect(document.querySelector(".thread-card")).toBeNull();
+    expect(document.querySelector(".count-pill")).toBeNull();
+    expect(bubbles().children).toHaveLength(0);
   });
 
-  it("turns amber and says how many need you when a thread needs input", async () => {
+  it("turns amber and shows how many need you when a thread needs input", async () => {
     await setupSnap(collapsedSnap({ threads: [makeThread({ status: "needs_input" }), makeThread({ status: "blocked" })] }));
-    expect(pill()).toHaveClass("is-wait");
-    expect(pill()).toHaveTextContent(/^1 needs you$/);
-    expect(pill()).toHaveAccessibleName("2 threads hidden, 1 needs you. Show threads.");
+    expect(chevron()).toHaveAccessibleName("Show threads, 2 hidden, 1 needs you");
+    expect(chevron()).toHaveAttribute("title", "Show threads, 2 hidden, 1 needs you");
+    expect(chevron()).toHaveTextContent(/^1$/);
+    expect(chevron()).toHaveClass("is-wait");
+  });
+
+  it("follows the snapshot as a hidden thread starts waiting", async () => {
+    const t = makeThread({ sessionId: "s", status: "running" });
+    const other = makeThread();
+    const { emit } = await setupSnap(collapsedSnap({ threads: [t, other] }));
+    expect(chevron()).toHaveClass("is-neutral");
+    act(() => emit("snapshot", collapsedSnap({ threads: [{ ...t, status: "needs_input" }, other] })));
+    expect(chevron()).toHaveAccessibleName("Show threads, 2 hidden, 1 needs you");
+    expect(chevron()).toHaveClass("is-wait");
   });
 
   it("counts a hidden permission request as needing you", async () => {
     await setupSnap(collapsedSnap({ threads: [makeThread({ status: "running" })], approvals: [makeApproval()] }));
-    expect(pill()).toHaveClass("is-wait");
-    expect(pill()).toHaveTextContent(/^1 needs you$/);
+    expect(chevron()).toHaveAccessibleName("Show threads, 1 hidden, 1 needs you");
+    expect(chevron()).toHaveTextContent(/^1$/);
+    expect(chevron()).toHaveClass("is-wait");
+    expect(screen.queryByRole("group", { name: /request in/ })).toBeNull();
+    expect(bubbles().children).toHaveLength(0);
+  });
+
+  it("keeps the bar and its count visible when collapsing hides only a permission request", async () => {
+    // Nothing hidden and no hover: the bar stays out of the way.
+    const empty = await setupSnap(collapsedSnap());
+    expect(controlBar()).not.toHaveClass("is-visible");
+    expect(controlBar()).not.toHaveAttribute("data-hit");
+    empty.unmount();
+    await setupSnap(collapsedSnap({ approvals: [makeApproval()] }));
+    expect(controlBar()).toHaveClass("is-visible");
+    expect(controlBar()).toHaveAttribute("data-hit", "bar");
+    expect(chevron()).toHaveAccessibleName("Show threads, 1 needs you");
+    expect(chevron()).toHaveTextContent(/^1$/);
+    expect(chevron()).toHaveClass("is-wait");
     expect(screen.queryByRole("group", { name: /request in/ })).toBeNull();
   });
 
   it("uses the error tone for a blocked thread when nothing needs input", async () => {
     await setupSnap(collapsedSnap({ threads: [makeThread({ status: "blocked" }), makeThread({ status: "ready" })] }));
-    expect(pill()).toHaveClass("is-err");
-    expect(pill()).toHaveTextContent(/^1 blocked$/);
+    expect(chevron()).toHaveAccessibleName("Show threads, 2 hidden, 1 blocked");
+    expect(chevron()).toHaveTextContent(/^1$/);
+    expect(chevron()).toHaveClass("is-err");
   });
 
-  it("shows no pill without threads, or while the cards are showing", async () => {
+  it("is the plain chevron with nothing hidden, or while the cards are showing", async () => {
     const empty = await setupSnap(collapsedSnap());
-    expect(pill()).toBeNull();
+    expect(chevron()).toHaveAccessibleName("Show threads");
+    expect(chevron()).toHaveAttribute("class", "icon-btn");
+    expect(chevron()).toHaveTextContent(/^$/);
     empty.unmount();
-    await setupSnap(makeSnapshot({ threads: [makeThread({ status: "needs_input" })] }));
-    expect(pill()).toBeNull();
+    await setupSnap(makeSnapshot({ threads: [makeThread({ status: "needs_input" })], approvals: [makeApproval()] }));
+    expect(chevron()).toHaveAccessibleName("Hide threads");
+    expect(chevron()).toHaveAttribute("class", "icon-btn");
+    expect(chevron()).toHaveTextContent(/^$/);
     expect(document.querySelector(".thread-card")).not.toBeNull();
   });
 
-  it("yields to the composer like the cards do, and comes back when it closes", async () => {
-    const { pet } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
-    expect(pill()).not.toBeNull();
-    pet.focus();
-    await userEvent.keyboard("{Enter}");
-    expect(await screen.findByRole("region", { name: "New message" })).toBeInTheDocument();
-    expect(pill()).toBeNull();
-    await userEvent.keyboard("{Escape}");
-    expect(pill()).not.toBeNull();
+  it("shows the threads on click", async () => {
+    const { calls } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
+    await userEvent.click(chevron());
+    expect(calls).toContainEqual(["set_threads_collapsed", { collapsed: false }]);
   });
 
-  it("sits nearest the pet in the flipped stack when the cards open below it", async () => {
-    const { container, emit } = await setupSnap(collapsedSnap({ threads: [makeThread(), makeThread()] }));
-    act(() => emit("pet-placement", { cardsBelow: true, shiftX: 24, stageRoom: 300 }));
-    expect(container.querySelector(".overlay")).toHaveAttribute("data-cards-below", "true");
-    const stage = container.querySelector(".stage") as HTMLElement;
-    // The stage (not the dock) is what flips below the pet and shifts sideways with it.
-    expect(stage.style.transform).toBe("translateX(24px)");
-    const bubbles = stage.querySelector(".bubbles") as HTMLElement;
-    expect(bubbles.firstElementChild?.contains(pill())).toBe(true);
-    expect(container.querySelector(".dock")?.contains(pill())).toBe(false);
-  });
-
-  it("keeps the setup card nearest the pet and in charge of the tail, and stays below the update card", async () => {
+  it("adds nothing to the stack when collapsed: the update card stays nearest the pet, with the tail", async () => {
+    const { unmount } = await setupSnap(collapsedSnap({ threads: [makeThread()], update: { state: "ready", version: "9.9.9" } }));
+    expect(bubbles().children).toHaveLength(1);
+    expect(bubbles().querySelector(".update-card")).not.toBeNull();
+    const tails = document.querySelectorAll(".has-tail");
+    expect(tails).toHaveLength(1);
+    expect(tails[0]).toHaveClass("update-card");
+    unmount();
     await setupSnap(
       collapsedSnap({
-        threads: [makeThread()],
+        threads: [makeThread({ status: "needs_input" })],
         setup: makeSetup({ needsSetup: true, hooksInstalled: false }),
         update: { state: "ready", version: "9.9.9" },
       }),
     );
-    const bubbles = document.querySelector(".bubbles") as HTMLElement;
-    const order = Array.from(bubbles.children).map((el) =>
-      el.matches(".setup-card") ? "setup" : el.querySelector(".count-pill") ? "pill" : el.querySelector(".update-card") ? "update" : "?",
+    const order = Array.from(bubbles().children).map((el) =>
+      el.matches(".setup-card") ? "setup" : el.querySelector(".update-card") ? "update" : "?",
     );
-    expect(order).toEqual(["setup", "pill", "update"]);
-    const tails = document.querySelectorAll(".has-tail");
-    expect(tails).toHaveLength(1);
-    expect(tails[0]).toHaveClass("setup-card");
+    expect(order).toEqual(["setup", "update"]);
+    expect(document.querySelector(".count-pill, .more-pill")).toBeNull();
   });
 
-  it("leaves the update card without the tail while the pill sits between it and the pet", async () => {
-    await setupSnap(collapsedSnap({ threads: [makeThread()], update: { state: "ready", version: "9.9.9" } }));
-    expect(document.querySelectorAll(".has-tail")).toHaveLength(0);
-  });
-
-  it("shows the threads on click, like the chevron", async () => {
-    const { calls } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
-    await userEvent.click(pill()!);
+  it("keeps the count while the composer is open, and Show threads goes back to the cards", async () => {
+    const { pet, calls } = await setupSnap(collapsedSnap({ threads: [makeThread({ status: "blocked" })] }));
+    pet.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(await screen.findByRole("region", { name: "New message" })).toBeInTheDocument();
+    expect(chevron()).toHaveAccessibleName("Show threads, 1 hidden, 1 blocked");
+    await userEvent.click(chevron());
+    expect(screen.queryByRole("region", { name: "New message" })).toBeNull();
     expect(calls).toContainEqual(["set_threads_collapsed", { collapsed: false }]);
-  });
-
-  it("shows the threads from the keyboard and hands focus to the pet as it goes", async () => {
-    for (const key of ["{Enter}", " "]) {
-      const { calls, pet, unmount } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
-      pill()!.focus();
-      await userEvent.keyboard(key);
-      expect(calls.filter(([c]) => c === "set_threads_collapsed")).toEqual([["set_threads_collapsed", { collapsed: false }]]);
-      expect(pet).toHaveFocus();
-      expect(screen.queryByRole("region", { name: "New message" })).toBeNull();
-      unmount();
-    }
-  });
-
-  it("is reported as a hit region, so a click lands in the click-through window", async () => {
-    const { calls } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
-    const button = pill()!;
-    expect(button).toHaveAttribute("data-hit", "");
-    button.getBoundingClientRect = () => ({ x: 130, y: 40, left: 130, top: 40, width: 90, height: 24, right: 220, bottom: 64, toJSON: () => ({}) }) as DOMRect;
-    // Nudge the collector (it also watches the DOM and layout).
-    act(() => window.dispatchEvent(new Event("resize")));
-    await vi.waitFor(() => {
-      const sent = calls.filter(([c]) => c === "set_hit_regions").map(([, a]) => (a as { regions: unknown[] }).regions);
-      expect(sent[sent.length - 1]).toContainEqual({ x: 130, y: 40, w: 90, h: 24 });
-    });
-    expect(within(document.querySelector(".bubbles") as HTMLElement).getByRole("button")).toBe(button);
   });
 });
