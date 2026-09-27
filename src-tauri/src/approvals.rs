@@ -119,7 +119,7 @@ impl Request {
         let input = body.get("tool_input").cloned().unwrap_or(Value::Null);
         Some(Self {
             session_id,
-            project: body.get("cwd").and_then(Value::as_str).unwrap_or("").to_string(),
+            project: crate::normalize::project_of(body),
             tool_name: text(body, "tool_name").unwrap_or_else(|| "Tool".into()),
             display_name: None,
             description: text(&input, "description"),

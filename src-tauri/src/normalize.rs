@@ -55,9 +55,53 @@ fn excerpt(s: &str, max: usize) -> String {
     s.chars().take(max).collect::<String>().trim().to_string()
 }
 
+/// The folder a Claude Code session belongs to: the one it started in. Hook bodies carry the current `cwd`, which
+/// moves when the session changes into a subfolder, while Claude Code keeps the transcript under
+/// `<config>/projects/<start folder with every character but ASCII letters and digits as '-'>/`. So the session's
+/// folder is `cwd` or the nearest folder above it whose encoded path names one of the transcript's folders, and
+/// `cwd` as given when none does.
+pub fn session_root(cwd: &str, transcript_path: &str) -> String {
+    let trimmed = cwd.trim_end_matches(['/', '\\']);
+    let mut dirs: Vec<&str> = transcript_path.split(['/', '\\']).filter(|d| !d.is_empty()).collect();
+    dirs.pop(); // the transcript file itself
+    if dirs.is_empty() {
+        return cwd.to_string();
+    }
+    let seps: Vec<usize> = cwd.char_indices().filter(|&(_, c)| c == '/' || c == '\\').map(|(i, _)| i).collect();
+    let mut candidates: Vec<&str> = Vec::new();
+    if !trimmed.is_empty() {
+        candidates.push(trimmed);
+    }
+    candidates.extend(seps.iter().rev().filter(|&&i| i > 0 && i < trimmed.len()).map(|&i| &cwd[..i]));
+    if let Some(&root) = seps.first() {
+        candidates.push(&cwd[..=root]); // `C:\` or `/`
+    }
+    let encode = |path: &str| -> String {
+        path.chars()
+            .flat_map(|c| {
+                let (ch, n) = if c.is_ascii_alphanumeric() { (c, 1) } else { ('-', c.len_utf16()) };
+                std::iter::repeat_n(ch, n)
+            })
+            .collect()
+    };
+    candidates
+        .into_iter()
+        .find(|c| {
+            let e = encode(c);
+            dirs.iter().any(|d| d.eq_ignore_ascii_case(&e))
+        })
+        .map_or_else(|| cwd.to_string(), str::to_string)
+}
+
+/// A hook body's session folder (see `session_root`).
+pub fn project_of(body: &Value) -> String {
+    let cwd = body.get("cwd").and_then(Value::as_str).unwrap_or("");
+    session_root(cwd, body.get("transcript_path").and_then(Value::as_str).unwrap_or(""))
+}
+
 pub fn from_hook(body: &Value, now: i64) -> Option<PetEvent> {
     let session_id = body.get("session_id")?.as_str()?.to_string();
-    let project = body.get("cwd").and_then(Value::as_str).unwrap_or("").to_string();
+    let project = project_of(body);
     let name = body.get("hook_event_name")?.as_str()?;
     let (kind, label, text) = match name {
         "SessionStart" => (Kind::Started, None, None),
@@ -98,7 +142,7 @@ pub fn from_hook(body: &Value, now: i64) -> Option<PetEvent> {
 /// a thread waiting on a permission prompt back to work. The caller applies it only to a waiting thread.
 pub fn from_hook_after_tool(body: &Value, now: i64) -> Option<PetEvent> {
     let session_id = body.get("session_id")?.as_str()?.to_string();
-    let project = body.get("cwd").and_then(Value::as_str).unwrap_or("").to_string();
+    let project = project_of(body);
     let tool = body.get("tool_name").and_then(Value::as_str).unwrap_or("Tool");
     let (kind, label) = match body.get("hook_event_name")?.as_str()? {
         "PostToolUse" | "PostToolUseFailure" => (Kind::Step, step_label(tool, body.get("tool_input").unwrap_or(&NULL))),
@@ -240,6 +284,42 @@ mod tests {
     use super::*;
     use crate::events::{Kind, PetEvent, Source};
     use serde_json::json;
+
+    #[test]
+    fn a_session_belongs_to_the_folder_it_started_in() {
+        let t = r"C:\Users\me\.claude\projects\C--Users-me-proj\abc.jsonl";
+        // Claude Code moved into subfolders; the transcript's folder names where the session started.
+        assert_eq!(session_root(r"C:\Users\me\proj\src-tauri\src", t), r"C:\Users\me\proj");
+        assert_eq!(session_root(r"C:\Users\me\proj", t), r"C:\Users\me\proj");
+        assert_eq!(session_root(r"C:\Users\me\proj\", t), r"C:\Users\me\proj");
+        assert_eq!(session_root(r"c:\Users\me\proj\src", t), r"c:\Users\me\proj");
+        // An agent's worktree inside the project belongs to the session's project too.
+        assert_eq!(session_root(r"C:\Users\me\proj\.claude\worktrees\agent-1", t), r"C:\Users\me\proj");
+        let home = r"C:\Users\me\.claude\projects\C--Users-me\abc.jsonl";
+        assert_eq!(session_root(r"C:\Users\me\work\app", home), r"C:\Users\me");
+        assert_eq!(session_root(r"C:\", r"C:\Users\me\.claude\projects\C--\abc.jsonl"), r"C:\");
+        assert_eq!(session_root("/home/me/my.app/web", "/home/me/.claude/projects/-home-me-my-app/s.jsonl"), "/home/me/my.app");
+        assert_eq!(session_root("/srv/x", "/home/me/.claude/projects/-/s.jsonl"), "/");
+        // Every character but ASCII letters and digits is one '-' per UTF-16 unit, as Claude Code writes it.
+        assert_eq!(session_root("C:\\Users\\zo\u{eb}\\app\\src", r"C:\c\C--Users-zo--app\s.jsonl"), "C:\\Users\\zo\u{eb}\\app");
+        assert_eq!(session_root("/home/\u{1f600}/a", "/c/-home----a/s.jsonl"), "/home/\u{1f600}/a");
+        // No match (moved outside the start folder, a shortened long name) or nothing to match: cwd as given.
+        assert_eq!(session_root(r"D:\other", t), r"D:\other");
+        assert_eq!(session_root(r"C:\Users\me\proj\src", ""), r"C:\Users\me\proj\src");
+        assert_eq!(session_root("", t), "");
+    }
+
+    #[test]
+    fn hook_events_use_the_session_folder() {
+        let body = json!({
+            "session_id": "s", "hook_event_name": "Stop", "cwd": r"C:\Users\me\proj\src",
+            "transcript_path": r"C:\Users\me\.claude\projects\C--Users-me-proj\s.jsonl"
+        });
+        assert_eq!(from_hook(&body, 1).unwrap().project, r"C:\Users\me\proj");
+        let mut after = body.clone();
+        after["hook_event_name"] = json!("PostToolUse");
+        assert_eq!(from_hook_after_tool(&after, 1).unwrap().project, r"C:\Users\me\proj");
+    }
 
     #[test]
     fn step_labels() {
