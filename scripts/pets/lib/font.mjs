@@ -42,13 +42,30 @@ const G = {
   '(': ['...#.', '..#..', '.#...', '.#...', '.#...', '..#..', '...#.', '.....'],
   ')': ['.#...', '..#..', '...#.', '...#.', '...#.', '..#..', '.#...', '.....'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+  '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....', '.....'],
+  '·': ['.....', '.....', '.....', '.##..', '.##..', '.....', '.....', '.....'],
 };
 
-/** Draw text into a pngjs image with integer pixel scale. */
-export function drawText(img, text, x, y, rgba, scale = 2) {
+// Capitals, drawn only when drawText is asked to keep case (the pet names in the README images).
+const CAPS = {
+  B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.', '.....'],
+  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####', '.....'],
+  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#', '.....'],
+  N: ['#...#', '##..#', '##..#', '#.#.#', '#..##', '#..##', '#...#', '.....'],
+  P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....', '.....'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '#.#.#', '.#.#.', '.....'],
+};
+
+/** Width in pixels of `text` drawn at `scale`, without the gap after the last letter. */
+export function textWidth(text, scale = 2) {
+  return text.length ? (text.length * 6 - 1) * scale : 0;
+}
+
+/** Draw text into a pngjs image with integer pixel scale. Lowercase unless `keepCase` (capitals as in CAPS). */
+export function drawText(img, text, x, y, rgba, scale = 2, keepCase = false) {
   let cx = x;
-  for (const ch of text.toLowerCase()) {
-    const g = G[ch] ?? G[' '];
+  for (const ch of keepCase ? text : text.toLowerCase()) {
+    const g = (keepCase && CAPS[ch]) || G[ch.toLowerCase()] || G[' '];
     for (let j = 0; j < 8; j++) {
       for (let i = 0; i < 5; i++) {
         if (g[j][i] !== '#') continue;

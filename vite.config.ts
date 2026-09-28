@@ -17,9 +17,10 @@ export default defineConfig({
   // Threads, not forks: forked workers time out starting up on a busy machine and the run reports "no tests".
   // `css.include`: the contrast test reads the colour tokens as text (`styles.css?raw`), and the control bar's test
   // reads its rules (`pet.css?raw` only, so the pet window's own import stays stubbed); other CSS stays stubbed.
-  // `include`: the app's tests only; the pet generator in scripts/pets has its own (`node --test`).
+  // `include`: the app's tests and the release/website checks in scripts/; the pet generator in scripts/pets has its
+  // own (`node --test`).
   test: {
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "scripts/*.test.mjs"],
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
     pool: "threads",

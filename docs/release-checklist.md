@@ -97,3 +97,9 @@ Work through the README's "Using it" table on a live pet with at least one activ
 - [ ] Every gate above is ✅ or explicitly ⚠️ waived with a reason recorded.
 - [ ] Anthropic's current Claude Code terms and usage docs re-checked for anything affecting tools that launch the local `claude` binary; update the README Cost section if needed (G5.5).
 - [ ] The v1.0.0 milestone has zero open bugs (G7.4).
+
+## Every release
+
+- [ ] The release carries the version-free installer copies the finalize job attaches (`Devlings-windows-x64-setup.exe`, `Devlings-linux-x86_64.AppImage`, `Devlings-linux-amd64.deb`, and `Devlings-macos-universal.dmg` when macOS is built), each listed in `SHA256SUMS.txt` with the same hash as its versioned original. The README's Download links (`https://github.com/ixklo/devlings/releases/latest/download/…`) download them once the release is published.
+- [ ] The first release with a macOS build: link `Devlings-macos-universal.dmg` in the README's Download table and on the website in place of "Coming with the next release", and drop the macOS exception (`BUILT`) in `scripts/site.test.mjs`, which checks the links.
+- [ ] If the UI or a pet's art changed in a way the README images show, `node capture-ui.mjs` and `node render-docs.mjs` in `scripts/pets` were re-run, and a changed `docs/social-preview.png` was uploaded again under **Settings → General → Social preview**.

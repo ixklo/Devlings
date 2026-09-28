@@ -31,9 +31,13 @@ Devlings checks GitHub for updates at launch and once a day, and installs signed
 | Linux (AppImage) | `Devlings_[X.Y.Z]_amd64.AppImage` |
 | Linux (.deb) | `Devlings_[X.Y.Z]_amd64.deb` |
 
+Each installer is also attached under a name without the version (`Devlings-windows-x64-setup.exe`, `Devlings-macos-universal.dmg`, `Devlings-linux-x86_64.AppImage`, `Devlings-linux-amd64.deb`), which is what the README's download links point at. They're byte-for-byte copies, with the same checksum.
+
+[While the repository is private there's no macOS build: delete its row above and its name from that list.]
+
 ## Checksums and provenance
 
-Each file's SHA-256 is in `SHA256SUMS.txt`, attached to this release. Every asset also has a GitHub build-provenance attestation, generated in CI from this exact source at this tag:
+Each file's SHA-256 is in `SHA256SUMS.txt`, attached to this release. Every asset also has a GitHub build-provenance attestation, generated in CI from this exact source at this tag. Attestations are tied to a file's digest, not its name, so a version-free copy verifies exactly like its original:
 
 ```
 gh attestation verify <downloaded-file> --repo ixklo/devlings

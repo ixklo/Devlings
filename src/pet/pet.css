@@ -29,8 +29,14 @@ body[data-window="pet"] {
      Falls back to no limit until the first placement arrives. Content that doesn't manage its own
      scrolling (e.g. `.bubbles`, `.messages`) already sizes itself off `.stage`'s height, so it
      shrinks or scrolls here instead of being cut off at the work area's edge. */
-  max-height: var(--stage-room, none);
+  max-height: calc(var(--stage-room, 100vh) + var(--shadow-room));
   overflow-y: auto;
+  /* Room below the nearest card for its shadow (--shadow-card, 0 8px 24px), which this scroll box would otherwise
+     cut into a hard edge above the pet. The negative margin keeps every card exactly where it was, and the extra
+     height sits over the dock, which paints on top, so the pet still gets its clicks. */
+  --shadow-room: 24px;
+  padding-bottom: var(--shadow-room);
+  margin-bottom: calc(-1 * var(--shadow-room));
 }
 
 /* ---- Design D9: cards flip below the sprite when there isn't room above it ----

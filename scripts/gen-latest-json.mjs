@@ -80,7 +80,10 @@ for (const sigFile of sigFiles) {
   if (!url) fail(`found ${sigFile} but no matching release asset named "${baseName}"`);
   const signature = readFileSync(path.join(assetsDir, sigFile), "utf8").trim();
   for (const key of classifier.keys) {
-    platforms[key] = { signature, url };
+    // Exactly one signed artifact per platform: a second one (say, a version-free copy from
+    // stable-assets.mjs that wrongly got a .sig) would make the choice silent.
+    if (platforms[key]) fail(`two signature files for ${key}: ${platforms[key].sigFile} and ${sigFile}`);
+    platforms[key] = { signature, url, sigFile };
   }
 }
 
@@ -100,7 +103,7 @@ const latest = {
   version,
   notes: `Devlings ${version}. See the GitHub release for details.`,
   pub_date: new Date().toISOString(),
-  platforms,
+  platforms: Object.fromEntries(Object.entries(platforms).map(([key, { signature, url }]) => [key, { signature, url }])),
 };
 
 writeFileSync(args.out, `${JSON.stringify(latest, null, 2)}\n`);
