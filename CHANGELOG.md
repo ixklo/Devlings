@@ -4,6 +4,10 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+### Added
+
+- Every release also carries the installers under names without the version (`Devlings-windows-x64-setup.exe`, `Devlings-linux-x86_64.AppImage`, `Devlings-linux-amd64.deb`, and `Devlings-macos-universal.dmg` once macOS is built), so the README's download links always get the latest version. A new README with an animated demo, and a guide to [making your own pet](docs/making-pets.md) with a template to draw on.
+
 ## [1.2.0] - 2026-09-27
 
 Calmer on the desktop, a hello when you come back, and the hidden-threads count moves onto the Show threads button.
