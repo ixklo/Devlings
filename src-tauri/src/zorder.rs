@@ -2,6 +2,8 @@
 //! goes full screen, so they don't cover it, and doesn't always lift them back afterwards: the pet window keeps its
 //! topmost flag but sits under ordinary windows, invisible. `overlay::rescue_pet_soon`'s periodic check asks
 //! `pet_demoted` and puts the window back on top, except while a full-screen app is in front of it.
+//! Only Windows reads the stacking order, so elsewhere the check's types and logic are used by the tests alone.
+#![cfg_attr(not(any(windows, test)), allow(dead_code))]
 
 /// Left, top, right, bottom in physical pixels.
 pub type Rect = (i32, i32, i32, i32);

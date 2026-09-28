@@ -454,6 +454,7 @@ pub fn rescue_pet_soon(app: &AppHandle, why: Rescue) {
     });
 }
 
+#[cfg(windows)]
 static LAST_RAISE_LOG_MS: AtomicI64 = AtomicI64::new(0);
 
 /// Puts a shown pet back on top when Windows left it under ordinary windows (`zorder::pet_demoted`), as it can after
