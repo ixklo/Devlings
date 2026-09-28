@@ -1,0 +1,44 @@
+name: Pages
+# Publishes the one-page site (site/) to https://ixklo.github.io/Devlings/ with the README's images.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/screenshots/**"
+      - "docs/pets/lineup.png"
+      - "docs/social-preview.png"
+      - "src-tauri/icons/128x128.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        # img/ holds what site/index.html links: docs/screenshots/*, the pet lineup and the social preview.
+        run: |
+          set -e
+          mkdir -p _site/img
+          cp site/* _site/
+          cp src-tauri/icons/128x128.png _site/favicon.png
+          cp docs/screenshots/* _site/img/
+          cp docs/pets/lineup.png docs/social-preview.png _site/img/
+          ls -R _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
