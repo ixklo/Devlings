@@ -69,7 +69,7 @@ describe("website", () => {
     );
 
   it("only uses images from docs/", () => {
-    const images = [...site.matchAll(/(?:src|srcset|content)="(?:https:\/\/ixklo\.github\.io\/devlings\/)?img\/([^"]+)"/g)].map((m) => m[1]);
+    const images = [...site.matchAll(/(?:src|srcset|content)="(?:https:\/\/ixklo\.github\.io\/Devlings\/)?img\/([^"]+)"/g)].map((m) => m[1]);
     expect(images.length).toBeGreaterThan(5);
     for (const name of images) expect(source(name), `img/${name}`).toBeDefined();
   });
