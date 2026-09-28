@@ -4,6 +4,12 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-28
+
+### Fixed
+
+- **The pet no longer disappears.** If Windows minimized the pet's window (for example "minimize all windows", Win+M), the pet had no taskbar button to come back from, and showing it again from the tray or Ctrl+Alt+P left it out of sight until Devlings restarted. The pet can't be minimized now, comes straight back if something minimizes it anyway, and Devlings checks every few seconds that a shown pet is on a screen (a monitor unplugged, for instance) and puts it back if not.
+
 ## [1.2.1] - 2026-09-28
 
 The first public release of Devlings: builds for Windows, macOS and Linux again, with build provenance.
@@ -134,7 +140,8 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/ixklo/devlings/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/ixklo/devlings/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ixklo/devlings/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ixklo/devlings/compare/v1.0.0...v1.1.0
