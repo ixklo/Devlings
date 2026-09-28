@@ -34,7 +34,7 @@ export function artFrame(atlas, row, col) {
 }
 
 /** Smallest box holding every opaque pixel of every frame, so a pet never jumps inside its slot. */
-function unionBox(frames) {
+export function unionBox(frames) {
   let x0 = ART_W, y0 = ART_H, x1 = -1, y1 = -1;
   for (const f of frames) {
     for (let y = 0; y < ART_H; y++) {
@@ -48,7 +48,7 @@ function unionBox(frames) {
 }
 
 /** Paint part of an art frame onto dst at an integer scale (the art is fully opaque or fully transparent). */
-function blit(dst, art, box, ox, oy, scale) {
+export function blit(dst, art, box, ox, oy, scale) {
   for (let y = 0; y < box.h; y++) {
     for (let x = 0; x < box.w; x++) {
       const si = ((box.y + y) * ART_W + box.x + x) * 4;
