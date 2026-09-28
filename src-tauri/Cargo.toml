@@ -1,6 +1,6 @@
 [package]
 name = "perch"
-version = "1.2.3"
+version = "1.2.4"
 description = "Desktop pets for Claude Code"
 edition = "2021"
 license = "MIT"
@@ -37,8 +37,8 @@ tauri-plugin-log = "2"
 [target.'cfg(windows)'.dependencies]
 tauri-winrt-notification = "0.7.3"
 # The same windows crate tauri-winrt-notification uses: whether Windows will show our notifications, and the
-# time since the last input (the welcome-back wave).
-windows = { version = "0.61", features = ["UI_Notifications", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation"] }
+# time since the last input (the welcome-back wave), and the pet's place in the always-on-top band (zorder.rs).
+windows = { version = "0.61", features = ["UI_Notifications", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_SystemInformation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi"] }
 
 [dev-dependencies]
 tempfile = "3"
