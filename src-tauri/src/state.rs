@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
         Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -89,6 +89,8 @@ pub struct AppState {
     pub system_notifications_off: AtomicBool,
     /// Whether the user has been away from the computer, for the welcome-back wave (design v1.2).
     pub presence: Mutex<Presence>,
+    /// When the tick last checked that a shown pet is still on screen (ms since the epoch).
+    pub last_rescue_check: AtomicI64,
 }
 
 impl AppState {
@@ -127,6 +129,7 @@ impl AppState {
             usage: Mutex::new(None),
             system_notifications_off: AtomicBool::new(false),
             presence: Mutex::new(Presence::default()),
+            last_rescue_check: AtomicI64::new(0),
         })
     }
 
@@ -586,6 +589,12 @@ fn tick(app: &AppHandle) {
     let changed = lock(&s.last_view).as_ref() != Some(&view);
     if changed {
         emit_snapshot(app);
+    }
+    // A shown pet that got minimized or left every monitor comes back (overlay::rescue_pet), whatever caused it.
+    let last = s.last_rescue_check.load(Ordering::SeqCst);
+    if now - last >= overlay::RESCUE_CHECK_MS {
+        s.last_rescue_check.store(now, Ordering::SeqCst);
+        overlay::rescue_pet(app);
     }
     if presence::idle_ms().is_some_and(|idle| lock(&s.presence).sample(idle)) {
         let _ = app.emit_to(overlay::PET, "pet-welcome", ());

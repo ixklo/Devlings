@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Devlings",
   "mainBinaryName": "devlings",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "identifier": "io.github.perchpet.perch",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -22,6 +22,7 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
+        "minimizable": false,
         "skipTaskbar": true,
         "shadow": false,
         "focus": false,

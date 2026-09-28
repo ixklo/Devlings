@@ -108,6 +108,11 @@ fn set_page_visible(win: &WebviewWindow, visible: bool) {
     let _ = (win, visible);
 }
 
+/// Shows the pet page again (design D17) after `overlay::rescue_pet` put a lost pet back.
+pub fn show_pet_page(pet: &WebviewWindow) {
+    set_page_visible(pet, true);
+}
+
 pub fn show_pet(app: &AppHandle) {
     bump_visibility(app);
     let pet = window(app, overlay::PET);
@@ -119,6 +124,9 @@ pub fn show_pet(app: &AppHandle) {
         set_page_visible(&pet, true);
     }
     let _ = pet.show();
+    // A pet that got minimized (it has no taskbar button) or moved off every monitor comes back with it, instead
+    // of showing a window parked out of sight.
+    overlay::rescue_pet(app);
     overlay::wake_click_through();
 }
 
@@ -286,6 +294,15 @@ fn track_minimized(win: &Window, is_pet: bool, minimized: bool) {
     }
     if is_pet && !minimized {
         overlay::wake_click_through();
+    }
+    // The pet has no taskbar button, so nothing would ever restore it ("minimize all" windows, Win+M): put it back
+    // shortly, once the minimize itself has finished.
+    if is_pet && minimized && !s.pet_hidden.load(Ordering::SeqCst) {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(400));
+            overlay::rescue_pet(&app);
+        });
     }
 }
 

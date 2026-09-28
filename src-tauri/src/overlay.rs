@@ -17,7 +17,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewWindow, WindowEvent};
 
-use crate::{locks::lock, state::AppState};
+use crate::{locks::lock, shell, state::AppState};
 
 pub const PET: &str = "pet";
 pub const HIT_PADDING: f64 = 6.0;
@@ -409,6 +409,47 @@ pub fn place_pet(app: &AppHandle) {
     }
 }
 
+/// Whether a pet that should be showing has been lost: its window is minimized (the pet has no taskbar button to
+/// come back from) or sits on no monitor at all (Windows parks minimized windows near -32000, -32000; a monitor
+/// can be unplugged). With no monitors reported there's no telling, so only minimizing counts.
+pub fn pet_is_lost(minimized: bool, window_pos: (i32, i32), window_size: (i32, i32), areas: &[Area]) -> bool {
+    minimized || (!areas.is_empty() && best_area(window_pos, window_size, areas).is_none())
+}
+
+/// Puts a shown pet back when it has been lost (`pet_is_lost`): un-minimizes the window, puts the sprite back at its
+/// saved spot and shows its page again. Returns whether it had to. A hidden pet (tray, Ctrl+Alt+P, hide for an
+/// hour) is left alone.
+pub fn rescue_pet(app: &AppHandle) -> bool {
+    let Some(pet) = pet_window(app) else { return false };
+    let s = app.state::<AppState>();
+    if s.pet_hidden.load(Ordering::SeqCst) {
+        return false;
+    }
+    let minimized = pet.is_minimized().unwrap_or(false);
+    let Ok(pos) = pet.outer_position() else { return false };
+    if !pet_is_lost(minimized, (pos.x, pos.y), outer_size(&pet), &work_areas(&pet)) {
+        return false;
+    }
+    log::warn!(
+        "The pet window was {} (at {}, {}); putting it back",
+        if minimized { "minimized" } else { "off screen" },
+        pos.x,
+        pos.y
+    );
+    if minimized {
+        let _ = pet.unminimize();
+    }
+    s.pet_minimized.store(false, Ordering::SeqCst);
+    shell::show_pet_page(&pet);
+    place_pet(app);
+    s.pet_geometry_gen.fetch_add(1, Ordering::SeqCst);
+    wake_click_through();
+    true
+}
+
+/// How often the backend's tick checks that a shown pet is still on screen (`rescue_pet`).
+pub const RESCUE_CHECK_MS: i64 = 3000;
+
 /// Esc: sends the pet home (the default position), forgetting any saved spot.
 pub fn reset_pet_position(app: &AppHandle) {
     let Some(pet) = pet_window(app) else { return };
@@ -682,6 +723,18 @@ mod tests {
     fn default_on_a_short_screen_keeps_the_bottom_visible() {
         let short = Area { x: 0, y: 0, w: 1093, h: 566 };
         assert_eq!(default_position(short, SIZE, 16), (1093 - 380 - 16, 566 - 600));
+    }
+
+    #[test]
+    fn a_minimized_or_off_screen_pet_is_lost() {
+        let areas = [Area { x: 0, y: 0, w: 2880, h: 1524 }];
+        let size = (760, 1200);
+        assert!(!pet_is_lost(false, (1776, 428), size, &areas), "on screen");
+        assert!(!pet_is_lost(false, (2500, 900), size, &areas), "partly off the edge is fine: the sprite is kept on screen");
+        assert!(pet_is_lost(true, (1776, 428), size, &areas), "minimized: it has no taskbar button to come back from");
+        assert!(pet_is_lost(false, (-32000, -32000), size, &areas), "parked where Windows puts minimized windows");
+        assert!(pet_is_lost(false, (4000, 200), size, &areas), "on a monitor that's gone");
+        assert!(!pet_is_lost(false, (-32000, -32000), size, &[]), "no monitors reported: can't tell, leave it");
     }
 
     #[test]
