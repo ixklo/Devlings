@@ -49,9 +49,10 @@ jobs:
           Before hitting "Publish":
 
           1. Wait for this tag's release workflow run to finish. It attaches
-             `SHA256SUMS.txt`, `latest.json` and a build-provenance
-             attestation for every asset once all three platform builds
-             succeed.
+             `SHA256SUMS.txt`, `latest.json`, version-free copies of the
+             installers (`Devlings-windows-x64-setup.exe` and friends) and
+             a build-provenance attestation for every asset once all three
+             platform builds succeed.
           2. Write the real notes using `.github/release-notes-template.md`
              and this version's entry in `CHANGELOG.md`.
 
@@ -160,6 +161,12 @@ jobs:
           cat release-assets.json
       - name: Build latest.json
         run: node scripts/gen-latest-json.mjs --tag "$TAG" --assets-dir release-assets --assets-json release-assets.json --out release-assets/latest.json ${{ github.event.repository.private && '--require windows-x86_64,linux-x86_64,linux-x86_64-deb' || '' }}
+      # Version-free copies of the installers (Devlings-windows-x64-setup.exe, Devlings-linux-x86_64.AppImage,
+      # Devlings-linux-amd64.deb, and Devlings-macos-universal.dmg when macOS is built), so README and website
+      # links of the form releases/latest/download/<name> never go stale. They get no .sig (latest.json above
+      # only uses the versioned files), and SHA256SUMS.txt and the attestations below cover them too.
+      - name: Stable download names
+        run: node scripts/stable-assets.mjs --assets-dir release-assets ${{ github.event.repository.private && '--skip macos' || '' }}
       - name: Write SHA256SUMS.txt
         run: |
           set -e
@@ -167,10 +174,11 @@ jobs:
           rm -f SHA256SUMS.txt
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
-      - name: Upload latest.json and SHA256SUMS.txt to the release
+      # The stable copies are the only files named Devlings-* (Tauri's own names are Devlings_<version>_…).
+      - name: Upload latest.json, SHA256SUMS.txt and the stable-name copies to the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS.txt --repo "$REPO" --clobber
+        run: gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS.txt release-assets/Devlings-* --repo "$REPO" --clobber
       # Artifact attestations aren't available for private repositories on GitHub's free plan.
       - name: Attest build provenance for every asset
         if: ${{ !github.event.repository.private }}
