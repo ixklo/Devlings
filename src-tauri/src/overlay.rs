@@ -7,7 +7,7 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         OnceLock,
     },
     thread::Thread,
@@ -416,10 +416,47 @@ pub fn pet_is_lost(minimized: bool, window_pos: (i32, i32), window_size: (i32, i
     minimized || (!areas.is_empty() && best_area(window_pos, window_size, areas).is_none())
 }
 
+/// Why a rescue was asked for. The periodic check backs off after a rescue; the others are one-off events.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Rescue {
+    /// The user asked to show the pet (tray, Ctrl+Alt+P, the pet menu).
+    Shown,
+    /// Windows just minimized the pet window.
+    Minimized,
+    /// The backend's tick, every `RESCUE_CHECK_MS`.
+    Check,
+}
+
+/// Minimum time between two rescues the periodic check starts, so a window position the system reports wrongly
+/// can't cause a loop.
+const RESCUE_BACKOFF_MS: i64 = 10_000;
+static LAST_RESCUE_MS: AtomicI64 = AtomicI64::new(0);
+
+/// Whether the periodic check may rescue now, given the last rescue's time.
+pub fn check_may_rescue(now_ms: i64, last_rescue_ms: i64) -> bool {
+    now_ms - last_rescue_ms >= RESCUE_BACKOFF_MS
+}
+
+/// Asks the main thread to put a lost pet back (`rescue_pet`): window calls belong there (X11 aborts on them from
+/// another thread). Windows only: that's where a minimized pet has nowhere to come back from and where a window's
+/// position can be trusted (X11 can report a spot before the window manager places the window, Wayland none).
+pub fn rescue_pet_soon(app: &AppHandle, why: Rescue) {
+    if !cfg!(windows) {
+        return;
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if why == Rescue::Check && !check_may_rescue(crate::state::now_ms(), LAST_RESCUE_MS.load(Ordering::SeqCst)) {
+            return;
+        }
+        rescue_pet(&handle);
+    });
+}
+
 /// Puts a shown pet back when it has been lost (`pet_is_lost`): un-minimizes the window, puts the sprite back at its
 /// saved spot and shows its page again. Returns whether it had to. A hidden pet (tray, Ctrl+Alt+P, hide for an
-/// hour) is left alone.
-pub fn rescue_pet(app: &AppHandle) -> bool {
+/// hour) is left alone. Call on the main thread (`rescue_pet_soon`).
+fn rescue_pet(app: &AppHandle) -> bool {
     let Some(pet) = pet_window(app) else { return false };
     let s = app.state::<AppState>();
     if s.pet_hidden.load(Ordering::SeqCst) {
@@ -436,6 +473,7 @@ pub fn rescue_pet(app: &AppHandle) -> bool {
         pos.x,
         pos.y
     );
+    LAST_RESCUE_MS.store(crate::state::now_ms(), Ordering::SeqCst);
     if minimized {
         let _ = pet.unminimize();
     }
@@ -723,6 +761,13 @@ mod tests {
     fn default_on_a_short_screen_keeps_the_bottom_visible() {
         let short = Area { x: 0, y: 0, w: 1093, h: 566 };
         assert_eq!(default_position(short, SIZE, 16), (1093 - 380 - 16, 566 - 600));
+    }
+
+    #[test]
+    fn the_periodic_check_backs_off_after_a_rescue() {
+        assert!(check_may_rescue(100_000, 0), "never rescued");
+        assert!(!check_may_rescue(100_000, 95_000), "5 s after a rescue: wait");
+        assert!(check_may_rescue(105_000, 95_000), "10 s after: may again");
     }
 
     #[test]

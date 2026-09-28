@@ -590,11 +590,12 @@ fn tick(app: &AppHandle) {
     if changed {
         emit_snapshot(app);
     }
-    // A shown pet that got minimized or left every monitor comes back (overlay::rescue_pet), whatever caused it.
+    // A shown pet that got minimized or left every monitor comes back (overlay::rescue_pet_soon, Windows), whatever
+    // caused it.
     let last = s.last_rescue_check.load(Ordering::SeqCst);
     if now - last >= overlay::RESCUE_CHECK_MS {
         s.last_rescue_check.store(now, Ordering::SeqCst);
-        overlay::rescue_pet(app);
+        overlay::rescue_pet_soon(app, overlay::Rescue::Check);
     }
     if presence::idle_ms().is_some_and(|idle| lock(&s.presence).sample(idle)) {
         let _ = app.emit_to(overlay::PET, "pet-welcome", ());

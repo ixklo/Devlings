@@ -126,7 +126,7 @@ pub fn show_pet(app: &AppHandle) {
     let _ = pet.show();
     // A pet that got minimized (it has no taskbar button) or moved off every monitor comes back with it, instead
     // of showing a window parked out of sight.
-    overlay::rescue_pet(app);
+    overlay::rescue_pet_soon(app, overlay::Rescue::Shown);
     overlay::wake_click_through();
 }
 
@@ -301,7 +301,7 @@ fn track_minimized(win: &Window, is_pet: bool, minimized: bool) {
         let app = app.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(400));
-            overlay::rescue_pet(&app);
+            overlay::rescue_pet_soon(&app, overlay::Rescue::Minimized);
         });
     }
 }
