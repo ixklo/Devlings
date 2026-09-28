@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devlings: desktop pets for Claude Code</title>
+<meta name="description" content="Devlings puts a pixel-art pet on your desktop that shows what each Claude Code session is doing, answers its permission prompts and lets you ask Claude Code from anywhere. Free and open source, for Windows and Linux.">
+<link rel="canonical" href="https://ixklo.github.io/devlings/">
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16181c" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Devlings">
+<meta property="og:title" content="Devlings: desktop pets for Claude Code">
+<meta property="og:description" content="A pixel-art pet that shows what your Claude Code sessions are doing, answers their permission prompts and lets you ask from anywhere. Free and open source.">
+<meta property="og:url" content="https://ixklo.github.io/devlings/">
+<meta property="og:image" content="https://ixklo.github.io/devlings/img/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Devlings, desktop pets for Claude Code: the nine pixel-art pets in a row under the name.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Devlings: desktop pets for Claude Code">
+<meta name="twitter:description" content="A pixel-art pet that shows what your Claude Code sessions are doing, answers their permission prompts and lets you ask from anywhere. Free and open source.">
+<meta name="twitter:image" content="https://ixklo.github.io/devlings/img/social-preview.png">
+<meta name="twitter:image:alt" content="Devlings, desktop pets for Claude Code: the nine pixel-art pets in a row under the name.">
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --ink: #16181d; --muted: #555c68; --line: #dfe3e8;
+  --accent: #1f7a72; --on-accent: #ffffff;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --surface: #1f2226; --ink: #eceef1; --muted: #a5acb8; --line: #30343a;
+    --accent: #5cc7bc; --on-accent: #0c1f1d; }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+img { max-width: 100%; height: auto; display: block; }
+code { font-size: .92em; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; }
+.skip:focus { left: 8px; }
+header.hero { text-align: center; padding: 48px 0 36px; }
+h1 { font-size: clamp(2.6rem, 7vw, 3.8rem); line-height: 1.05; margin: 0 0 6px; letter-spacing: -0.02em; }
+.tagline { font-size: 1.35rem; font-weight: 600; margin: 0 0 10px; }
+.lede { color: var(--muted); max-width: 36em; margin: 0 auto 26px; }
+.hero picture img { margin: 0 auto 28px; }
+.downloads { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 0 0 14px; padding: 0; list-style: none; }
+.btn { display: inline-block; padding: 11px 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--ink); text-decoration: none; font-weight: 600; }
+.btn small { font-weight: 400; color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary small { color: inherit; opacity: .85; }
+a.btn:hover { border-color: var(--accent); }
+.btn.soon { color: var(--muted); font-weight: 400; border-style: dashed; }
+.meta { color: var(--muted); font-size: .95rem; margin: 0; }
+section { padding: 40px 0; border-top: 1px solid var(--line); }
+h2 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 20px; }
+h3 { font-size: 1.12rem; margin: 0 0 6px; }
+.shots { display: grid; gap: 28px; }
+.shot img { margin: 0 auto 12px; }
+.shot p { margin: 0; }
+ul.features { display: grid; gap: 14px; padding: 0; margin: 36px 0 0; list-style: none; }
+ul.features li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
+.pets img { margin: 0 auto 16px; }
+.pets p { text-align: center; max-width: 38em; margin: 0 auto; }
+ol.how { padding-left: 1.3em; margin: 0; }
+ol.how li { margin: 0 0 10px; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; margin: 0 0 10px; }
+summary { cursor: pointer; font-weight: 600; }
+details p { margin: 10px 0 4px; }
+footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: .95rem; text-align: center; }
+footer p { margin: 4px 0; }
+@media (min-width: 760px) {
+  .shots { grid-template-columns: repeat(3, 1fr); align-items: start; }
+  ul.features { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="hero wrap">
+  <h1>Devlings</h1>
+  <p class="tagline">Desktop pets for Claude Code</p>
+  <p class="lede">A pixel-art pet sits on your desktop, shows what each of your Claude Code sessions is doing, and lets you answer their permission prompts or ask Claude Code something without switching windows.</p>
+  <picture>
+    <source media="(prefers-reduced-motion: reduce) and (prefers-color-scheme: dark)" srcset="img/cards-dark.png">
+    <source media="(prefers-reduced-motion: reduce)" srcset="img/cards.png">
+    <source media="(prefers-color-scheme: dark)" srcset="img/demo-dark.gif">
+    <img src="img/demo.gif" width="380" height="340" alt="Perch, a teal pixel-art bird, sits above a small control bar. A weather-app card appears and the bird types on a laptop; a blog card joins it; weather-app turns to Done and the bird hops, then inspects the result with a magnifying glass; the cards tuck away and the Show threads button shows 2.">
+  </picture>
+  <ul class="downloads" aria-label="Download Devlings">
+    <li><a class="btn primary" href="https://github.com/ixklo/devlings/releases/latest/download/Devlings-windows-x64-setup.exe">Download for Windows <small>.exe</small></a></li>
+    <li><a class="btn" href="https://github.com/ixklo/devlings/releases/latest/download/Devlings-linux-x86_64.AppImage">Linux <small>AppImage, beta</small></a></li>
+    <li><a class="btn" href="https://github.com/ixklo/devlings/releases/latest/download/Devlings-linux-amd64.deb">Linux <small>.deb, beta</small></a></li>
+    <li><span class="btn soon">macOS <small>coming with the next release</small></span></li>
+  </ul>
+  <p class="meta">Free and open source (MIT) · <a href="https://github.com/ixklo/devlings/releases">All releases</a> · <a href="https://github.com/ixklo/devlings">Source on GitHub</a></p>
+</header>
+
+<main id="main" class="wrap">
+  <section aria-labelledby="features">
+    <h2 id="features">What it does</h2>
+    <div class="shots">
+      <div class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="img/cards-dark.png">
+          <img src="img/cards.png" width="380" height="401" loading="lazy" alt="Three cards above the pet: weather-app done, with a line from its answer; blog and portfolio still running. The bird inspects the result with a magnifying glass.">
+        </picture>
+        <h3>Every session on a card</h3>
+        <p>Each Claude Code session, in VS Code, a terminal or the desktop app, shows above the pet as working, needs you, done or failed. Click a card to jump back to its project.</p>
+      </div>
+      <div class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="img/approval-dark.png">
+          <img src="img/approval.png" width="380" height="482" loading="lazy" alt="A permission card for recipe-box: Bash wants to run npm install date-fns, with Claude's description, Details, and the buttons Deny, Always allow and Allow. The bird holds up a question mark.">
+        </picture>
+        <h3>Answer permission prompts</h3>
+        <p>Allow or Deny a command, file edit or web fetch from a card that shows exactly what will run. Nothing is pre-selected and no key answers a card.</p>
+      </div>
+      <div class="shot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="img/chat-dark.png">
+          <img src="img/chat.png" width="380" height="600" loading="lazy" alt="The mini chat for weather-app, marked Done: the question, and Claude's answer with a line of code and a reply box.">
+        </picture>
+        <h3>Ask from the desktop</h3>
+        <p>Click the pet, pick a project and type. Your own Claude Code answers in a small chat above the pet, and follow-ups continue the conversation.</p>
+      </div>
+    </div>
+    <ul class="features">
+      <li><strong>A pet that reacts.</strong> It types while Claude works, holds up a "?" when a session needs you, inspects the result when it's done, and sits under a storm cloud when something fails.</li>
+      <li><strong>Out of the way.</strong> Everything around the pet is click-through. Tuck the cards away and the Show threads button keeps count.</li>
+      <li><strong>Calm.</strong> Long runs and failures settle after a while; only "needs you" keeps moving until you answer. Reduced-motion settings are followed.</li>
+      <li><strong>Notifications</strong> when a session finishes, fails or needs you. On Windows, clicking one opens that session.</li>
+      <li><strong>Keyboard and screen reader support</strong> for the pet, its cards and Settings.</li>
+      <li><strong>Updates itself</strong> with signed updates, checked once a day. You can turn this off.</li>
+    </ul>
+  </section>
+
+  <section class="pets" aria-labelledby="pets">
+    <h2 id="pets">Nine pets, and your own</h2>
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="img/lineup.png">
+      <img src="img/pets.gif" width="858" height="130" loading="lazy" alt="The nine built-in pets idling side by side: Perch, Ember and Plum, round songbirds in teal, orange and purple; Pip the fox; Miso the charcoal cat; Nori the pink axolotl; Bean the capybara with an orange on its head; Bolt the robot; and Wisp the ghost.">
+    </picture>
+    <p>Pick one when you set up, switch any time from the pet's right-click menu, and give it a name. Or <a href="https://github.com/ixklo/devlings/blob/main/docs/making-pets.md">draw your own</a>: a pet is a folder with a spritesheet and a small <code>pet.json</code>.</p>
+  </section>
+
+  <section aria-labelledby="how">
+    <h2 id="how">How it works</h2>
+    <ol class="how">
+      <li><strong>Claude Code's hooks, on your computer.</strong> With your OK, Devlings adds a few hooks to Claude Code's <code>settings.json</code>. Each session then reports its progress to Devlings over <code>127.0.0.1</code>; if Devlings isn't running, the hooks fail fast and silently. A backup is kept before every change, and one click removes exactly Devlings' entries.</li>
+      <li><strong>Your own Claude Code, on your own subscription.</strong> When you ask from the pet, Devlings runs the Claude Code you already have, logged in with your Claude plan. It never uses an API key and has no account of its own.</li>
+      <li><strong>Nothing else leaves your computer</strong> except a daily check for a new version on GitHub, which you can turn off. Your prompts go to Anthropic through your own Claude Code, exactly as from a terminal. This page loads no scripts, fonts or trackers. <a href="https://github.com/ixklo/devlings#privacy">More detail</a>.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="faq">
+    <h2 id="faq">Questions</h2>
+    <details>
+      <summary>Is it free?</summary>
+      <p>Yes. Devlings is free and open source under the MIT license, with no paid tier and no account.</p>
+    </details>
+    <details>
+      <summary>What do I need?</summary>
+      <p>Claude Code 2.1.259 or newer, logged in with a Claude subscription (Pro, Max, Team or Enterprise). Windows 11 is tested on real hardware. Linux (AppImage and .deb) is in beta: it builds and launches in CI on every change but hasn't been tried on real hardware yet. macOS is coming with the next release.</p>
+    </details>
+    <details>
+      <summary>Will Windows warn me when I install it?</summary>
+      <p>Yes, the first time. The installer isn't signed with a paid certificate, so SmartScreen says "Windows protected your PC": click <strong>More info</strong>, then <strong>Run anyway</strong>. <a href="https://github.com/ixklo/devlings#install">Install notes for every system</a>.</p>
+    </details>
+    <details>
+      <summary>What does it cost to use?</summary>
+      <p>Watching is free: Devlings only listens to Claude Code's hooks, so no prompts are sent. Asking from the pet runs your own Claude Code in non-interactive mode, which draws on the monthly Agent SDK credit that comes with paid Claude plans. Devlings never uses an API key, and it stops a run the moment Claude Code reports it would start using paid usage credits. <a href="https://github.com/ixklo/devlings#cost">How Asks are counted</a>.</p>
+    </details>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Devlings is free and open source under the <a href="https://github.com/ixklo/devlings/blob/main/LICENSE">MIT license</a>. It is an independent project and is not affiliated with Anthropic.</p>
+  <p><a href="https://github.com/ixklo/devlings">GitHub</a> · <a href="https://github.com/ixklo/devlings/issues/new/choose">Report an issue</a> · <a href="https://github.com/ixklo/devlings/blob/main/SECURITY.md">Security</a></p>
+</footer>
+</body>
+</html>
