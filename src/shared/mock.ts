@@ -12,9 +12,15 @@
 // card; or also one inline in the running Ask's chat), intro=1 (the one-time
 // "answer permission prompts" card; hidden while watching is on, so it also
 // starts with watching off),
-// debug=hits (outlines the click-through regions).
+// debug=hits (outlines the click-through regions),
+// scene=cards|approval|chat|demo (a fixed, made-up state for the README
+// images instead of the workspace below; see mockScenes.ts).
+//
+// Under `npm run dev` the built-in pets are drawn from their real
+// spritesheets, which Vite serves straight from src-tauri/pets.
 
 import { placeholderAtlas } from "../sprite/placeholderAtlas";
+import { sceneFor } from "./mockScenes";
 import { samePath } from "./paths";
 import { sortThreads } from "./threads";
 import type { Transport } from "./api";
@@ -254,6 +260,24 @@ Claude Code: 2.1.282 at ~/.local/bin/claude.exe
 Hooks: installed on port 49152
 Auto-update: on`;
 
+const scene = sceneFor(params.get("scene"), Date.now(), 60);
+
+/** What every streamed Ask shows, unless the scene brings its own. */
+const ANSWER = {
+  step: "Reading src/shared/useSnapshot.ts",
+  reply: REPLY,
+  excerpt: "Fixed the race in useSnapshot; the suite passes 20 runs in a row.",
+};
+
+/** The Ask that's already running when the preview opens. */
+const ASK = scene ? scene.ask : params.get("empty") ? null : { project: `${ROOT}devlings`, sessionId: "ask-devlings", ...ANSWER };
+
+/** `npm run dev` serves the source tree, so the preview can show a built-in pet's real art. */
+function devSheet(id: string): string | null {
+  const bundled = PETS.some((p) => p.id === id && p.source === "bundled");
+  return import.meta.env.DEV && bundled ? `/src-tauri/pets/${id}/spritesheet.png` : null;
+}
+
 class MockBackend {
   listeners = new Map<string, Set<Listener>>();
   config: Config = {
@@ -277,16 +301,19 @@ class MockBackend {
     approvalHoldSecs: 60,
     approvalsIntroSeen: !params.get("intro"),
   };
-  approvals: PendingApproval[] = initialApprovals(this.config.approvalHoldSecs);
-  projects: ProjectEntry[] = [
-    project("devlings", 0, "edit_files", true),
-    project("billing-service", 1),
-    project("docs-site", 4, "read_only"),
-    project("dotfiles", 30, "auto"),
-    project("ml-notebooks", 60 * 5),
-  ];
-  threads: ThreadInfo[] = initialThreads();
-  running: string[] = params.get("empty") ? [] : [`${ROOT}devlings`];
+  approvals: PendingApproval[] = scene ? scene.approvals : initialApprovals(this.config.approvalHoldSecs);
+  projects: ProjectEntry[] = scene
+    ? scene.projects
+    : [
+        project("devlings", 0, "edit_files", true),
+        project("billing-service", 1),
+        project("docs-site", 4, "read_only"),
+        project("dotfiles", 30, "auto"),
+        project("ml-notebooks", 60 * 5),
+      ];
+  threads: ThreadInfo[] = scene ? scene.threads : initialThreads();
+  running: string[] = ASK ? [ASK.project] : [];
+  history: Record<string, ChatTurn[]> = scene ? scene.history : HISTORY;
   setup: SetupStatus = params.get("setup") ? brokenSetup() : healthySetup();
   update: UpdateStatus = initialUpdate();
   // Plan usage from "the last Ask" (v1.0 S4); ?usage=warning or ?usage=rejected previews the mini chat's note.
@@ -321,7 +348,17 @@ class MockBackend {
       this.publish();
     }, 1000);
     // The Ask that's already running in the preview finishes after a while.
-    if (this.running.length) this.stream(`${ROOT}devlings`, "ask-devlings", 2600, false);
+    if (ASK) this.stream(ASK.project, ASK.sessionId, 2600, false);
+    // A scene's script: each step replaces the threads (stamped as it runs) or collapses the cards.
+    for (const step of scene?.timeline ?? []) {
+      this.timers.push(
+        window.setTimeout(() => {
+          if (step.threads) this.threads = step.threads.map((t) => ({ ...t }));
+          if (step.collapsed !== undefined) this.config.threadsCollapsed = step.collapsed;
+          this.publish();
+        }, step.at),
+      );
+    }
   }
 
   snapshot(): Snapshot {
@@ -385,6 +422,7 @@ class MockBackend {
 
   stream(path: string, sessionId: string, delay = 700, announce = true) {
     const name = path.split("\\").pop() ?? path;
+    const { step, reply, excerpt } = ASK ?? ANSWER;
     const later = (ms: number, fn: () => void) => this.timers.push(window.setTimeout(fn, ms));
     const skipped = this.untrustedFindings(path);
     if (skipped) {
@@ -402,11 +440,11 @@ class MockBackend {
     }
     if (announce) later(150, () => this.petEvent({ sessionId, project: path, kind: "prompt" }));
     later(delay * 0.5, () => {
-      this.petEvent({ sessionId, project: path, kind: "step", label: "Reading src/shared/useSnapshot.ts" });
+      this.petEvent({ sessionId, project: path, kind: "step", label: step });
       const t = this.threads.find((x) => x.sessionId === sessionId);
-      if (t) (t.label = "Reading src/shared/useSnapshot.ts"), (t.updatedAt = Date.now()), this.publish();
+      if (t) (t.label = step), (t.updatedAt = Date.now()), this.publish();
     });
-    const words = REPLY.split(/(?<=\s)/);
+    const words = reply.split(/(?<=\s)/);
     let at = delay;
     for (let i = 0; i < words.length; i += 3) {
       const chunk = words.slice(i, i + 3).join("");
@@ -416,7 +454,7 @@ class MockBackend {
     later(at + 200, () => {
       if (!this.running.some((r) => samePath(r, path))) return;
       this.running = this.running.filter((r) => !samePath(r, path));
-      this.petEvent({ sessionId, project: path, kind: "done", label: "Done", text: REPLY });
+      this.petEvent({ sessionId, project: path, kind: "done", label: "Done", text: reply });
       this.upsertThread({
         sessionId,
         project: path,
@@ -424,7 +462,7 @@ class MockBackend {
         source: "ask",
         status: "ready",
         label: "Done",
-        excerpt: "Fixed the race in useSnapshot; the suite passes 20 runs in a row.",
+        excerpt,
         updatedAt: Date.now(),
         unread: true,
       });
@@ -512,12 +550,12 @@ class MockBackend {
         return this.publish();
       }
       case "new_conversation":
-        delete HISTORY[String(a.project)];
+        delete this.history[String(a.project)];
         this.approvals = this.approvals.filter((x) => !(x.source === "ask" && samePath(x.project, String(a.project))));
         return this.publish();
       case "load_conversation": {
-        const key = Object.keys(HISTORY).find((k) => samePath(k, String(a.project)));
-        return key ? HISTORY[key].map((t) => ({ ...t })) : [];
+        const key = Object.keys(this.history).find((k) => samePath(k, String(a.project)));
+        return key ? this.history[key].map((t) => ({ ...t })) : [];
       }
       case "ask": {
         const path = String(a.project);
@@ -601,9 +639,10 @@ class MockBackend {
         drawHits(a.regions as HitRect[]);
         return null;
       case "list_pets":
-        return PETS.map((p) => ({ ...p }));
+        // Scenes are for public images: just the nine built-in pets.
+        return PETS.filter((p) => !scene || p.source === "bundled").map((p) => ({ ...p }));
       case "get_pet_sprite": {
-        const url = placeholderAtlas(String(a.id));
+        const url = devSheet(String(a.id)) ?? placeholderAtlas(String(a.id));
         if (!url) throw "Couldn't draw the preview sprite.";
         return url;
       }
@@ -713,7 +752,7 @@ export function createMockTransport(): Transport {
         const view = pendingOpen;
         pendingOpen = null;
         window.setTimeout(() => {
-          backend.emit("pet-open", view === "thread" ? { view: "thread", sessionId: "ask-devlings" } : { view: "compose" });
+          backend.emit("pet-open", view === "thread" ? { view: "thread", sessionId: ASK?.sessionId ?? "ask-devlings" } : { view: "compose" });
         }, 400);
       }
       return () => void set.delete(entry);
