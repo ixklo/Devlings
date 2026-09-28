@@ -27,11 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Assemble the site
-        # img/ holds what site/index.html links: docs/screenshots/*, the pet lineup and the social preview.
+        # img/ holds what site/index.html links: site/img/* (render-site.mjs), docs/screenshots/*, the pet lineup
+        # and the social preview.
         run: |
           set -e
           mkdir -p _site/img
-          cp site/* _site/
+          cp -r site/. _site/
           cp src-tauri/icons/128x128.png _site/favicon.png
           cp docs/screenshots/* _site/img/
           cp docs/pets/lineup.png docs/social-preview.png _site/img/

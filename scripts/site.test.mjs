@@ -62,27 +62,47 @@ describe("README", () => {
 });
 
 describe("website", () => {
-  // When it's published, img/ holds docs/screenshots/*, docs/pets/lineup.png and docs/social-preview.png.
+  // When it's published (pages.yml), img/ holds site/img/* (made by scripts/pets/render-site.mjs) plus
+  // docs/screenshots/*, docs/pets/lineup.png and docs/social-preview.png.
   const source = (name) =>
-    [path.join(ROOT, "docs", "screenshots", name), path.join(ROOT, "docs", "pets", name), path.join(ROOT, "docs", name)].find(
-      (p) => existsSync(p) && (name !== "lineup.png" || p.includes("pets")),
-    );
+    [
+      path.join(ROOT, "site", "img", name),
+      path.join(ROOT, "docs", "screenshots", name),
+      path.join(ROOT, "docs", "pets", name),
+      path.join(ROOT, "docs", name),
+    ].find((p) => existsSync(p) && (name !== "lineup.png" || p.includes("pets")));
 
-  it("only uses images from docs/", () => {
+  it("only uses images that get published (site/img/ and docs/)", () => {
     const images = [...site.matchAll(/(?:src|srcset|content)="(?:https:\/\/ixklo\.github\.io\/Devlings\/)?img\/([^"]+)"/g)].map((m) => m[1]);
     expect(images.length).toBeGreaterThan(5);
     for (const name of images) expect(source(name), `img/${name}`).toBeDefined();
   });
 
   it("gives each image the size it's drawn at (half the 2x file)", () => {
-    for (const m of site.matchAll(/<img src="img\/([^"]+)" width="(\d+)" height="(\d+)"/g)) {
+    for (const m of site.matchAll(/<img (?:class="[^"]*" )?src="img\/([^"]+)" width="(\d+)" height="(\d+)"/g)) {
       const [w, h] = size(source(m[1]));
       expect([Number(m[2]), Number(m[3])], m[1]).toEqual([Math.round(w / 2), Math.round(h / 2)]);
     }
   });
 
-  it("loads nothing from other sites: no scripts, style sheets, fonts or remote images", () => {
-    expect(site).not.toMatch(/<script/);
+  it("runs no scripts: the one script element is the search engines' data card, and it parses", () => {
+    const scripts = [...site.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+    expect(scripts.map((m) => m[1].trim())).toEqual(['type="application/ld+json"']);
+    const card = JSON.parse(scripts[0][2]);
+    expect(card).toMatchObject({ "@type": "SoftwareApplication", name: "Devlings", url: "https://ixklo.github.io/Devlings/" });
+    expect(site).toContain("This page runs no scripts");
+  });
+
+  it("shows every built-in pet in the gallery, with its own description", () => {
+    const pets = ["perch", "ember", "plum", "fox", "cat", "axolotl", "capybara", "robot", "ghost"];
+    for (const id of pets) {
+      const { displayName, description } = JSON.parse(read(`src-tauri/pets/${id}/pet.json`).trimStart());
+      expect(site, id).toContain(`src="img/pet-${id}.gif"`);
+      expect(site, id).toContain(`<strong>${displayName}</strong><span>${description}</span>`);
+    }
+  });
+
+  it("loads nothing from other sites: no style sheets, fonts or remote images", () => {
     expect(site).not.toMatch(/<link[^>]+rel="stylesheet"/);
     expect(site).not.toMatch(/<(img|source|iframe)[^>]+src(set)?="https?:/);
     expect(site).not.toMatch(/@import|url\(/);
