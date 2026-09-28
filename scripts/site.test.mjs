@@ -11,8 +11,8 @@ const read = (p) => readFileSync(path.join(ROOT, p), "utf8");
 const readme = read("README.md");
 const site = read("site/index.html");
 const DOWNLOAD = /https:\/\/github\.com\/ixklo\/devlings\/releases\/latest\/download\/([^"')\s]+)/g;
-// macOS isn't built while the repository is private; its link comes back with the first release that has it.
-const BUILT = STABLE_NAMES.filter((n) => !n.includes("macos"));
+// Every platform is built now that the repository is public (macOS was left out while it was private).
+const BUILT = STABLE_NAMES;
 
 /** Width and height of a PNG or GIF, from its header. */
 function size(file) {
@@ -31,8 +31,8 @@ describe.each([
     expect(new Set(names)).toEqual(new Set(BUILT));
   });
 
-  it("say macOS is coming with the next release", () => {
-    expect(text).toMatch(/macOS[^\n]*[Cc]oming with the next release/);
+  it("label macOS as beta", () => {
+    expect(text).toMatch(/macOS[^\n]*beta/);
   });
 });
 
