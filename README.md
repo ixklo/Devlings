@@ -25,9 +25,9 @@
 | Windows (64-bit) | [Devlings-windows-x64-setup.exe](https://github.com/ixklo/devlings/releases/latest/download/Devlings-windows-x64-setup.exe) |
 | Linux (x86_64), AppImage | [Devlings-linux-x86_64.AppImage](https://github.com/ixklo/devlings/releases/latest/download/Devlings-linux-x86_64.AppImage) |
 | Linux (x86_64), Debian and Ubuntu | [Devlings-linux-amd64.deb](https://github.com/ixklo/devlings/releases/latest/download/Devlings-linux-amd64.deb) |
-| macOS (Apple Silicon and Intel) | Coming with the next release |
+| macOS (Apple Silicon and Intel), beta | [Devlings-macos-universal.dmg](https://github.com/ixklo/devlings/releases/latest/download/Devlings-macos-universal.dmg) |
 
-These links always get the latest version; older ones are on the [Releases](https://github.com/ixklo/devlings/releases) page. You need [Claude Code](https://code.claude.com) 2.1.259 or newer, logged in with a Claude subscription (Pro, Max, Team or Enterprise); the copy bundled with the VS Code extension works too. Windows 11 is tested on real hardware; Windows 10 hasn't been tried yet. Linux is beta: it builds and launches in CI on every change but hasn't been tried on real hardware, so an [issue](../../issues/new/choose) saying how it went is genuinely useful. Devlings is free and open source under the MIT license.
+These links always get the latest version; older ones are on the [Releases](https://github.com/ixklo/devlings/releases) page. You need [Claude Code](https://code.claude.com) 2.1.259 or newer, logged in with a Claude subscription (Pro, Max, Team or Enterprise); the copy bundled with the VS Code extension works too. Windows 11 is tested on real hardware; Windows 10 hasn't been tried yet. macOS and Linux are beta: they build and launch in CI on every change but haven't been tried on real hardware, so an [issue](../../issues/new/choose) saying how it went is genuinely useful. Devlings is free and open source under the MIT license.
 
 ## Features
 

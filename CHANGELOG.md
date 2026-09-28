@@ -4,6 +4,10 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-28
+
+The first public release of Devlings: builds for Windows, macOS and Linux again, with build provenance.
+
 ### Added
 
 - Every release also carries the installers under names without the version (`Devlings-windows-x64-setup.exe`, `Devlings-linux-x86_64.AppImage`, `Devlings-linux-amd64.deb`, and `Devlings-macos-universal.dmg` once macOS is built), so the README's download links always get the latest version. A new README with an animated demo, and a guide to [making your own pet](docs/making-pets.md) with a template to draw on.
@@ -130,7 +134,8 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/ixklo/devlings/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ixklo/devlings/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/ixklo/devlings/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ixklo/devlings/compare/v0.2.0...v1.0.0
