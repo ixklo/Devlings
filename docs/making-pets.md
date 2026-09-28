@@ -25,7 +25,7 @@ pets/
     spritesheet.png
 ```
 
-To pick it, right-click the pet → **Change pet**: the menu looks in the pets folders every time it opens, so a new pet is there straight away. The picker in **Settings → Pet** shows the pets Devlings found when it started, so it lists a new one after you restart Devlings.
+To pick it, right-click the pet → **Change pet**: the menu looks in the pets folders every time it opens, so a new pet is there straight away. The picker in **Settings → Pet** keeps the list it loaded earlier, so it may only show a new pet after you restart Devlings.
 
 ## pet.json
 
