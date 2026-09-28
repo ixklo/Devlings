@@ -20,6 +20,15 @@ export function usePets() {
       .catch((e) => setError(errorText(e)));
   }, []);
   useEffect(load, [load]);
+  // Settings is hidden, not closed, between uses: look again each time it's shown, so a pet just added to the
+  // pets folder appears without a restart (`list_pets` rescans the folders).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [load]);
   return { pets, error, reload: load };
 }
 

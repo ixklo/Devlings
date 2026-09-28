@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PetInfo } from "../shared/types";
@@ -32,6 +32,23 @@ afterEach(() => {
 });
 
 describe("PetPicker", () => {
+  it("looks for pets again each time Settings is shown, so one just added to the folder appears", async () => {
+    let pets = BUNDLED;
+    fakeTransport({ list_pets: () => pets, get_pet_sprite: () => "data:image/png;base64," });
+    render(<PetPicker selectedId="perch" onSelect={vi.fn()} />);
+    await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(9));
+    pets = [...BUNDLED, { id: "otter", displayName: "Otto", description: "Otto the otter.", source: "perch" }];
+    let visibility: DocumentVisibilityState = "hidden";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(screen.getAllByRole("radio")).toHaveLength(9);
+    visibility = "visible";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(10));
+    expect(screen.getByRole("radio", { name: "Otto" })).toBeInTheDocument();
+    delete (document as { visibilityState?: unknown }).visibilityState;
+  });
+
   it("shows all nine bundled pets in one radio group, in order", async () => {
     renderPicker();
     const group = screen.getByRole("radiogroup", { name: "Pet" });
