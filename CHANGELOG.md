@@ -4,6 +4,12 @@ All notable changes to Devlings (called Perch up to 1.0) are documented here. Th
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-28
+
+### Changed
+
+- **The buttons under the pet stay out of the way.** The bar with the pencil, bell and Show threads button now only appears while you hover over the pet, give it keyboard focus, or have the ask box or a chat open. Before, it stayed up whenever a Claude Code session existed. The pet itself still shows when a session needs you.
+
 ## [1.2.2] - 2026-09-28
 
 ### Fixed
@@ -140,7 +146,8 @@ First release of Perch: a small bird that sits on your desktop and keeps you pos
 - Name your pet whatever you like.
 - Windows, macOS and Linux installers. Tested on Windows 11; macOS and Linux compile and package but hadn't yet been tried on real hardware.
 
-[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/ixklo/devlings/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/ixklo/devlings/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/ixklo/devlings/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/ixklo/devlings/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/ixklo/devlings/compare/v1.1.0...v1.2.0

@@ -234,19 +234,47 @@ describe("PetApp hidden-threads count on the Show threads button", () => {
     expect(bubbles().children).toHaveLength(0);
   });
 
-  it("keeps the bar and its count visible when collapsing hides only a permission request", async () => {
-    // Nothing hidden and no hover: the bar stays out of the way.
-    const empty = await setupSnap(collapsedSnap());
-    expect(controlBar()).not.toHaveClass("is-visible");
-    expect(controlBar()).not.toHaveAttribute("data-hit");
-    empty.unmount();
-    await setupSnap(collapsedSnap({ approvals: [makeApproval()] }));
+  it("keeps the bar out of the way until you hover the pet or use it, whatever is running or hidden", async () => {
+    const cases: Snapshot[] = [
+      collapsedSnap(),
+      collapsedSnap({ threads: [makeThread({ status: "running" }), makeThread({ status: "ready" })] }),
+      collapsedSnap({ approvals: [makeApproval()] }),
+      makeSnapshot({ threads: [makeThread({ status: "needs_input" })] }),
+    ];
+    for (const snap of cases) {
+      const { unmount } = await setupSnap(snap);
+      expect(controlBar()).not.toHaveClass("is-visible");
+      expect(controlBar()).not.toHaveAttribute("data-hit");
+      unmount();
+    }
+  });
+
+  it("shows the bar, count and all, while the pointer is on the pet and a moment after it leaves", async () => {
+    const { emit } = await setupSnap(collapsedSnap({ approvals: [makeApproval()] }));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      act(() => emit("pet-pointer", "pet"));
+      expect(controlBar()).toHaveClass("is-visible");
+      expect(controlBar()).toHaveAttribute("data-hit", "bar");
+      expect(chevron()).toHaveAccessibleName("Show threads, 1 needs you");
+      expect(chevron()).toHaveClass("is-wait");
+      act(() => emit("pet-pointer", null));
+      expect(controlBar()).toHaveClass("is-visible");
+      act(() => void vi.advanceTimersByTime(2000));
+      expect(controlBar()).not.toHaveClass("is-visible");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the bar while the pet has keyboard focus or a card is open", async () => {
+    const { pet } = await setupSnap(collapsedSnap({ threads: [makeThread()] }));
+    act(() => pet.focus());
     expect(controlBar()).toHaveClass("is-visible");
-    expect(controlBar()).toHaveAttribute("data-hit", "bar");
-    expect(chevron()).toHaveAccessibleName("Show threads, 1 needs you");
-    expect(chevron()).toHaveTextContent(/^1$/);
-    expect(chevron()).toHaveClass("is-wait");
-    expect(screen.queryByRole("group", { name: /request in/ })).toBeNull();
+    await userEvent.keyboard("{Enter}");
+    expect(await screen.findByRole("region", { name: "New message" })).toBeInTheDocument();
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(controlBar()).toHaveClass("is-visible");
   });
 
   it("uses the error tone for a blocked thread when nothing needs input", async () => {

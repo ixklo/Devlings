@@ -36,7 +36,7 @@ These links always get the latest version; older ones are on the [Releases](http
 - **Answer permission prompts.** Allow or Deny a command, file edit or web fetch from a card that shows exactly what will run.
 - **Ask from the desktop.** Click the pet, pick a project and type; your own Claude Code answers in a small chat above it, and follow-ups continue the conversation.
 - **Notifications** when a session finishes, fails or needs you. On Windows, clicking one opens that session.
-- **Out of the way.** Everything around the pet is click-through. Tuck the cards away and the Show threads button keeps count.
+- **Out of the way.** Everything around the pet is click-through, and its buttons only appear when you hover over it or use it. Tuck the cards away and the Show threads button keeps count.
 - **Calm.** Long runs and failures settle after a while; only "needs you" keeps moving until you answer. Reduced-motion settings are followed.
 - **Nine pets, and your own.** Pick one, name it, or [draw a new one](docs/making-pets.md).
 - **Keyboard and screen reader support** for the pet, its cards and Settings.

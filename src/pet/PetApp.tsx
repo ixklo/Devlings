@@ -267,9 +267,11 @@ export function PetApp() {
   const { config } = snap;
   const collapsed = config.threadsCollapsed;
   const threads = snap.threads;
-  // What collapsing hides, counted on the chevron; the bar stays up while anything is hidden.
+  // What collapsing hides, counted on the chevron (seen whenever the bar is: on hover, focus or with a card open).
   const hidden = collapsed ? hiddenCount(threads, snap.approvals) : null;
-  const barVisible = hover || view.kind !== "bubbles" || threads.length > 0 || hidden !== null;
+  // The bar (and the count on its Show threads button) stays out of the way until you hover the pet, give it keyboard
+  // focus (both set `hover`) or open a card; the pet's own mood says when something needs you.
+  const barVisible = hover || view.kind !== "bubbles";
   const petState = petStateFor(snap);
   // Approval buttons re-arm whenever the stage moves as a whole.
   const layoutKey = `${placement.cardsBelow}|${placement.shiftX}|${placement.stageRoom}`;
