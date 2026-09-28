@@ -10,6 +10,7 @@ pub type Rect = (i32, i32, i32, i32);
 
 /// The pet window's place in the stacking order: its own topmost flag, the windows above it (nearest first) and its
 /// monitor's bounds.
+#[cfg(windows)]
 pub struct Stack {
     pub own_topmost: bool,
     pub above: Vec<Above>,
