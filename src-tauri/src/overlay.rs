@@ -446,12 +446,38 @@ pub fn rescue_pet_soon(app: &AppHandle, why: Rescue) {
     }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
+        keep_on_top(&handle);
         if why == Rescue::Check && !check_may_rescue(crate::state::now_ms(), LAST_RESCUE_MS.load(Ordering::SeqCst)) {
             return;
         }
         rescue_pet(&handle);
     });
 }
+
+static LAST_RAISE_LOG_MS: AtomicI64 = AtomicI64::new(0);
+
+/// Puts a shown pet back on top when Windows left it under ordinary windows (`zorder::pet_demoted`), as it can after
+/// an app went full screen. Leaves it behind a full-screen app that's still in front. Call on the main thread.
+#[cfg(windows)]
+fn keep_on_top(app: &AppHandle) {
+    let Some(pet) = pet_window(app) else { return };
+    if app.state::<AppState>().pet_hidden.load(Ordering::SeqCst) || pet.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let Ok(hwnd) = pet.hwnd() else { return };
+    let Some(stack) = crate::zorder::stack_of(hwnd.0) else { return };
+    if !crate::zorder::pet_demoted(stack.own_topmost, &stack.above, stack.monitor) {
+        return;
+    }
+    let now = crate::state::now_ms();
+    if now - LAST_RAISE_LOG_MS.swap(now, Ordering::SeqCst) >= 60_000 {
+        log::warn!("The pet window had dropped behind other windows; putting it back on top");
+    }
+    crate::zorder::raise(hwnd.0);
+}
+
+#[cfg(not(windows))]
+fn keep_on_top(_app: &AppHandle) {}
 
 /// Puts a shown pet back when it has been lost (`pet_is_lost`): un-minimizes the window, puts the sprite back at its
 /// saved spot and shows its page again. Returns whether it had to. A hidden pet (tray, Ctrl+Alt+P, hide for an
