@@ -26,6 +26,8 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
 Opening `npm run dev` in a regular browser shows the pet (`/?window=pet`) and settings (`/?window=settings`) with mock data — useful for UI work without a real Claude Code session. The query switches are listed at the top of `src/shared/mock.ts`; `?scene=cards|approval|chat|demo` shows the fixed, made-up states the README images are captured from.
 
+Settings and anything else the app remembers are saved by the backend to `config.json` and `projects.json` in the user's profile (`src-tauri/src/store.rs`). The frontend asks for them through commands and never uses cookies, `localStorage` or other webview storage; `src/settingsStorage.test.ts` checks this.
+
 Design docs live in `docs/specs/`; release gates and evidence live in `docs/release/`.
 
 ## Pets

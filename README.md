@@ -163,6 +163,7 @@ Devlings is free, never uses an API key and has no account of its own.
 
 - **What it reads:** Claude Code's hook events for your sessions (the step, the status, a line of the reply, and a permission request's input); the conversation file of each Ask; Claude Code's `settings.json` (to add and remove its hooks) and its list of trusted folders (never changed); and, when you Ask in a folder you haven't trusted, that folder's Claude Code settings, to tell you what was skipped. It doesn't read your source files.
 - **What it sends:** hook answers go to Claude Code on `127.0.0.1`. The only thing that leaves your computer is a daily check for a new version, which downloads a small `latest.json` from this repository's releases on GitHub (turn it off in **Settings → About**). Your prompts go to Anthropic through your own Claude Code, exactly as from a terminal.
+- **Where it keeps your settings:** in two files in your user profile, `config.json` and `projects.json`, in the app's data folder (`%APPDATA%\io.github.perchpet.perch` on Windows, `~/Library/Application Support/io.github.perchpet.perch` on macOS, `~/.local/share/io.github.perchpet.perch` on Linux). Nothing is kept in cookies or browser storage.
 - On Windows, Devlings' windows are drawn by Microsoft's WebView2 runtime, which makes its own connections to Microsoft as it does for every app built on it. Devlings' pages never load anything from the internet.
 
 <details>
